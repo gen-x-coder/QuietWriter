@@ -1,7 +1,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Iterable, Iterator
+from typing import Iterator
 
 
 @dataclass
@@ -11,11 +11,7 @@ class StreamChunk:
 
 
 class AIProvider(ABC):
-    """Provider-onafhankelijke AI-interface.
-
-    De rest van QuietWriter kent geen Ollama/OpenRouter details. Nieuwe providers
-    hoeven alleen deze kleine interface te implementeren.
-    """
+    """Provider-onafhankelijke interface voor streaming chat."""
     name = 'provider'
 
     @abstractmethod
@@ -34,8 +30,9 @@ class AIProvider(ABC):
                 parts.append(chunk.content)
         return ''.join(parts)
 
-    def embed(self, model: str, texts: list[str]) -> list[list[float]]:
-        raise NotImplementedError(f'{self.name} ondersteunt in QuietWriter nog geen embeddings.')
+    def cancel_active(self) -> None:
+        """Annuleer indien mogelijk het huidige netwerkverzoek."""
+        return None
 
 
 class ProviderFactory:

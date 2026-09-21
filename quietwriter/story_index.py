@@ -109,8 +109,8 @@ class StoryIndex:
         self.conn.commit()
 
     def list_all(self) -> list[dict]:
-        rows = self.conn.execute('SELECT path,title,description,synopsis,tags,mtime FROM stories ORDER BY title COLLATE NOCASE').fetchall()
-        return [dict(path=r[0], title=r[1], description=r[2], synopsis=r[3], tags=r[4], mtime=r[5]) for r in rows]
+        rows = self.conn.execute('SELECT path,title,description,synopsis,tags,mtime,substr(body,1,1800) FROM stories ORDER BY title COLLATE NOCASE').fetchall()
+        return [dict(path=r[0], title=r[1], description=r[2], synopsis=r[3], tags=r[4], mtime=r[5], excerpt=r[6] or '') for r in rows]
 
     def get(self, path: str | Path) -> dict:
         return parse_story(Path(path))

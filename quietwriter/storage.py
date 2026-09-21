@@ -536,35 +536,53 @@ class Library:
         self.save_manifest(book)
 
     def import_markdown_book(self, source: Path) -> Book:
-        from .story_index import parse_story
+        from .markdown_io import parse_markdown_book
         source = Path(source)
-        data = parse_story(source)
+        data = parse_markdown_book(source)
         title = (data.get('title') or source.stem).strip() or source.stem
         book = self.create_book(title)
-        # Verwijder het automatisch gemaakte hoofdstuk en vervang het door de hoofdstukken uit het bestand.
+        # Verwijder het automatisch gemaakte hoofdstuk en vervang het door de import.
         for sec in book.sections:
             for ch in sec.chapters:
                 p = book.path / ch.file
                 if p.exists():
                     p.unlink()
-        book.sections = [Section(id='root', title='Manuscript')]
+        book.sections = []
+        imported_md = dict(data.get('metadata') or {})
+        known = {'slug','description','meta','intro','synopsis','tags','author','image','cover','featured_image','date','published'}
         md = book.metadata
-        for key in ('slug', 'description', 'meta', 'intro', 'tags', 'author', 'image', 'cover', 'featured_image', 'date', 'published'):
-            if data.get(key) not in (None, ''):
-                md[key] = data.get(key)
+        for key in known:
+            if imported_md.get(key) not in (None, ''):
+                md[key] = imported_md.get(key)
+        extra = {k:v for k,v in imported_md.items() if k not in known and k != 'title'}
+        if extra:
+            md['extra'] = extra
         md['slug'] = slugify(md.get('slug') or title)
         md['source_file'] = str(source)
         md['last_used'] = datetime.now().timestamp()
-        if data.get('extra'):
-            md['extra'] = data['extra']
-        section = book.sections[0]
-        chapters = data.get('chapters') or [{'title': title, 'text': data.get('body', '')}]
-        for item in chapters:
-            ch = self.add_chapter(book, section, item.get('title') or 'Hoofdstuk', persist=False)
-            section.chapters.append(ch)
-            (book.path / ch.file).write_text(item.get('text', ''), encoding='utf-8')
+
+        groups = data.get('sections') or [(None, [{'title': title, 'text': data.get('body', '')}])]
+        for idx, (section_title, chapters) in enumerate(groups):
+            sec_id = 'root' if len(groups) == 1 and not section_title else str(uuid.uuid4())
+            sec = Section(id=sec_id, title=section_title or ('Manuscript' if sec_id == 'root' else f'Sectie {idx+1}'))
+            book.sections.append(sec)
+            for item in chapters:
+                ch = self.add_chapter(book, sec, item.get('title') or 'Hoofdstuk', persist=False)
+                sec.chapters.append(ch)
+                _safe_atomic_write_text(book.path / ch.file, item.get('text', ''))
+        if not any(sec.chapters for sec in book.sections):
+            if not book.sections:
+                book.sections = [Section(id='root', title='Manuscript')]
+            ch = self.add_chapter(book, book.sections[0], title, persist=False)
+            book.sections[0].chapters.append(ch)
         self.save_manifest(book)
         return book
+
+    def export_markdown_book(self, book: Book, destination: Path, image_ref: str = '', include_frontmatter: bool = True,
+                             include_section_markers: bool = True) -> Path:
+        from .markdown_io import export_book_markdown
+        return export_book_markdown(self, book, destination, image_ref=image_ref,
+                                    include_frontmatter=include_frontmatter, include_section_markers=include_section_markers)
 
     def cover_path(self, book: Book) -> Path | None:
         stored = (book.metadata.get('cover_file') or '').strip()

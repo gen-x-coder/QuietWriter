@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import threading
 import requests
 from .providers import AIProvider, StreamChunk
 
@@ -9,14 +10,57 @@ class OllamaProvider(AIProvider):
 
     def __init__(self, base_url='http://127.0.0.1:11434'):
         self.base_url = base_url.rstrip('/')
+        self._response_lock = threading.Lock()
+        self._active_response = None
+        self._cancelled = False
+
+
+    def _set_active(self, response):
+        with self._response_lock:
+            self._active_response = response
+            self._cancelled = False
+
+    def _clear_active(self, response=None):
+        with self._response_lock:
+            if response is None or self._active_response is response:
+                self._active_response = None
+
+    def cancel_active(self) -> None:
+        with self._response_lock:
+            self._cancelled = True
+            response = self._active_response
+        if response is not None:
+            try:
+                response.close()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _error_detail(r) -> str:
+        try:
+            data = r.json()
+            detail = data.get('error') if isinstance(data, dict) else None
+            if detail:
+                return str(detail)
+        except Exception:
+            pass
+        text = (getattr(r, 'text', '') or '').strip()
+        return text[:500] if text else f'HTTP {r.status_code}'
+
+    @classmethod
+    def _raise_detailed(cls, r, prefix='Ollama'):
+        if r.ok:
+            return
+        raise RuntimeError(f'{prefix}: {cls._error_detail(r)}')
 
     def list_models(self) -> list[dict]:
         r = requests.get(f'{self.base_url}/api/tags', timeout=2.5)
-        r.raise_for_status()
+        self._raise_detailed(r, 'Ollama modellen ophalen mislukt')
         return [
             {'name': m.get('name', ''), 'size': int(m.get('size', 0) or 0)}
             for m in r.json().get('models', []) if m.get('name')
         ]
+
 
     def is_available(self) -> bool:
         try:
@@ -26,7 +70,6 @@ class OllamaProvider(AIProvider):
 
     @staticmethod
     def _split_think_stream(text: str, state: dict):
-        """Parse modellen die <think>...</think> in content streamen."""
         state['buffer'] = state.get('buffer', '') + text
         out = []
         while state['buffer']:
@@ -37,7 +80,6 @@ class OllamaProvider(AIProvider):
                     state['buffer'] = state['buffer'][pos+8:]
                     state['thinking'] = False
                     continue
-                # hou mogelijk begin van sluit-tag vast
                 keep = 0
                 for n in range(min(7, len(state['buffer'])), 0, -1):
                     if '</think>'.startswith(state['buffer'][-n:]): keep = n; break
@@ -66,9 +108,13 @@ class OllamaProvider(AIProvider):
         if options:
             payload['options'] = {k: v for k, v in options.items() if v is not None}
         state = {'buffer': '', 'thinking': False}
-        with requests.post(f'{self.base_url}/api/chat', json=payload, stream=True, timeout=(5, 900)) as r:
-            r.raise_for_status()
+        r = requests.post(f'{self.base_url}/api/chat', json=payload, stream=True, timeout=(5, 900))
+        self._set_active(r)
+        try:
+            self._raise_detailed(r, f'Ollama chat mislukt voor model {model}')
             for line in r.iter_lines(decode_unicode=True):
+                if self._cancelled:
+                    break
                 if not line: continue
                 data = json.loads(line)
                 message = data.get('message') or {}
@@ -79,13 +125,11 @@ class OllamaProvider(AIProvider):
                 if content:
                     yield from self._split_think_stream(content, state)
                 if data.get('done'): break
-        # restbuffer veilig legen
-        if state.get('buffer'):
+        finally:
+            try: r.close()
+            except Exception: pass
+            self._clear_active(r)
+        if not self._cancelled and state.get('buffer'):
             if state.get('thinking'): yield StreamChunk(thinking=state['buffer'])
             else: yield StreamChunk(content=state['buffer'])
 
-    def embed(self, model: str, texts: list[str]) -> list[list[float]]:
-        r = requests.post(f'{self.base_url}/api/embed', json={'model': model, 'input': texts}, timeout=(5, 900))
-        r.raise_for_status()
-        data = r.json()
-        return data.get('embeddings') or []

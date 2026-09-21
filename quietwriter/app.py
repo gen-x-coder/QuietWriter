@@ -27,6 +27,7 @@ from .spellcheck import WordDictionary, SpellHighlighter
 from .dictionary_catalog import DictionaryCatalog
 from .chapter_order import DropTarget, move_chapter as reorder_chapter
 from .i18n import tr
+from .markdown_io import insert_scene_break as build_scene_break_text
 
 
 ICON_DIR = Path(__file__).with_name('icons')
@@ -398,8 +399,9 @@ class BookDetailsDialog(QDialog):
         self._update_header_path()
 
         actions = QHBoxLayout()
+        export_btn = QPushButton('Exporteren…'); export_btn.clicked.connect(self.export_markdown)
         delete = QPushButton('Naar prullenbak'); delete.setObjectName('dangerButton'); delete.clicked.connect(self.delete_book)
-        actions.addWidget(delete); actions.addStretch()
+        actions.addWidget(export_btn); actions.addWidget(delete); actions.addStretch()
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Save).setText(tr('common.save', 'Opslaan'))
         buttons.button(QDialogButtonBox.Cancel).setText(tr('common.cancel', 'Annuleren'))
@@ -491,6 +493,45 @@ class BookDetailsDialog(QDialog):
         except Exception as e:
             QMessageBox.warning(self, 'Boekdetails', f'Opslaan mislukt:\n{e}'); return
         self.accept()
+
+    def export_markdown(self):
+        # Sla eerst de velden in deze dialoog op in het in-memory boek, zonder de dialoog te sluiten.
+        title = self.title_edit.text().strip() or self.book.title
+        slug = slugify(self.slug_edit.text().strip() or title)
+        self.book.title = title
+        self.book.metadata.update({
+            'slug': slug,
+            'description': self.description.toPlainText().strip(),
+            'meta': self.meta.toPlainText().strip(),
+            'intro': self.intro_text.toPlainText().strip(),
+            'tags': self.tags.text().strip(),
+            'author': self.author.text().strip(),
+        })
+        default_name = f'{slug}.md'
+        path, _ = QFileDialog.getSaveFileName(self, 'Boek exporteren naar Markdown', str(Path.home() / default_name), 'Markdown (*.md)')
+        if not path:
+            return
+        destination = Path(path)
+        if destination.suffix.lower() != '.md':
+            destination = destination.with_suffix('.md')
+        if destination.exists() and not confirm(self, 'Bestand overschrijven', f'“{destination.name}” bestaat al. Wil je dit bestand overschrijven?'):
+            return
+        template = self.settings.value('cover_header_template', '/{slug}.jpg')
+        image_ref = ''
+        if self.library.cover_path(self.book):
+            try:
+                image_ref = str(template).format(slug=slug, ext=self.library.cover_path(self.book).suffix.lstrip('.'))
+            except Exception:
+                image_ref = f'/{slug}.jpg'
+        else:
+            # Een bestaand geïmporteerd image-veld blijft behouden als er geen lokale omslag is gekozen.
+            image_ref = str(self.book.metadata.get('image', '') or '')
+        try:
+            self.library.export_markdown_book(self.book, destination, image_ref=image_ref, include_frontmatter=True, include_section_markers=True)
+        except Exception as exc:
+            QMessageBox.critical(self, 'Boek exporteren', f'Exporteren mislukt:\n\n{exc}')
+            return
+        QMessageBox.information(self, 'Boek exporteren', f'Het boek is geëxporteerd naar:\n{destination}')
 
     def delete_book(self):
         if not confirm(
@@ -658,15 +699,11 @@ class SettingsDialog(QDialog):
         self.model = QComboBox(); self.model.setEditable(True)
         refresh = QPushButton('Modellen ophalen'); refresh.clicked.connect(self.refresh_models)
         modelbox = QWidget(); mh = QHBoxLayout(modelbox); mh.setContentsMargins(0,0,0,0); mh.addWidget(self.model); mh.addWidget(refresh)
-        self.fast_model = QComboBox(); self.fast_model.setEditable(True)
-        self.embedding_model = QComboBox(); self.embedding_model.setEditable(True); self.embedding_model.addItem('')
         aif.addRow('AI-provider', self.ai_provider)
         aif.addRow('Ollama-adres', self.ollama)
         aif.addRow('OpenRouter API-key', self.openrouter_key)
         aif.addRow('Schrijf- en analysemodel', modelbox)
-        aif.addRow('Snel achtergrondmodel', self.fast_model)
-        aif.addRow('Embeddingmodel (optioneel)', self.embedding_model)
-        ai_note = QLabel('QuietWriter gebruikt één provider-onafhankelijke AI-laag. Het snelle model wordt gebruikt als bibliothecaris/reranker; het hoofdmodel schrijft en analyseert. OpenRouter werkt zodra een API-key en model zijn ingesteld.')
+        ai_note = QLabel('QuietWriter gebruikt je schrijverspersona en de gekozen context: selectie, huidig hoofdstuk, huidige sectie of hele boek. De AI-provider staat los van deze functies; Ollama en OpenRouter gebruiken dezelfde schrijfworkflow.')
         ai_note.setObjectName('muted'); ai_note.setWordWrap(True); aif.addRow('', ai_note)
         self.tabs.addTab(ai, 'AI')
 
@@ -794,47 +831,36 @@ class SettingsDialog(QDialog):
         QDesktopServices.openUrl(QUrl(self.DICTIONARY_DOWNLOAD_URL))
 
     def _populate_models(self, models):
-        provider_name=str(self.settings.value('ai_provider','ollama') or 'ollama')
-        main_current = self.settings.value('ollama_model', '') if provider_name == 'ollama' else self.settings.value('openrouter_model','')
-        fast_current = self.settings.value('fast_model', '')
-        embed_current = self.settings.value('embedding_model', '')
-        self.model.clear(); self.fast_model.clear(); self.embedding_model.clear(); self.embedding_model.addItem('')
-        if provider_name == 'ollama': self.model.addItems(models)
-        elif main_current: self.model.addItem(str(main_current))
-        self.fast_model.addItems(models); self.embedding_model.addItems(models)
-        if main_current: self.model.setCurrentText(str(main_current))
-        elif self.model.count(): self.model.setCurrentIndex(0)
-        if fast_current: self.fast_model.setCurrentText(str(fast_current))
-        elif models: self.fast_model.setCurrentIndex(0)
-        if embed_current: self.embedding_model.setCurrentText(str(embed_current))
+        provider_name = str(self.settings.value('ai_provider', 'ollama') or 'ollama')
+        current = self.settings.value('ollama_model', '') if provider_name == 'ollama' else self.settings.value('openrouter_model', '')
+        self.model.clear()
+        if provider_name == 'ollama':
+            self.model.addItems(list(models or []))
+        elif current:
+            self.model.addItem(str(current))
+        if current:
+            self.model.setCurrentText(str(current))
+        elif self.model.count():
+            self.model.setCurrentIndex(0)
 
     def refresh_models(self):
-        # Hoofdprovider en lokale achtergrondprovider worden apart bevraagd.
         self.settings.setValue('ai_provider', self.ai_provider.currentData() or 'ollama')
         self.settings.setValue('ollama_url', self.ollama.text())
         self.settings.setValue('openrouter_api_key', self.openrouter_key.text())
-        errors=[]
         try:
             provider = ProviderFactory.from_settings(self.settings)
-            infos = provider.list_models(); models=[m['name'] for m in infos]
-            current=self.model.currentText(); self.model.clear(); self.model.addItems(models)
-            if current in models: self.model.setCurrentText(current)
-            elif models: self.model.setCurrentIndex(0)
-            if self.parent() and hasattr(self.parent(), 'models'): self.parent().models=models
-        except Exception as e:
-            errors.append(f'Hoofdprovider: {e}')
-        try:
-            local = ProviderFactory.for_name(self.settings, 'ollama')
-            infos = local.list_models(); models=[m['name'] for m in infos]
-            current=self.fast_model.currentText(); self.fast_model.clear(); self.fast_model.addItems(models)
-            if current in models: self.fast_model.setCurrentText(current)
-            elif infos: self.fast_model.setCurrentText(min(infos,key=lambda m:m.get('size',0) or 0)['name'])
-            current_embed=self.embedding_model.currentText(); self.embedding_model.clear(); self.embedding_model.addItem(''); self.embedding_model.addItems(models)
-            if current_embed in models: self.embedding_model.setCurrentText(current_embed)
-        except Exception as e:
-            errors.append(f'Ollama achtergrondmodellen: {e}')
-        if errors:
-            QMessageBox.warning(self, 'AI', 'Niet alle modelbronnen konden worden opgehaald:\n\n'+'\n'.join(errors))
+            infos = provider.list_models()
+            models = [m['name'] for m in infos]
+            current = self.model.currentText()
+            self.model.clear(); self.model.addItems(models)
+            if current in models:
+                self.model.setCurrentText(current)
+            elif models:
+                self.model.setCurrentIndex(0)
+            if self.parent() and hasattr(self.parent(), 'models'):
+                self.parent().models = models
+        except Exception as exc:
+            QMessageBox.warning(self, 'AI', f'Modellen ophalen mislukt:\n\n{exc}')
 
     def accept(self):
         self.settings.setValue('theme', self.theme.currentText())
@@ -846,9 +872,6 @@ class SettingsDialog(QDialog):
         self.settings.setValue('openrouter_api_key', self.openrouter_key.text())
         if provider == 'openrouter': self.settings.setValue('openrouter_model', self.model.currentText())
         else: self.settings.setValue('ollama_model', self.model.currentText())
-        self.settings.setValue('fast_provider', 'ollama')
-        self.settings.setValue('fast_model', self.fast_model.currentText())
-        self.settings.setValue('embedding_model', self.embedding_model.currentText())
         self.settings.setValue('cover_header_template', self.cover_template.text().strip() or '/{slug}.jpg')
         self.settings.setValue('spell_enabled', self.spell_enabled.isChecked())
         self.settings.setValue('spell_language', self.spell_language.currentData() or '')
@@ -1571,6 +1594,32 @@ class EditorPage(QWidget):
             if ok:
                 c = self.main.library.add_chapter(self.book, section, title or 'Nieuw hoofdstuk'); self.populate_tree(); self.open_chapter(c)
 
+    def insert_scene_break(self):
+        if not self.book or not self.chapter or self.preview_live_book:
+            return
+        cursor = self.editor.textCursor()
+        text = self.editor.toPlainText()
+        new_text, new_pos = build_scene_break_text(text, cursor.position())
+        if new_text == text:
+            return
+        cursor.beginEditBlock()
+        cursor.select(QTextCursor.Document)
+        cursor.insertText(new_text)
+        cursor.setPosition(min(new_pos, len(new_text)))
+        cursor.endEditBlock()
+        self.editor.setTextCursor(cursor)
+        self.editor.setFocus()
+
+    def show_insert_menu(self):
+        if not self.book or self.preview_live_book:
+            return
+        menu = QMenu(self.main)
+        scene = menu.addAction('Scènebreuk')
+        scene.setToolTip('Voeg *** toe tussen twee tekstblokken')
+        chosen = menu.exec(self.main.insert_button.mapToGlobal(self.main.insert_button.rect().bottomLeft()))
+        if chosen is scene:
+            self.insert_scene_break()
+
     def create_manual_version(self):
         live = self.preview_live_book or self.book
         if not live:
@@ -1904,6 +1953,7 @@ class MainWindow(QMainWindow):
         self.search_button = trb('search','Zoeken', self.editor_page.show_search)
         self.ai_button = trb('spark','AI-assistent', self.editor_page.show_ai)
         self.spell_button = trb('spell','Spellingscontrole', self.editor_page.show_spell)
+        self.insert_button = trb('insert','Toevoegen', self.editor_page.show_insert_menu, checkable=False)
         self.history_button = trb('history','Versiegeschiedenis', self.editor_page.show_history)
         self.delete_chapter_button = trb('trash','Huidig hoofdstuk verwijderen', self.editor_page.delete_current_chapter, checkable=False)
         self.manuscript_button = trb('panel-left','Hoofdstukpaneel tonen/verbergen', self.editor_page.toggle_manuscript)
@@ -1917,6 +1967,7 @@ class MainWindow(QMainWindow):
         save = QAction('Opslaan', self); save.setShortcut('Ctrl+S'); save.triggered.connect(self.editor_page.save); self.addAction(save)
         focus_left = QAction(self); focus_left.setShortcut('Ctrl+Shift+L'); focus_left.triggered.connect(self.editor_page.toggle_manuscript); self.addAction(focus_left)
         focus_right = QAction(self); focus_right.setShortcut('Ctrl+Shift+R'); focus_right.triggered.connect(self.editor_page.toggle_right); self.addAction(focus_right)
+        scene_break = QAction(self); scene_break.setShortcut('Ctrl+Shift+Return'); scene_break.triggered.connect(self.editor_page.insert_scene_break); self.addAction(scene_break)
 
     def _nav_button(self, icon_name, label, fn, checkable=True):
         b = QPushButton()
@@ -2018,6 +2069,8 @@ class MainWindow(QMainWindow):
             self.go_home()
 
     def manage_book(self, book):
+        if self.editor_page.book and self.editor_page.book.id == book.id:
+            self.editor_page.save()
         d = BookDetailsDialog(self.library, self.settings, book, self)
         result = d.exec()
         # Bij verwijderen is het boek mogelijk ook in de editor geladen.
@@ -2073,17 +2126,15 @@ class MainWindow(QMainWindow):
                     txt=ep.editor.toPlainText() if c.id==chapter.id else self.library.read_chapter(book,c)
                     parts.append(f'# {c.title}\n{txt}')
             return '\n\n'.join(parts), f'boek: {book.title}'
-        hits=self.story_index.search(prompt, limit=5)
-        parts=[]
-        for h in hits:
-            try:
-                d=self.story_index.get(h['path']); body=d['body']
-            except Exception:
-                body=h.get('snippet','')
-            parts.append(f"# {h['title']}\nTags: {h.get('tags','')}\nSynopsis: {h.get('synopsis','')}\n\n{body}")
-        return '\n\n'.join(parts) if parts else '(Geen relevante oude verhalen gevonden.)', 'relevante verhalen uit bibliotheek'
+        return ep.editor.toPlainText(), f'hoofdstuk: {chapter.title}'
 
     def closeEvent(self, event):
+        # AI-workers moeten echt gestopt zijn voordat Qt widgets/QThreads vernietigt.
+        # Anders kan Qt afsluiten met: QThread: Destroyed while thread is still running.
+        if hasattr(self.editor_page, 'ai') and not self.editor_page.ai.shutdown(4500):
+            QMessageBox.warning(self, 'AI is nog bezig', 'QuietWriter kon het lopende AI-verzoek nog niet veilig stoppen. Klik op “Stop AI” en probeer daarna opnieuw af te sluiten.')
+            event.ignore()
+            return
         self.editor_page.save()
         self.settings.setValue('geometry', self.saveGeometry())
         self.settings.setValue('windowState', self.saveState())
@@ -2130,9 +2181,6 @@ def run():
         infos=client.model_info(timeout=1.8); models=[m['name'] for m in infos]; splash.set_status(f'Ollama gevonden · {len(models)} modellen')
         if models and not settings.value('ollama_model',''):
             settings.setValue('ollama_model', models[0])
-        if infos and not settings.value('fast_model',''):
-            smallest=min(infos, key=lambda m: m.get('size', 0) or 0)['name']
-            settings.setValue('fast_model', smallest)
     except Exception:
         models=[]; splash.set_status('Ollama niet bereikbaar · editor blijft beschikbaar')
     QTimer.singleShot(450, splash.accept); splash.exec()
