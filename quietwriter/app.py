@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import re
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -10,7 +11,7 @@ from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMainWindow, QMessageBox, QPushButton, QScrollArea, QSplitter, QStackedWidget, QStatusBar,
-    QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+    QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QAbstractItemView
 )
 
 from . import APP_NAME
@@ -20,6 +21,7 @@ from .ollama import OllamaClient, ChatWorker
 from .search import BookSearchIndex
 from .story_index import StoryIndex
 from .spellcheck import WordDictionary, SpellHighlighter
+from .i18n import tr
 
 
 ICON_DIR = Path(__file__).with_name('icons')
@@ -27,6 +29,19 @@ ICON_DIR = Path(__file__).with_name('icons')
 
 def icon(name: str) -> QIcon:
     return QIcon(str(ICON_DIR / f'{name}.svg'))
+
+
+def confirm(parent, title: str, text: str, default_no: bool = True) -> bool:
+    """Centrale Ja/Nee-dialoog; knopteksten komen uit het taalbestand."""
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Warning)
+    box.setWindowTitle(title)
+    box.setText(text)
+    yes = box.addButton(tr('common.yes', 'Ja'), QMessageBox.YesRole)
+    no = box.addButton(tr('common.no', 'Nee'), QMessageBox.NoRole)
+    box.setDefaultButton(no if default_no else yes)
+    box.exec()
+    return box.clickedButton() is yes
 
 
 class ManuscriptEditor(QTextEdit):
@@ -381,8 +396,8 @@ class BookDetailsDialog(QDialog):
         delete = QPushButton('Naar prullenbak'); delete.setObjectName('dangerButton'); delete.clicked.connect(self.delete_book)
         actions.addWidget(delete); actions.addStretch()
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.button(QDialogButtonBox.Save).setText('Opslaan')
-        buttons.button(QDialogButtonBox.Cancel).setText('Annuleren')
+        buttons.button(QDialogButtonBox.Save).setText(tr('common.save', 'Opslaan'))
+        buttons.button(QDialogButtonBox.Cancel).setText(tr('common.cancel', 'Annuleren'))
         buttons.accepted.connect(self.save); buttons.rejected.connect(self.reject)
         actions.addWidget(buttons); root.addLayout(actions)
 
@@ -473,11 +488,10 @@ class BookDetailsDialog(QDialog):
         self.accept()
 
     def delete_book(self):
-        answer = QMessageBox.warning(
+        if not confirm(
             self, 'Boek naar prullenbak',
-            f'Wil je “{self.book.title}” naar de prullenbak verplaatsen?\n\nJe kunt het boek later herstellen of definitief verwijderen vanaf de prullenbakpagina.',
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if answer != QMessageBox.Yes:
+            f'Wil je “{self.book.title}” naar de prullenbak verplaatsen?\n\nJe kunt het boek later herstellen of definitief verwijderen vanaf de prullenbakpagina.'
+        ):
             return
         try:
             self.library.delete_book(self.book)
@@ -534,14 +548,14 @@ class TrashPage(QWidget):
         if not paths:
             QMessageBox.information(self, 'Prullenbak', 'Selecteer eerst één of meer boeken.')
             return
-        if QMessageBox.warning(self, 'Definitief verwijderen', f'Wil je {len(paths)} geselecteerde item(s) definitief verwijderen?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+        if not confirm(self, 'Definitief verwijderen', f'Wil je {len(paths)} geselecteerde item(s) definitief verwijderen?'):
             return
         for p in paths:
             self.main.library.permanently_delete_trashed_book(p)
         self.refresh()
 
     def empty_trash(self):
-        if QMessageBox.warning(self, 'Prullenbak legen', 'Wil je alle boeken in de prullenbak definitief verwijderen?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+        if not confirm(self, 'Prullenbak legen', 'Wil je alle boeken in de prullenbak definitief verwijderen?'):
             return
         self.main.library.empty_trash(); self.refresh()
 
@@ -575,7 +589,7 @@ class PersonaPage(QWidget):
         if not path.exists():
             QMessageBox.warning(self, 'Schrijfwijzer', 'De meegeleverde schrijfwijzer is niet gevonden.')
             return
-        if QMessageBox.question(self, 'Schrijfwijzer laden', 'De huidige tekst in de editor vervangen door de meegeleverde, geoptimaliseerde schrijfwijzer?') == QMessageBox.Yes:
+        if confirm(self, 'Schrijfwijzer laden', 'De huidige tekst in de editor vervangen door de meegeleverde, geoptimaliseerde schrijfwijzer?'):
             self.edit.setPlainText(path.read_text(encoding='utf-8'))
 
     def save(self):
@@ -607,6 +621,11 @@ class SettingsDialog(QDialog):
         self.fast_model = QComboBox(); self.fast_model.setEditable(True)
         self.cover_template = QLineEdit(settings.value('cover_header_template', '/{slug}.jpg'))
         self.cover_template.setPlaceholderText('/{slug}.jpg')
+        self.spell_enabled = QCheckBox(); self.spell_enabled.setChecked(settings.value('spell_enabled', True, bool))
+        self.spell_dictionary = QLineEdit(settings.value('spell_dictionary', ''))
+        spell_choose = QPushButton('Woordenboek kiezen…')
+        spell_choose.clicked.connect(self.choose_dictionary)
+        spellbox = QWidget(); sh = QHBoxLayout(spellbox); sh.setContentsMargins(0,0,0,0); sh.addWidget(self.spell_dictionary); sh.addWidget(spell_choose)
         form.addRow('Programmataal', self.language)
         form.addRow('Kleurenschema', self.theme)
         form.addRow('Automatisch opslaan', self.autosave)
@@ -615,13 +634,15 @@ class SettingsDialog(QDialog):
         form.addRow('Schrijf- en analysemodel', modelbox)
         form.addRow('Snel achtergrondmodel', self.fast_model)
         form.addRow('Afbeeldingspad in metadata', self.cover_template)
+        form.addRow('Spellingscontrole', self.spell_enabled)
+        form.addRow('Woordenboek (.dic)', spellbox)
         root.addLayout(form)
         note = QLabel('Voor afbeeldingspaden kun je {slug} gebruiken, bijvoorbeeld /{slug}.jpg of /images/{slug}.jpg. QuietWriter kent geen websiteadres; alleen dit relatieve pad wordt bewaard.\n\nOpenRouter is voorbereid in de architectuur, maar nog niet actief in deze versie.')
         note.setObjectName('muted'); note.setWordWrap(True); root.addWidget(note)
         self._populate_models(self.available_models)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.button(QDialogButtonBox.Save).setText('Opslaan')
-        buttons.button(QDialogButtonBox.Cancel).setText('Annuleren')
+        buttons.button(QDialogButtonBox.Save).setText(tr('common.save', 'Opslaan'))
+        buttons.button(QDialogButtonBox.Cancel).setText(tr('common.cancel', 'Annuleren'))
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
         root.addStretch(); root.addWidget(buttons)
         self.theme.currentTextChanged.connect(lambda n: QApplication.instance().setStyleSheet(stylesheet(n)))
@@ -633,6 +654,11 @@ class SettingsDialog(QDialog):
     def choose_root(self):
         p = QFileDialog.getExistingDirectory(self, 'Kies werkmap', self.root.text())
         if p: self.root.setText(p)
+
+    def choose_dictionary(self):
+        p, _ = QFileDialog.getOpenFileName(self, 'Kies Nederlands woordenboek', self.spell_dictionary.text() or str(Path.home()), 'Hunspell woordenboek (*.dic);;Alle bestanden (*)')
+        if p:
+            self.spell_dictionary.setText(p)
 
     def _populate_models(self, models):
         main_current = self.settings.value('ollama_model', '')
@@ -679,30 +705,51 @@ class SettingsDialog(QDialog):
         self.settings.setValue('ollama_model', self.model.currentText())
         self.settings.setValue('fast_model', self.fast_model.currentText())
         self.settings.setValue('cover_header_template', self.cover_template.text().strip() or '/{slug}.jpg')
+        self.settings.setValue('spell_enabled', self.spell_enabled.isChecked())
+        self.settings.setValue('spell_dictionary', self.spell_dictionary.text().strip())
         super().accept()
 
 
 class SearchPanel(QWidget):
-    open_chapter = __import__('PySide6.QtCore').QtCore.Signal(str)
+    open_match = __import__('PySide6.QtCore').QtCore.Signal(object)
+    request_next = __import__('PySide6.QtCore').QtCore.Signal()
+    request_replace = __import__('PySide6.QtCore').QtCore.Signal()
+    request_replace_all = __import__('PySide6.QtCore').QtCore.Signal()
+
     def __init__(self):
         super().__init__()
         lay = QVBoxLayout(self); lay.setContentsMargins(18,18,18,18)
-        lab = QLabel('Zoeken'); lab.setObjectName('sectionTitle')
-        self.query = QLineEdit(); self.query.setPlaceholderText('Zoek in dit boek…'); self.query.setClearButtonEnabled(True)
-        self.only_chapter = QCheckBox('Alleen huidig hoofdstuk')
-        self.empty = QLabel('Geen resultaten gevonden.'); self.empty.setObjectName('muted'); self.empty.setAlignment(Qt.AlignCenter); self.empty.hide()
+        lab = QLabel(tr('search.title', 'Zoeken en vervangen')); lab.setObjectName('sectionTitle')
+        self.scope = QComboBox(); self.scope.addItems(['Huidig hoofdstuk', 'Huidige sectie', 'Hele boek'])
+        self.query = QLineEdit(); self.query.setPlaceholderText('Zoeken…'); self.query.setClearButtonEnabled(True)
+        self.replace = QLineEdit(); self.replace.setPlaceholderText('Vervangen door…'); self.replace.setClearButtonEnabled(True)
+        options = QHBoxLayout()
+        self.case_sensitive = QCheckBox('Hoofdlettergevoelig')
+        self.whole_word = QCheckBox('Heel woord')
+        options.addWidget(self.case_sensitive); options.addWidget(self.whole_word); options.addStretch()
+        self.summary = QLabel(''); self.summary.setObjectName('muted')
+        self.empty = QLabel(tr('search.no_results', 'Geen resultaten gevonden.')); self.empty.setObjectName('muted'); self.empty.setAlignment(Qt.AlignCenter); self.empty.hide()
         self.results = QListWidget()
-        self.results.itemActivated.connect(lambda i: self.open_chapter.emit(i.data(Qt.UserRole)))
-        lay.addWidget(lab); lay.addWidget(self.query); lay.addWidget(self.only_chapter); lay.addWidget(self.empty); lay.addWidget(self.results)
+        self.results.itemActivated.connect(lambda i: self.open_match.emit(i.data(Qt.UserRole)))
+        buttons = QHBoxLayout()
+        self.next_btn = QPushButton(tr('search.next','Volgende')); self.next_btn.clicked.connect(self.request_next.emit)
+        self.replace_btn = QPushButton(tr('search.replace','Vervangen')); self.replace_btn.clicked.connect(self.request_replace.emit)
+        self.replace_all_btn = QPushButton(tr('search.replace_all','Alles vervangen')); self.replace_all_btn.clicked.connect(self.request_replace_all.emit)
+        buttons.addWidget(self.next_btn); buttons.addWidget(self.replace_btn); buttons.addWidget(self.replace_all_btn)
+        lay.addWidget(lab); lay.addWidget(self.scope); lay.addWidget(self.query); lay.addLayout(options)
+        lay.addWidget(self.summary); lay.addWidget(self.empty); lay.addWidget(self.results, 1)
+        lay.addWidget(QLabel('Vervangen door')); lay.addWidget(self.replace); lay.addLayout(buttons)
 
     def show_results(self, rows):
         self.results.clear()
         active = bool(self.query.text().strip())
         self.empty.setVisible(active and not rows)
         self.results.setVisible(bool(rows) or not active)
-        for cid, title, snippet in rows:
+        self.summary.setText((f'{len(rows)} resultaat' if len(rows) == 1 else f'{len(rows)} resultaten') if active else '')
+        for row in rows:
+            cid, title, snippet, start, length = row
             item = QListWidgetItem(f'{title}\n{snippet}')
-            item.setData(Qt.UserRole, cid)
+            item.setData(Qt.UserRole, (cid, start, length))
             self.results.addItem(item)
 
 
@@ -810,6 +857,91 @@ class AIPanel(QWidget):
         self.worker = None
 
 
+class ManuscriptTree(QTreeWidget):
+    orderChanged = __import__('PySide6.QtCore').QtCore.Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setHeaderHidden(True)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDefaultDropAction(Qt.MoveAction)
+        self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.setSelectionMode(QAbstractItemView.SingleSelection)
+
+    def dropEvent(self, event):
+        super().dropEvent(event)
+        self.orderChanged.emit()
+
+
+class SpellPanel(QWidget):
+    def __init__(self, editor_page):
+        super().__init__()
+        self.editor_page = editor_page
+        self.rows = []
+        self.index = 0
+        lay = QVBoxLayout(self); lay.setContentsMargins(18,18,18,18)
+        title = QLabel(tr('spell.title','Spellingscontrole')); title.setObjectName('sectionTitle')
+        self.status = QLabel(''); self.status.setObjectName('muted'); self.status.setWordWrap(True)
+        self.word = QLabel(''); self.word.setObjectName('title')
+        self.suggestions = QListWidget()
+        self.suggestions.itemDoubleClicked.connect(lambda _: self.change())
+        buttons = QVBoxLayout()
+        self.change_btn = QPushButton(tr('spell.change','Wijzigen')); self.change_btn.clicked.connect(self.change)
+        self.ignore_btn = QPushButton(tr('spell.ignore','Negeren')); self.ignore_btn.clicked.connect(self.ignore)
+        self.ignore_all_btn = QPushButton(tr('spell.ignore_all','Alles negeren')); self.ignore_all_btn.clicked.connect(self.ignore_all)
+        self.add_btn = QPushButton(tr('spell.add','Toevoegen aan woordenboek')); self.add_btn.clicked.connect(self.add_personal)
+        for b in (self.change_btn, self.ignore_btn, self.ignore_all_btn, self.add_btn): buttons.addWidget(b)
+        lay.addWidget(title); lay.addWidget(self.status); lay.addWidget(self.word); lay.addWidget(self.suggestions, 1); lay.addLayout(buttons)
+        self.refresh()
+
+    def refresh(self):
+        d = self.editor_page.dictionary
+        if not d.words:
+            self.rows=[]; self.status.setText(tr('spell.no_dictionary','Er is nog geen woordenboek ingesteld.')); self.word.clear(); self.suggestions.clear(); return
+        self.rows=d.misspellings(self.editor_page.editor.toPlainText())
+        if not self.rows:
+            self.status.setText(tr('spell.no_errors','Geen spelfouten gevonden in dit hoofdstuk.')); self.word.clear(); self.suggestions.clear(); return
+        self.index=min(self.index,len(self.rows)-1); self.show_current()
+
+    def show_current(self):
+        if not self.rows: return
+        word,start,end=self.rows[self.index]
+        self.status.setText(f'{self.index+1} van {len(self.rows)}')
+        self.word.setText(word)
+        self.suggestions.clear(); self.suggestions.addItems(self.editor_page.dictionary.suggest(word))
+        cur=self.editor_page.editor.textCursor(); cur.setPosition(start); cur.setPosition(end,QTextCursor.KeepAnchor); self.editor_page.editor.setTextCursor(cur); self.editor_page.editor.ensureCursorVisible()
+
+    def _advance(self):
+        self.refresh()
+        if self.rows:
+            self.index=min(self.index,len(self.rows)-1); self.show_current()
+
+    def change(self):
+        if not self.rows: return
+        item=self.suggestions.currentItem()
+        if not item and self.suggestions.count(): item=self.suggestions.item(0)
+        if not item: return
+        word,start,end=self.rows[self.index]
+        cur=self.editor_page.editor.textCursor(); cur.setPosition(start); cur.setPosition(end,QTextCursor.KeepAnchor); cur.insertText(item.text())
+        self._advance()
+
+    def ignore(self):
+        if not self.rows: return
+        self.index += 1
+        if self.index >= len(self.rows): self.index=0
+        self.show_current()
+
+    def ignore_all(self):
+        if not self.rows: return
+        self.editor_page.dictionary.ignore(self.rows[self.index][0]); self.editor_page.highlighter.rehighlight(); self._advance()
+
+    def add_personal(self):
+        if not self.rows: return
+        self.editor_page.dictionary.add_personal(self.rows[self.index][0]); self.editor_page.highlighter.rehighlight(); self._advance()
+
+
 class EditorPage(QWidget):
     def __init__(self, main):
         super().__init__()
@@ -822,7 +954,7 @@ class EditorPage(QWidget):
         self.manuscript = QWidget(); self.manuscript.setObjectName('panel'); ml = QVBoxLayout(self.manuscript); ml.setContentsMargins(14,14,14,14)
         head = QHBoxLayout(); title = QLabel('Manuscript'); title.setObjectName('sectionTitle'); add = QPushButton('+ Toevoegen'); add.clicked.connect(self.add_menu)
         head.addWidget(title); head.addStretch(); head.addWidget(add)
-        self.tree = QTreeWidget(); self.tree.setHeaderHidden(True); self.tree.itemClicked.connect(self.tree_clicked)
+        self.tree = ManuscriptTree(); self.tree.itemClicked.connect(self.tree_clicked); self.tree.orderChanged.connect(self.sync_tree_order)
         self.book_words = QLabel('0 woorden'); self.book_words.setObjectName('muted')
         ml.addLayout(head); ml.addWidget(self.tree); ml.addWidget(self.book_words)
 
@@ -836,13 +968,16 @@ class EditorPage(QWidget):
         self.chapter_title.editingFinished.connect(self.rename_current)
         self.editor = ManuscriptEditor(); self.editor.setObjectName('editor'); self.editor.textChanged.connect(self.on_text_changed)
         undo.clicked.connect(self.editor.undo); redo.clicked.connect(self.editor.redo)
-        self.dictionary = WordDictionary(); self.highlighter = SpellHighlighter(self.editor.document(), self.dictionary)
+        self.dictionary = WordDictionary(); self.dictionary.load_personal(self.main.library.dict_dir / 'persoonlijk.txt'); self.highlighter = SpellHighlighter(self.editor.document(), self.dictionary)
+        self.load_dictionary_from_settings()
         cl.addWidget(topbar); cl.addWidget(self.chapter_title); cl.addWidget(self.editor)
 
         self.right = QStackedWidget(); self.right.setObjectName('panel'); self.right.setMinimumWidth(280)
-        self.search = SearchPanel(); self.ai = AIPanel(main)
-        self.right.addWidget(self.search); self.right.addWidget(self.ai)
-        self.search.query.textChanged.connect(self.do_search); self.search.only_chapter.stateChanged.connect(lambda _: self.do_search(self.search.query.text())); self.search.open_chapter.connect(self.open_chapter_id)
+        self.search = SearchPanel(); self.ai = AIPanel(main); self.spell = SpellPanel(self)
+        self.right.addWidget(self.search); self.right.addWidget(self.ai); self.right.addWidget(self.spell)
+        self.search.query.textChanged.connect(lambda _: self.do_search()); self.search.scope.currentTextChanged.connect(lambda _: self.do_search())
+        self.search.case_sensitive.stateChanged.connect(lambda _: self.do_search()); self.search.whole_word.stateChanged.connect(lambda _: self.do_search())
+        self.search.open_match.connect(self.open_search_match); self.search.request_next.connect(self.search_next); self.search.request_replace.connect(self.replace_current_match); self.search.request_replace_all.connect(self.replace_all_matches)
 
         self.left_split.addWidget(self.manuscript); self.left_split.addWidget(self.center); self.left_split.addWidget(self.right)
         self.left_split.setStretchFactor(0,0); self.left_split.setStretchFactor(1,1); self.left_split.setStretchFactor(2,0)
@@ -863,10 +998,68 @@ class EditorPage(QWidget):
                 for chapter in section.chapters:
                     it = QTreeWidgetItem([chapter.title]); it.setData(0, Qt.UserRole, ('chapter', chapter.id)); self.tree.addTopLevelItem(it)
             else:
-                sit = QTreeWidgetItem([section.title]); sit.setData(0, Qt.UserRole, ('section', section.id)); self.tree.addTopLevelItem(sit)
+                sit = QTreeWidgetItem([section.title]); sit.setData(0, Qt.UserRole, ('section', section.id)); sit.setFlags(sit.flags() & ~Qt.ItemIsDragEnabled); self.tree.addTopLevelItem(sit)
                 for chapter in section.chapters:
                     cit = QTreeWidgetItem([chapter.title]); cit.setData(0, Qt.UserRole, ('chapter', chapter.id)); sit.addChild(cit)
                 sit.setExpanded(True)
+
+    def sync_tree_order(self):
+        if not self.book:
+            return
+        section_by_id = {s.id: s for s in self.book.sections}
+        chapter_by_id = {c.id: c for s in self.book.sections for c in s.chapters}
+        # Boeken zonder zichtbare secties blijven één root-sectie houden.
+        if len(self.book.sections) == 1 and self.book.sections[0].id == 'root':
+            ordered=[]
+            for i in range(self.tree.topLevelItemCount()):
+                item=self.tree.topLevelItem(i); data=item.data(0,Qt.UserRole)
+                if data and data[0]=='chapter' and data[1] in chapter_by_id: ordered.append(chapter_by_id[data[1]])
+            self.book.sections[0].chapters=ordered
+        else:
+            new_sections=[]; loose=[]
+            for i in range(self.tree.topLevelItemCount()):
+                item=self.tree.topLevelItem(i); data=item.data(0,Qt.UserRole)
+                if not data: continue
+                if data[0]=='section' and data[1] in section_by_id:
+                    sec=section_by_id[data[1]]; sec.chapters=[]
+                    for j in range(item.childCount()):
+                        cd=item.child(j).data(0,Qt.UserRole)
+                        if cd and cd[0]=='chapter' and cd[1] in chapter_by_id: sec.chapters.append(chapter_by_id[cd[1]])
+                    new_sections.append(sec)
+                elif data[0]=='chapter' and data[1] in chapter_by_id:
+                    loose.append(chapter_by_id[data[1]])
+            if loose:
+                if not new_sections:
+                    from .storage import Section
+                    new_sections=[Section(id='root',title='Manuscript')]
+                new_sections[0].chapters = loose + new_sections[0].chapters
+            self.book.sections=new_sections
+        self.main.library.save_manifest(self.book)
+        self.populate_tree()
+        if self.chapter:
+            self.select_tree_chapter(self.chapter.id)
+
+    def select_tree_chapter(self, cid):
+        root=self.tree.invisibleRootItem()
+        stack=[root]
+        while stack:
+            parent=stack.pop()
+            for i in range(parent.childCount()):
+                item=parent.child(i); data=item.data(0,Qt.UserRole)
+                if data and data[0]=='chapter' and data[1]==cid:
+                    self.tree.setCurrentItem(item); return
+                stack.append(item)
+
+    def load_dictionary_from_settings(self):
+        self.dictionary.clear()
+        if not self.main.settings.value('spell_enabled', True, bool):
+            self.highlighter.rehighlight(); return
+        path=str(self.main.settings.value('spell_dictionary','') or '').strip()
+        if path and Path(path).exists():
+            try: self.dictionary.load_dic(Path(path))
+            except Exception: pass
+        self.highlighter.rehighlight()
+        if hasattr(self,'spell'): self.spell.refresh()
 
     def find_chapter(self, cid):
         for s in self.book.sections:
@@ -886,6 +1079,7 @@ class EditorPage(QWidget):
         self.save(); self.chapter = chapter; self.chapter_title.setText(chapter.title)
         self.editor.blockSignals(True); self.editor.setPlainText(self.main.library.read_chapter(self.book, chapter)); self.editor.blockSignals(False)
         self.dirty = False; self.update_counts()
+        if hasattr(self, 'spell'): self.spell.refresh()
 
     def on_text_changed(self):
         self.dirty = True; self.update_counts()
@@ -949,13 +1143,78 @@ class EditorPage(QWidget):
         self.right.hide()
         self.main.status.clearMessage()
 
-    def do_search(self, q):
-        if not self.book:
-            return
-        rows = self.main.search_index.search(self.book.id, q)
-        if self.search.only_chapter.isChecked() and self.chapter:
-            rows = [row for row in rows if row[0] == self.chapter.id]
-        self.search.show_results(rows)
+    def _chapters_in_scope(self):
+        if not self.book or not self.chapter: return []
+        scope=self.search.scope.currentText()
+        if scope=='Huidig hoofdstuk': return [self.chapter]
+        if scope=='Huidige sectie':
+            section,_=self.find_chapter(self.chapter.id); return list(section.chapters) if section else [self.chapter]
+        return [c for sec in self.book.sections for c in sec.chapters]
+
+    def _search_regex(self):
+        q=self.search.query.text()
+        if not q: return None
+        pattern=re.escape(q)
+        if self.search.whole_word.isChecked(): pattern=r'\b'+pattern+r'\b'
+        flags=0 if self.search.case_sensitive.isChecked() else re.IGNORECASE
+        return re.compile(pattern,flags)
+
+    def collect_search_matches(self):
+        rx=self._search_regex()
+        if not rx: return []
+        rows=[]
+        for ch in self._chapters_in_scope():
+            text=self.editor.toPlainText() if self.chapter and ch.id==self.chapter.id else self.main.library.read_chapter(self.book,ch)
+            for m in rx.finditer(text):
+                a=max(0,m.start()-40); b=min(len(text),m.end()+60); snippet=text[a:b].replace('\n',' ')
+                rows.append((ch.id,ch.title,snippet,m.start(),m.end()-m.start()))
+        return rows
+
+    def do_search(self):
+        self.search.show_results(self.collect_search_matches())
+
+    def open_search_match(self, match):
+        cid,start,length=match
+        if not self.chapter or self.chapter.id!=cid: self.open_chapter_id(cid)
+        cur=self.editor.textCursor(); cur.setPosition(start); cur.setPosition(start+length,QTextCursor.KeepAnchor); self.editor.setTextCursor(cur); self.editor.ensureCursorVisible()
+
+    def search_next(self):
+        rows=self.collect_search_matches()
+        if not rows: return
+        cid=self.chapter.id if self.chapter else None; pos=self.editor.textCursor().selectionEnd()
+        target=None
+        for row in rows:
+            if row[0]==cid and row[3]>=pos: target=row; break
+        if target is None: target=rows[0]
+        self.open_search_match((target[0],target[3],target[4]))
+
+    def replace_current_match(self):
+        q=self.search.query.text()
+        if not q: return
+        cur=self.editor.textCursor()
+        selected=cur.selectedText()
+        good = selected == q if self.search.case_sensitive.isChecked() else selected.casefold()==q.casefold()
+        if not good:
+            self.search_next(); return
+        cur.insertText(self.search.replace.text()); self.do_search()
+
+    def replace_all_matches(self):
+        rows=self.collect_search_matches()
+        if not rows: return
+        if not confirm(self,'Alles vervangen',f'Wil je {len(rows)} voorkomens vervangen?'): return
+        replacement=self.search.replace.text(); rx=self._search_regex()
+        self.save()
+        chapters=self._chapters_in_scope()
+        for ch in chapters:
+            text=self.editor.toPlainText() if self.chapter and ch.id==self.chapter.id else self.main.library.read_chapter(self.book,ch)
+            changed=rx.sub(lambda m: replacement,text)
+            if changed!=text:
+                if self.chapter and ch.id==self.chapter.id:
+                    self.editor.blockSignals(True); self.editor.setPlainText(changed); self.editor.blockSignals(False); self.dirty=True
+                else:
+                    self.main.library.save_chapter(self.book,ch,changed)
+        self.save(); self.main.search_index.rebuild_book(self.book); self.do_search(); self.update_counts(saved=True)
+
 
     def toggle_manuscript(self):
         self.manuscript.setVisible(not self.manuscript.isVisible())
@@ -979,6 +1238,10 @@ class EditorPage(QWidget):
 
     def show_ai(self):
         self._toggle_right_widget(self.ai, self.ai.input)
+
+    def show_spell(self):
+        self.spell.refresh()
+        self._toggle_right_widget(self.spell, self.spell.suggestions)
 
 
 class MainWindow(QMainWindow):
@@ -1022,6 +1285,7 @@ class MainWindow(QMainWindow):
             b=QPushButton(); b.setObjectName('railButton'); b.setIcon(icon(icon_name)); b.setIconSize(QSize(28,28)); b.setFixedSize(48,48); b.setToolTip(tip); b.setCheckable(True); b.clicked.connect(fn); tr.addWidget(b); return b
         self.search_button = trb('search','Zoeken', self.editor_page.show_search)
         self.ai_button = trb('spark','AI-assistent', self.editor_page.show_ai)
+        self.spell_button = trb('spell','Spellingscontrole', self.editor_page.show_spell)
         self.manuscript_button = trb('panel-left','Hoofdstukpaneel tonen/verbergen', self.editor_page.toggle_manuscript)
         self.right_button = trb('panel-right','Rechterpaneel tonen/verbergen', self.editor_page.toggle_right)
         tr.addStretch(); root.addWidget(self.toolrail)
@@ -1151,6 +1415,7 @@ class MainWindow(QMainWindow):
         d=SettingsDialog(self.settings,self,self.models)
         if d.exec():
             QApplication.instance().setStyleSheet(stylesheet(self.settings.value('theme','Helder')))
+            self.editor_page.load_dictionary_from_settings()
             if self.settings.value('workspace') != old_root:
                 QMessageBox.information(self,'Werkmap gewijzigd','De nieuwe werkmap wordt gebruikt nadat de applicatie opnieuw is gestart.')
 
@@ -1160,6 +1425,7 @@ class MainWindow(QMainWindow):
         right_visible = self.editor_page.right.isVisible() and in_editor
         self.search_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.search)
         self.ai_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.ai)
+        self.spell_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.spell)
         self.manuscript_button.setChecked(self.editor_page.manuscript.isVisible() and in_editor)
         self.right_button.setChecked(right_visible)
 

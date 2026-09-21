@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0
+
+- Centrale Nederlandse vertalingen toegevoegd in `quietwriter/locales/nl.json`; gedeelde dialoogknoppen zoals **Ja**, **Nee**, **Opslaan** en **Annuleren** worden daaruit gehaald.
+- Verwijder- en prullenbakbevestigingen gebruiken voortaan dezelfde gelokaliseerde Ja/Nee-dialoog.
+- Zoeken uitgebreid naar **Zoeken en vervangen** met scopes huidig hoofdstuk, huidige sectie en hele boek.
+- Opties voor hoofdlettergevoelig zoeken en alleen hele woorden.
+- Volgende treffer, één treffer vervangen en alles vervangen met bevestiging en aantal treffers.
+- Hoofdstukken kunnen via drag-and-drop worden herschikt en tussen secties worden verplaatst.
+- Eerste spellingscontrole toegevoegd: `.dic`-woordenboek instelbaar, rode onderstreping en rechterpaneel dat fouten stap voor stap doorloopt.
+- Persoonlijk woordenboek en negeren van woorden worden ondersteund.
+- Nieuwe `ROADMAP.md` met benoemde iteraties voor editor, versiegeschiedenis, AI, import/export, bibliotheek, UI/UX en publicatie.
+
 ## 0.5.0
 
 - Windows/Qt-fontwaarschuwing defensief opgelost door een geldige applicatiefontgrootte te forceren.
