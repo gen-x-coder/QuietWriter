@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QSettings, QTimer, QSize
-from PySide6.QtGui import QAction, QFont, QIcon, QTextCursor
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QImageReader, QPainter, QPixmap, QTextCursor
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import APP_NAME
-from .storage import Library
+from .storage import Library, slugify
 from .themes import THEMES, stylesheet
 from .ollama import OllamaClient, ChatWorker
 from .search import BookSearchIndex
@@ -69,22 +69,61 @@ class Splash(QDialog):
         QApplication.processEvents()
 
 
+class BookCover(QWidget):
+    """Boekomslag met foto als achtergrond en dynamische titel als echte UI-tekst."""
+    def __init__(self, library, book, parent=None):
+        super().__init__(parent)
+        self.library = library
+        self.book = book
+        self.setFixedSize(180, 288)  # 1 : 1,6
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        target = self.rect()
+        path = self.library.cover_path(self.book) or self.library.default_cover_path()
+        if path and Path(path).exists():
+            pix = QPixmap(str(path))
+            if not pix.isNull():
+                scaled = pix.scaled(target.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                x = max(0, (scaled.width() - target.width()) // 2)
+                y = max(0, (scaled.height() - target.height()) // 2)
+                painter.drawPixmap((target.width() - scaled.width()) // 2, (target.height() - scaled.height()) // 2, scaled)
+            else:
+                painter.fillRect(target, QColor('#dfe3e7'))
+        else:
+            painter.fillRect(target, QColor('#dfe3e7'))
+            # Abstracte, rustige fallback. Geen titel in het beeldbestand zelf.
+            painter.fillRect(0, 0, target.width(), target.height() // 3, QColor('#c9d2d8'))
+            painter.fillRect(0, target.height() // 3, target.width(), target.height() // 3, QColor('#d6dadd'))
+
+        # De titel blijft echte, dynamische tekst en maakt dus geen deel uit van de omslagafbeelding.
+        band_h = 78
+        painter.fillRect(0, target.height() - band_h, target.width(), band_h, QColor(0, 0, 0, 118))
+        painter.setPen(QColor('white'))
+        font = QFont('Georgia', 14)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(self.rect().adjusted(12, target.height() - band_h + 10, -12, -10),
+                         Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, self.book.title)
+
+
 class BookCard(QFrame):
     opened = __import__('PySide6.QtCore').QtCore.Signal(object)
+    details = __import__('PySide6.QtCore').QtCore.Signal(object)
 
     def __init__(self, library, book, parent=None):
         super().__init__(parent)
         self.library = library
         self.book = book
         self.setObjectName('bookCard')
-        self.setFixedSize(190, 280)
+        self.setFixedSize(198, 372)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(18, 22, 18, 18)
-        cover = QLabel(book.title)
-        cover.setObjectName('bookCoverTitle')
-        cover.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        cover.setWordWrap(True)
-        cover.setMinimumHeight(150)
+        lay.setContentsMargins(8, 8, 8, 10)
+        lay.setSpacing(7)
+        cover = BookCover(library, book)
+        cover.setToolTip(book.title)
+
         words = 0
         for section in book.sections:
             for chapter in section.chapters:
@@ -92,24 +131,24 @@ class BookCard(QFrame):
                     words += len(library.read_chapter(book, chapter).split())
                 except Exception:
                     pass
-        meta = QLabel(f'{words:,}'.replace(',', '.') + ' woorden')
-        meta.setObjectName('muted')
-        modified = datetime.fromtimestamp(book.manifest_path.stat().st_mtime).strftime('%d-%m-%Y') if book.manifest_path.exists() else ''
-        date = QLabel(modified)
-        date.setObjectName('muted')
+        info = QLabel(f"{words:,}".replace(',', '.') + ' woorden')
+        info.setObjectName('muted')
+        info.setAlignment(Qt.AlignCenter)
+        buttons = QHBoxLayout(); buttons.setSpacing(6)
         open_btn = QPushButton('Openen')
+        details_btn = QPushButton('Details')
         open_btn.clicked.connect(lambda: self.opened.emit(self.book))
-        lay.addWidget(cover)
-        lay.addStretch()
-        lay.addWidget(meta)
-        lay.addWidget(date)
-        lay.addSpacing(8)
-        lay.addWidget(open_btn)
+        details_btn.clicked.connect(lambda: self.details.emit(self.book))
+        buttons.addWidget(open_btn); buttons.addWidget(details_btn)
+        lay.addWidget(cover, 0, Qt.AlignHCenter)
+        lay.addWidget(info)
+        lay.addLayout(buttons)
 
 
 class StartPage(QWidget):
     open_book = __import__('PySide6.QtCore').QtCore.Signal(object)
     new_book = __import__('PySide6.QtCore').QtCore.Signal()
+    manage_book = __import__('PySide6.QtCore').QtCore.Signal(object)
 
     def __init__(self, library):
         super().__init__()
@@ -125,16 +164,22 @@ class StartPage(QWidget):
         hl.addStretch(); hl.addWidget(title); hl.addWidget(subtitle); hl.addStretch()
         outer.addWidget(hero)
 
-        controls = QHBoxLayout(); controls.setContentsMargins(42, 16, 42, 12)
+        controls = QHBoxLayout(); controls.setContentsMargins(42, 16, 42, 8)
         self.count = QLabel('0 boeken'); self.count.setObjectName('sectionTitle')
-        self.search = QLineEdit(); self.search.setPlaceholderText('Zoek op titel…'); self.search.setMaximumWidth(360)
+        self.search = QLineEdit(); self.search.setPlaceholderText('Zoek op titel, tag of beschrijving…'); self.search.setMaximumWidth(390)
+        self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh)
         controls.addWidget(self.count); controls.addStretch(); controls.addWidget(self.search)
         outer.addLayout(controls)
+        self.no_results = QLabel('Geen boeken gevonden.')
+        self.no_results.setObjectName('muted')
+        self.no_results.setAlignment(Qt.AlignCenter)
+        self.no_results.hide()
+        outer.addWidget(self.no_results)
 
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
         self.cards_host = QWidget(); self.grid = QGridLayout(self.cards_host)
-        self.grid.setContentsMargins(42, 28, 42, 42); self.grid.setHorizontalSpacing(22); self.grid.setVerticalSpacing(24)
+        self.grid.setContentsMargins(42, 22, 42, 42); self.grid.setHorizontalSpacing(22); self.grid.setVerticalSpacing(26)
         self.grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         scroll.setWidget(self.cards_host); outer.addWidget(scroll, 1)
         self.refresh()
@@ -144,12 +189,29 @@ class StartPage(QWidget):
             item = self.grid.takeAt(0)
             if item.widget(): item.widget().deleteLater()
         books = self.library.list_books()
-        query = self.search.text().strip().lower() if hasattr(self, 'search') else ''
+        total = len(books)
+        query = self.search.text().strip().casefold() if hasattr(self, 'search') else ''
         if query:
-            books = [b for b in books if query in b.title.lower()]
-        self.count.setText(f'{len(books)} boek' if len(books) == 1 else f'{len(books)} boeken')
+            def searchable(book):
+                md = book.metadata or {}
+                return ' '.join([
+                    book.title,
+                    str(md.get('slug','')),
+                    str(md.get('description','')),
+                    str(md.get('meta','')),
+                    str(md.get('intro','')),
+                    str(md.get('tags','')),
+                    str(md.get('author','')),
+                ]).casefold()
+            books = [b for b in books if query in searchable(b)]
+        if query:
+            shown = len(books)
+            self.count.setText(f'{shown} van {total} boek' if total == 1 else f'{shown} van {total} boeken')
+        else:
+            self.count.setText(f'{total} boek' if total == 1 else f'{total} boeken')
+        self.no_results.setVisible(bool(query) and not books)
 
-        create = QFrame(); create.setObjectName('newBookCard'); create.setFixedSize(190, 280)
+        create = QFrame(); create.setObjectName('newBookCard'); create.setFixedSize(198, 372)
         cl = QVBoxLayout(create); cl.setContentsMargins(18, 28, 18, 22)
         plus = QLabel('+'); plus.setObjectName('newBookPlus'); plus.setAlignment(Qt.AlignCenter)
         text = QLabel('Nieuw boek'); text.setObjectName('sectionTitle'); text.setAlignment(Qt.AlignCenter)
@@ -157,7 +219,9 @@ class StartPage(QWidget):
         cl.addStretch(); cl.addWidget(plus); cl.addWidget(text); cl.addStretch(); cl.addWidget(btn)
         self.grid.addWidget(create, 0, 0)
         for i, book in enumerate(books, 1):
-            card = BookCard(self.library, book); card.opened.connect(self.open_book.emit)
+            card = BookCard(self.library, book)
+            card.opened.connect(self.open_book.emit)
+            card.details.connect(self.manage_book.emit)
             self.grid.addWidget(card, i // 5, i % 5)
 
 
@@ -170,10 +234,11 @@ class StoryBrowser(QWidget):
         left = QFrame(); left.setObjectName('panel'); left.setFixedWidth(330)
         ll = QVBoxLayout(left); ll.setContentsMargins(20,24,20,20)
         title = QLabel('Verhalen'); title.setObjectName('title')
-        self.search = QLineEdit(); self.search.setPlaceholderText('Zoek titel, tag of tekst…')
+        self.search = QLineEdit(); self.search.setPlaceholderText('Zoek titel, tag of tekst…'); self.search.setClearButtonEnabled(True)
         self.list = QListWidget(); self.list.itemClicked.connect(self._open_item)
+        self.empty = QLabel('Geen verhalen gevonden.'); self.empty.setObjectName('muted'); self.empty.setAlignment(Qt.AlignCenter); self.empty.hide()
         self.search.textChanged.connect(self.filter_list)
-        ll.addWidget(title); ll.addWidget(self.search); ll.addSpacing(8); ll.addWidget(self.list)
+        ll.addWidget(title); ll.addWidget(self.search); ll.addSpacing(8); ll.addWidget(self.empty); ll.addWidget(self.list)
 
         right = QWidget(); rl = QVBoxLayout(right); rl.setContentsMargins(42,30,42,30)
         self.story_title = QLabel('Kies een verhaal'); self.story_title.setObjectName('title')
@@ -199,6 +264,8 @@ class StoryBrowser(QWidget):
             if details: item.setToolTip(details)
             item.setData(Qt.UserRole, row['path'])
             self.list.addItem(item)
+        self.empty.setVisible(bool(q) and not rows)
+        self.list.setVisible(bool(rows) or not q)
 
     def _open_item(self, item):
         try:
@@ -209,6 +276,7 @@ class StoryBrowser(QWidget):
         self.story_title.setText(d.get('title') or Path(d['path']).stem)
         bits = []
         if d.get('description'): bits.append(d['description'])
+        if d.get('intro'): bits.append('Intro: ' + d['intro'])
         if d.get('tags'): bits.append('Tags: ' + d['tags'])
         self.meta.setText('\n\n'.join(bits))
         chapters = d.get('chapters', [])
@@ -227,6 +295,156 @@ class StoryBrowser(QWidget):
         if not chapters: self.reader.clear(); return
         idx = max(0, min(idx, len(chapters)-1))
         self.reader.setPlainText(chapters[idx]['text'])
+
+
+class BookDetailsDialog(QDialog):
+    deleted = __import__('PySide6.QtCore').QtCore.Signal(object)
+
+    def __init__(self, library, settings, book, parent=None):
+        super().__init__(parent)
+        self.library = library
+        self.settings = settings
+        self.book = book
+        self.old_slug = book.slug
+        self.pending_cover = None
+        self.setWindowTitle('Boekdetails')
+        self.resize(720, 690)
+        root = QVBoxLayout(self)
+        title = QLabel('Boekdetails'); title.setObjectName('title')
+        intro = QLabel('Deze gegevens horen bij het boek en kunnen later bij export naar Markdown als metadata worden gebruikt.')
+        intro.setObjectName('muted'); intro.setWordWrap(True)
+        root.addWidget(title); root.addWidget(intro); root.addSpacing(8)
+
+        form = QFormLayout()
+        self.title_edit = QLineEdit(book.title)
+        self.slug_edit = QLineEdit(book.slug)
+        slug_box = QWidget(); sh = QHBoxLayout(slug_box); sh.setContentsMargins(0,0,0,0)
+        make_slug = QPushButton('Van titel')
+        make_slug.clicked.connect(lambda: self.slug_edit.setText(slugify(self.title_edit.text())))
+        sh.addWidget(self.slug_edit); sh.addWidget(make_slug)
+        md = book.metadata or {}
+        self.description = QTextEdit(md.get('description','')); self.description.setMaximumHeight(82)
+        self.meta = QTextEdit(md.get('meta','')); self.meta.setMaximumHeight(82)
+        self.intro_text = QTextEdit(md.get('intro','')); self.intro_text.setMaximumHeight(100)
+        self.tags = QLineEdit(md.get('tags',''))
+        self.author = QLineEdit(md.get('author',''))
+        form.addRow('Titel', self.title_edit)
+        form.addRow('Slug', slug_box)
+        form.addRow('Korte beschrijving', self.description)
+        form.addRow('Meta / SEO-beschrijving', self.meta)
+        form.addRow('Intro boven het verhaal', self.intro_text)
+        form.addRow('Tags', self.tags)
+        form.addRow('Auteur', self.author)
+        root.addLayout(form)
+
+        cover_box = QFrame(); cover_box.setObjectName('panel')
+        cb = QHBoxLayout(cover_box); cb.setContentsMargins(12,12,12,12)
+        self.cover_preview = QLabel(); self.cover_preview.setFixedSize(100,160); self.cover_preview.setAlignment(Qt.AlignCenter)
+        cover_right = QVBoxLayout()
+        self.cover_name = QLabel(''); self.cover_name.setObjectName('muted'); self.cover_name.setWordWrap(True)
+        choose = QPushButton('Omslag kiezen…'); choose.clicked.connect(self.choose_cover)
+        self.header_path = QLabel(''); self.header_path.setObjectName('muted'); self.header_path.setWordWrap(True)
+        cover_right.addWidget(QLabel('Boekomslag · verhouding 1:1,6 · lange zijde minimaal 1024 px'))
+        cover_right.addWidget(self.cover_name); cover_right.addWidget(choose,0,Qt.AlignLeft); cover_right.addWidget(self.header_path); cover_right.addStretch()
+        cb.addWidget(self.cover_preview); cb.addLayout(cover_right,1)
+        root.addWidget(cover_box)
+        self.slug_edit.textChanged.connect(self._update_header_path)
+        self._refresh_cover_preview()
+        self._update_header_path()
+
+        actions = QHBoxLayout()
+        delete = QPushButton('Boek verwijderen'); delete.setObjectName('dangerButton'); delete.clicked.connect(self.delete_book)
+        actions.addWidget(delete); actions.addStretch()
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Save).setText('Opslaan')
+        buttons.button(QDialogButtonBox.Cancel).setText('Annuleren')
+        buttons.accepted.connect(self.save); buttons.rejected.connect(self.reject)
+        actions.addWidget(buttons); root.addLayout(actions)
+
+    def _cover_candidate(self):
+        return self.pending_cover or self.library.cover_path(self.book) or self.library.default_cover_path()
+
+    def _refresh_cover_preview(self):
+        path = self._cover_candidate()
+        self.cover_name.setText(str(path) if path else 'Geen omslag gevonden; QuietWriter gebruikt de ingebouwde rustige standaardweergave.')
+        if path and Path(path).exists():
+            pix = QPixmap(str(path))
+            self.cover_preview.setPixmap(pix.scaled(self.cover_preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            self.cover_preview.clear(); self.cover_preview.setText('Geen\nomslag')
+
+    def _update_header_path(self):
+        template = self.settings.value('cover_header_template', '/{slug}.jpg')
+        slug = self.slug_edit.text().strip() or 'boek'
+        try:
+            path = str(template).format(slug=slug, ext='jpg')
+        except Exception:
+            path = f'/{slug}.jpg'
+        self.header_path.setText(f'Afbeeldingspad in metadata: {path}')
+
+    def choose_cover(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Kies boekomslag', str(self.library.covers_dir), 'Afbeeldingen (*.jpg *.jpeg *.png *.webp)')
+        if not path: return
+        reader = QImageReader(path)
+        size = reader.size()
+        if not size.isValid():
+            QMessageBox.warning(self, 'Boekomslag', 'Deze afbeelding kon niet worden gelezen.'); return
+        w, h = size.width(), size.height()
+        ratio = w / h if h else 0
+        if h < 1024:
+            QMessageBox.warning(self, 'Boekomslag', f'De lange zijde is {h}px. Gebruik minimaal 1024px.'); return
+        if abs(ratio - (1/1.6)) > 0.035:
+            QMessageBox.warning(self, 'Boekomslag', f'De verhouding is {w}:{h}. Gebruik ongeveer 1:1,6 (bijvoorbeeld 1024×1638).'); return
+        self.pending_cover = Path(path)
+        self._refresh_cover_preview()
+
+    def save(self):
+        title = self.title_edit.text().strip()
+        slug = self.slug_edit.text().strip()
+        if not title:
+            QMessageBox.warning(self, 'Boekdetails', 'Geef het boek een titel.'); return
+        if not slug:
+            slug = slugify(title)
+        # slug normaliseren zodat bestandsnamen en metadata voorspelbaar blijven.
+        slug = slugify(slug)
+        self.slug_edit.setText(slug)
+        self.book.title = title
+        template = self.settings.value('cover_header_template', '/{slug}.jpg')
+        try:
+            image_ref = str(template).format(slug=slug, ext='jpg')
+        except Exception:
+            image_ref = f'/{slug}.jpg'
+        self.book.metadata.update({
+            'slug': slug,
+            'description': self.description.toPlainText().strip(),
+            'meta': self.meta.toPlainText().strip(),
+            'intro': self.intro_text.toPlainText().strip(),
+            'tags': self.tags.text().strip(),
+            'author': self.author.text().strip(),
+            'image': image_ref,
+        })
+        try:
+            self.library.rename_cover_for_slug(self.book, self.old_slug, slug)
+            if self.pending_cover:
+                self.library.set_cover(self.book, self.pending_cover)
+            self.library.save_manifest(self.book)
+        except Exception as e:
+            QMessageBox.warning(self, 'Boekdetails', f'Opslaan mislukt:\n{e}'); return
+        self.accept()
+
+    def delete_book(self):
+        answer = QMessageBox.warning(
+            self, 'Boek verwijderen',
+            f'Wil je “{self.book.title}” echt verwijderen?\n\nDit verwijdert het boek en alle hoofdstukken uit de boekenmap. Deze actie kan niet ongedaan worden gemaakt.',
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            self.library.delete_book(self.book)
+        except Exception as e:
+            QMessageBox.critical(self, 'Boek verwijderen', str(e)); return
+        self.deleted.emit(self.book)
+        self.done(2)
 
 
 class PersonaPage(QWidget):
@@ -288,6 +506,8 @@ class SettingsDialog(QDialog):
         refresh.clicked.connect(self.refresh_models)
         modelbox = QWidget(); mh = QHBoxLayout(modelbox); mh.setContentsMargins(0,0,0,0); mh.addWidget(self.model); mh.addWidget(refresh)
         self.fast_model = QComboBox(); self.fast_model.setEditable(True)
+        self.cover_template = QLineEdit(settings.value('cover_header_template', '/{slug}.jpg'))
+        self.cover_template.setPlaceholderText('/{slug}.jpg')
         form.addRow('Programmataal', self.language)
         form.addRow('Kleurenschema', self.theme)
         form.addRow('Automatisch opslaan', self.autosave)
@@ -295,8 +515,9 @@ class SettingsDialog(QDialog):
         form.addRow('Ollama-adres', self.ollama)
         form.addRow('Schrijf- en analysemodel', modelbox)
         form.addRow('Snel achtergrondmodel', self.fast_model)
+        form.addRow('Afbeeldingspad in metadata', self.cover_template)
         root.addLayout(form)
-        note = QLabel('OpenRouter is voorbereid in de architectuur, maar nog niet actief in deze versie.')
+        note = QLabel('Voor afbeeldingspaden kun je {slug} gebruiken, bijvoorbeeld /{slug}.jpg of /images/{slug}.jpg. QuietWriter kent geen websiteadres; alleen dit relatieve pad wordt bewaard.\n\nOpenRouter is voorbereid in de architectuur, maar nog niet actief in deze versie.')
         note.setObjectName('muted'); note.setWordWrap(True); root.addWidget(note)
         self._populate_models(self.available_models)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -358,6 +579,7 @@ class SettingsDialog(QDialog):
         self.settings.setValue('ollama_url', self.ollama.text())
         self.settings.setValue('ollama_model', self.model.currentText())
         self.settings.setValue('fast_model', self.fast_model.currentText())
+        self.settings.setValue('cover_header_template', self.cover_template.text().strip() or '/{slug}.jpg')
         super().accept()
 
 
@@ -367,14 +589,18 @@ class SearchPanel(QWidget):
         super().__init__()
         lay = QVBoxLayout(self); lay.setContentsMargins(18,18,18,18)
         lab = QLabel('Zoeken'); lab.setObjectName('sectionTitle')
-        self.query = QLineEdit(); self.query.setPlaceholderText('Zoek in dit boek…')
+        self.query = QLineEdit(); self.query.setPlaceholderText('Zoek in dit boek…'); self.query.setClearButtonEnabled(True)
         self.only_chapter = QCheckBox('Alleen huidig hoofdstuk')
+        self.empty = QLabel('Geen resultaten gevonden.'); self.empty.setObjectName('muted'); self.empty.setAlignment(Qt.AlignCenter); self.empty.hide()
         self.results = QListWidget()
         self.results.itemActivated.connect(lambda i: self.open_chapter.emit(i.data(Qt.UserRole)))
-        lay.addWidget(lab); lay.addWidget(self.query); lay.addWidget(self.only_chapter); lay.addWidget(self.results)
+        lay.addWidget(lab); lay.addWidget(self.query); lay.addWidget(self.only_chapter); lay.addWidget(self.empty); lay.addWidget(self.results)
 
     def show_results(self, rows):
         self.results.clear()
+        active = bool(self.query.text().strip())
+        self.empty.setVisible(active and not rows)
+        self.results.setVisible(bool(rows) or not active)
         for cid, title, snippet in rows:
             item = QListWidgetItem(f'{title}\n{snippet}')
             item.setData(Qt.UserRole, cid)
@@ -682,6 +908,7 @@ class MainWindow(QMainWindow):
         self.rail_layout.addSpacing(8)
         self.bookshelf_button = self._nav_button('shelf', 'Boekenplank', self.go_home)
         self.write_button = self._nav_button('books', 'Manuscript', self.show_editor)
+        self.book_details_button = self._nav_button('edit', 'Boekdetails', self.open_current_book_details, checkable=False)
         self.stories_button = self._nav_button('stories', 'Verhalen', self.show_stories)
         self.persona_button = self._nav_button('persona', 'Schrijverspersona', self.show_persona)
         self.rail_layout.addStretch()
@@ -698,7 +925,7 @@ class MainWindow(QMainWindow):
         self.right_button = trb('panel-right','Rechterpaneel tonen/verbergen', self.editor_page.toggle_right)
         tr.addStretch(); root.addWidget(self.toolrail)
 
-        self.start.open_book.connect(self.open_book); self.start.new_book.connect(self.new_book)
+        self.start.open_book.connect(self.open_book); self.start.new_book.connect(self.new_book); self.start.manage_book.connect(self.manage_book)
         self.restore_state(); self._apply_nav_width()
         self.stack.currentChanged.connect(self._mode_changed); self._mode_changed(0)
 
@@ -736,6 +963,7 @@ class MainWindow(QMainWindow):
         in_editor = self.stack.currentWidget() is self.editor_page
         self.toolrail.setVisible(in_editor)
         self.write_button.setVisible(self.editor_page.book is not None)
+        self.book_details_button.setVisible(self.editor_page.book is not None)
         self._sync_nav_selection()
         self.sync_tool_buttons()
 
@@ -765,6 +993,7 @@ class MainWindow(QMainWindow):
         self.start.refresh()
         self.stack.setCurrentWidget(self.start)
         self.write_button.setVisible(False)
+        self.book_details_button.setVisible(False)
         self._sync_nav_selection()
 
     def new_book(self):
@@ -775,8 +1004,28 @@ class MainWindow(QMainWindow):
     def open_book(self, book):
         self.editor_page.load_book(book)
         self.write_button.setVisible(True)
+        self.book_details_button.setVisible(True)
         self.stack.setCurrentWidget(self.editor_page)
         self._sync_nav_selection()
+
+    def open_current_book_details(self):
+        if self.editor_page.book:
+            self.manage_book(self.editor_page.book)
+        else:
+            self.go_home()
+
+    def manage_book(self, book):
+        d = BookDetailsDialog(self.library, self.settings, book, self)
+        result = d.exec()
+        # Bij verwijderen is het boek mogelijk ook in de editor geladen.
+        if result == 2 and self.editor_page.book and self.editor_page.book.id == book.id:
+            self.editor_page.close_book()
+            self.write_button.setVisible(False)
+            self.book_details_button.setVisible(False)
+        self.start.refresh()
+        if result == QDialog.Accepted and self.editor_page.book and self.editor_page.book.id == book.id:
+            # Houd titelwijzigingen ook direct zichtbaar wanneer hetzelfde boek nog open staat.
+            self.editor_page.book_title_label.setText(book.title)
 
     def open_settings(self):
         old_root = self.settings.value('workspace', str(Path.home()/APP_NAME))
