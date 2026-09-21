@@ -1,17 +1,23 @@
-# Wijzigingen
+# Changelog
+
+## 0.3.0
+
+- Nieuwe boekenplank als echt startscherm met boekkaarten, zoekveld en woordtelling.
+- Linkernavigatie is contextgevoelig: Boekenplank sluit een geopend boek; Manuscript blijft beschikbaar zolang het boek geladen is.
+- Hamburgerknop klapt de linkernavigatie uit en toont beschrijvende teksten; de stand wordt onthouden.
+- Nieuwe Verhalen-weergave voor Markdown-bestanden in `stories/`.
+- Verhalenmetadata (`title`, `description`, `synopsis`, `meta`, `intro`, `tags` en overige velden) wordt gelezen uit frontmatter.
+- Top-level Markdownkoppen (`# Hoofdstuktitel`) worden in oude verhalen als hoofdstukken herkend.
+- Verhalen kunnen op titel, tags en inhoud worden gezocht en als rustige leesweergave worden geopend.
+- De editor heeft nu een sobere bovenbalk met undo/redo en de boektitel.
+- Rechter gereedschapsbalk blijft alleen bij het manuscript zichtbaar en gebruikt grotere iconen.
+- Meegeleverde, opgeschoonde `schrijver.md` op basis van de oude schrijfwijzer; vanuit Persona kan deze geladen worden.
+- Schrijfwijzer is compacter gemaakt voor AI-context en nadrukkelijk ingericht als stijlprofiel in plaats van lange voorbeeldverzameling.
+- Interfacestijlen verfijnd voor boekenplank, navigatie, kaarten, editor en verhalenlezer.
 
 ## 0.2.0
 
-- Rustige SVG-iconen en grotere knoppen in beide gereedschapsbalken.
-- Boeken kunnen nu echt worden gesloten via de boekenknop; het editorobject wordt leeggemaakt.
-- Zoek- en AI-knop klappen het rechterpaneel open en bij een tweede klik weer dicht.
-- Zichtbaarheid van manuscript- en rechterpaneel wordt onthouden.
-- Nederlandse knoppen `Opslaan` en `Annuleren` in Instellingen.
-- Ollama-modellen worden bij het openen van Instellingen direct gevuld vanuit de opstartcontrole.
-- Als geen snel model is gekozen, wordt bij de opstart het kleinste lokaal geïnstalleerde model geselecteerd.
-- AI toont tijdens generatie een geanimeerde `Denken...`-indicator.
-- Denkoutput van Ollama (`thinking` of `<think>...</think>`) kan tijdens het denken tijdelijk worden uitgeklapt en verdwijnt zodra het definitieve antwoord begint.
-- Schrijfruimte gebruikt een smallere, gecentreerde tekstkolom en Georgia als rustig serif-lettertype.
-- Hoofdstuktitel staat gecentreerd.
-- Zoekpaneel heeft nu `Alleen huidig hoofdstuk`; standaard wordt het hele boek doorzocht.
-- Thema-preview wordt bij Annuleren teruggezet naar het oorspronkelijke thema.
+- Inklapbare manuscript- en rechterpanelen.
+- Grotere SVG-iconen.
+- AI-denkindicator en streaming think-output.
+- Verbeterde manuscripttypografie en Ollama-modelkeuze.
