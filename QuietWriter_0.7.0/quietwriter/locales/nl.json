@@ -19,5 +19,9 @@
   "spell.change": "Wijzigen",
   "spell.ignore": "Negeren",
   "spell.ignore_all": "Alles negeren",
-  "spell.add": "Toevoegen aan woordenboek"
+  "spell.add": "Toevoegen aan woordenboek",
+  "spell.ignore_always": "Altijd negeren",
+  "settings.title": "Instellingen",
+  "common.rename": "Hernoemen",
+  "common.duplicate": "Dupliceren"
 }
