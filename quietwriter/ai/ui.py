@@ -1,14 +1,15 @@
 from __future__ import annotations
 import html
 from PySide6.QtCore import QThread, Signal, Qt, QTimer
-from PySide6.QtGui import QTextCursor, QTextDocument, QIcon
+from PySide6.QtGui import QTextCursor, QTextDocument, QIcon, QPalette
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
-    QTextEdit, QTextBrowser, QMessageBox
+    QTextEdit, QTextBrowser, QMessageBox, QApplication
 )
 from .providers import ProviderFactory
 from .context import ContextBuilder
 from .conversations import ConversationStore
+from ..themes import THEMES
 
 
 class ProviderChatWorker(QThread):
@@ -102,14 +103,15 @@ class AIPanel(QWidget):
         self.thinking_details = QTextEdit(); self.thinking_details.setReadOnly(True); self.thinking_details.setMaximumHeight(130); self.thinking_details.setObjectName('thinkingDetails'); self.thinking_details.hide()
         lay.addWidget(self.thinking_button, 0, Qt.AlignLeft); lay.addWidget(self.thinking_details)
 
-        self.chat = QTextBrowser(); self.chat.setOpenExternalLinks(True)
-        self.input = QTextEdit(); self.input.setMaximumHeight(120); self.input.setPlaceholderText('Typ een opdracht…')
-        self.action_button = QPushButton()
+        self.chat = QTextBrowser(); self.chat.setObjectName('aiChat'); self.chat.setOpenExternalLinks(True)
+        self.input = QTextEdit(); self.input.setObjectName('aiInput'); self.input.setMaximumHeight(108); self.input.setPlaceholderText('Stel een vraag over je tekst…')
+        self.action_button = QPushButton(); self.action_button.setObjectName('aiActionButton')
         self.action_button.setFixedSize(38, 38)
         self.action_button.clicked.connect(self._action_clicked)
         self._set_action_state(False)
-        button_row=QHBoxLayout(); button_row.addStretch(); button_row.addWidget(self.action_button)
-        lay.addWidget(self.chat, 1); lay.addWidget(self.input); lay.addLayout(button_row)
+        compose = QHBoxLayout(); compose.setContentsMargins(0,0,0,0); compose.setSpacing(8)
+        compose.addWidget(self.input, 1); compose.addWidget(self.action_button, 0, Qt.AlignBottom)
+        lay.addWidget(self.chat, 1); lay.addLayout(compose)
 
     def is_busy(self) -> bool:
         return bool(self.worker and self.worker.isRunning())
@@ -282,14 +284,32 @@ class AIPanel(QWidget):
         self._update_busy_buttons()
 
     def _render_chat(self, streaming_placeholder=False):
+        theme = THEMES.get(str(self.main.settings.value('theme','Helder')), THEMES['Helder'])
+        user_bg = theme['accent_soft']
+        ai_bg = theme['panel2']
+        text = theme['text']
+        muted = theme['muted']
         blocks=[]
         for msg in self.messages:
             role = msg.get('role'); content = msg.get('content','')
             if role == 'user':
-                body = html.escape(content).replace('\n','<br>'); blocks.append(f'<p><b>Jij</b><br>{body}</p>')
+                body = html.escape(content).replace('\n','<br>')
+                blocks.append(
+                    f'<div align="right"><table width="86%" cellspacing="0" cellpadding="10" bgcolor="{user_bg}">'
+                    f'<tr><td><font color="{muted}" size="2"><b>JIJ</b></font><br><font color="{text}">{body}</font></td></tr></table></div><br>'
+                )
             else:
-                blocks.append(f'<p><b>AI</b></p>{markdown_to_html(content)}')
+                body = markdown_to_html(content)
+                blocks.append(
+                    f'<div align="left"><table width="96%" cellspacing="0" cellpadding="10" bgcolor="{ai_bg}">'
+                    f'<tr><td><font color="{muted}" size="2"><b>QUIETWRITER</b></font><br>{body}</td></tr></table></div><br>'
+                )
         if streaming_placeholder and self.current_assistant:
-            blocks.append('<p><b>AI</b></p>' + markdown_to_html(self.current_assistant))
-        self.chat.setHtml('<html><body>' + '<hr>'.join(blocks) + '</body></html>')
+            body = markdown_to_html(self.current_assistant)
+            blocks.append(
+                f'<div align="left"><table width="96%" cellspacing="0" cellpadding="10" bgcolor="{ai_bg}">'
+                f'<tr><td><font color="{muted}" size="2"><b>QUIETWRITER</b></font><br>{body}</td></tr></table></div><br>'
+            )
+        self.chat.setHtml('<html><body style="margin:4px;">' + ''.join(blocks) + '</body></html>')
         cur=self.chat.textCursor(); cur.movePosition(QTextCursor.End); self.chat.setTextCursor(cur)
+

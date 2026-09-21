@@ -11,9 +11,12 @@ CHAPTER_RE = re.compile(r'^#\s+(.+?)\s*$')
 META_RE = re.compile(r'^([A-Za-z_][\w-]*):\s*(.*)$')
 
 CORE_EXPORT_ORDER = [
-    'title', 'date', 'slug', 'description', 'meta', 'intro', 'synopsis',
-    'author', 'tags', 'image', 'published'
+    'title', 'date', 'slug', 'description', 'intro', 'meta',
+    'image', 'image_alt', 'author', 'tags', 'published', 'synopsis'
 ]
+# Canonieke frontmattervelden die QuietWriter bij iedere export opneemt.
+# Lege waarden worden bewust behouden zodat de export een stabiel schema heeft.
+ALWAYS_EXPORT_FIELDS = set(CORE_EXPORT_ORDER)
 INTERNAL_METADATA = {
     'last_used', 'cover_file', 'source_file', 'extra'
 }
@@ -133,9 +136,10 @@ def render_frontmatter(book: Book, image_ref: str = '') -> str:
     emitted = set()
     for key in CORE_EXPORT_ORDER:
         value = _clean_scalar(md.get(key, ''))
-        if value:
-            rows.append(f'{key}: {value}')
-            emitted.add(key)
+        # Canonieke velden worden altijd geschreven, ook als ze leeg zijn.
+        # Daardoor is iedere export voorspelbaar en direct bruikbaar als sjabloon.
+        rows.append(f'{key}: {value}')
+        emitted.add(key)
     # Preserve imported unknown fields, then other harmless metadata fields.
     for source in (extra, md):
         for key, value in source.items():

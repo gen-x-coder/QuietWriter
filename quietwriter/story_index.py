@@ -4,7 +4,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-CORE_FIELDS = {'title', 'description', 'synopsis', 'tags', 'date', 'slug', 'meta', 'intro', 'author', 'published', 'image', 'cover', 'featured_image'}
+CORE_FIELDS = {'title', 'date', 'slug', 'description', 'intro', 'meta', 'image', 'image_alt', 'author', 'tags', 'published', 'synopsis', 'cover', 'featured_image'}
 
 
 def _split_tags(value: str) -> list[str]:

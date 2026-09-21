@@ -158,11 +158,16 @@ class Library:
             path=folder,
             metadata={
                 'slug': slugify(clean_title),
+                'date': datetime.now().isoformat(timespec='minutes'),
                 'description': '',
-                'meta': '',
                 'intro': '',
-                'tags': '',
+                'meta': '',
+                'image': '',
+                'image_alt': '',
                 'author': '',
+                'tags': '',
+                'published': 'No',
+                'synopsis': '',
                 'cover_file': '',
                 'last_used': datetime.now().timestamp(),
             },
@@ -182,11 +187,16 @@ class Library:
             sections.append(Section(id=s['id'], title=s['title'], chapters=chapters))
         metadata = dict(data.get('metadata') or {})
         metadata.setdefault('slug', slugify(data.get('title', 'boek')))
+        metadata.setdefault('date', '')
         metadata.setdefault('description', '')
-        metadata.setdefault('meta', '')
         metadata.setdefault('intro', '')
-        metadata.setdefault('tags', '')
+        metadata.setdefault('meta', '')
+        metadata.setdefault('image', '')
+        metadata.setdefault('image_alt', '')
         metadata.setdefault('author', '')
+        metadata.setdefault('tags', '')
+        metadata.setdefault('published', 'No')
+        metadata.setdefault('synopsis', '')
         metadata.setdefault('cover_file', '')
         metadata.setdefault('last_used', 0)
         return Book(id=data['id'], title=data['title'], path=Path(folder), sections=sections, metadata=metadata)
@@ -549,7 +559,7 @@ class Library:
                     p.unlink()
         book.sections = []
         imported_md = dict(data.get('metadata') or {})
-        known = {'slug','description','meta','intro','synopsis','tags','author','image','cover','featured_image','date','published'}
+        known = {'slug','date','description','intro','meta','image','image_alt','author','tags','published','synopsis','cover','featured_image'}
         md = book.metadata
         for key in known:
             if imported_md.get(key) not in (None, ''):

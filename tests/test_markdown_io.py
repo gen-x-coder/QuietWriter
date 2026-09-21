@@ -15,9 +15,16 @@ class MarkdownRoundTripTests(unittest.TestCase):
                 '---\n'
                 'title: Mijn verhaal\n'
                 'slug: mijn-verhaal\n'
+                'date: 2025-11-11T12:10\n'
                 'description: Kort voor de homepage\n'
                 'intro: Intro boven het verhaal\n'
+                'meta: Meta tekst\n'
+                'image: /images/mijn-verhaal.jpg\n'
+                'image_alt: Beschrijving van de afbeelding\n'
+                'author: Gemini\n'
                 'tags: boerderij, familie\n'
+                'published: No\n'
+                'synopsis: Uitgebreidere synopsis\n'
                 'customfield: behouden\n'
                 '---\n\n'
                 '<!-- quietwriter-section: Eerste deel -->\n\n'
@@ -39,10 +46,43 @@ class MarkdownRoundTripTests(unittest.TestCase):
             lib.export_markdown_book(book, exported, image_ref='/images/mijn-verhaal.jpg')
             parsed = parse_markdown_book(exported)
             self.assertEqual(parsed['metadata']['image'], '/images/mijn-verhaal.jpg')
+            self.assertEqual(parsed['metadata']['image_alt'], 'Beschrijving van de afbeelding')
+            self.assertEqual(parsed['metadata']['date'], '2025-11-11T12:10')
+            self.assertEqual(parsed['metadata']['published'], 'No')
+            self.assertEqual(parsed['metadata']['synopsis'], 'Uitgebreidere synopsis')
             self.assertEqual(parsed['metadata']['customfield'], 'behouden')
             self.assertEqual([x[0] for x in parsed['sections']], ['Eerste deel', 'Tweede deel'])
             self.assertEqual(parsed['sections'][0][1][0]['title'], 'Begin')
             self.assertIn('***', parsed['sections'][0][1][0]['text'])
+
+    def test_export_emits_complete_canonical_frontmatter_even_when_empty(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            lib = Library(root / 'workspace')
+            book = lib.create_book('Een nieuw begin van ons')
+            book.metadata.update({
+                'description': 'Korte beschrijving',
+                'intro': 'Intro tekst',
+                'meta': 'Meta tekst',
+                'author': 'Gemini',
+                'tags': 'romantisch, teder',
+                'image_alt': '',
+                'synopsis': '',
+                'published': 'No',
+            })
+            lib.save_manifest(book)
+            exported = root / 'uit.md'
+            lib.export_markdown_book(book, exported, image_ref='')
+            text = exported.read_text(encoding='utf-8')
+            expected = [
+                'title:', 'date:', 'slug:', 'description:', 'intro:', 'meta:',
+                'image:', 'image_alt:', 'author:', 'tags:', 'published:', 'synopsis:'
+            ]
+            for key in expected:
+                self.assertIn('\n' + key, '\n' + text)
+            self.assertIn('\nimage: \n', '\n' + text)
+            self.assertIn('\nimage_alt: \n', '\n' + text)
+
 
     def test_single_chapter_without_heading_imports_without_loss(self):
         with tempfile.TemporaryDirectory() as td:

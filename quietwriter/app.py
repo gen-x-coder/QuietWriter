@@ -6,18 +6,18 @@ from pathlib import Path
 from datetime import datetime, date
 import copy
 
-from PySide6.QtCore import Qt, QSettings, QTimer, QSize, Signal, QMimeData, QUrl
-from PySide6.QtGui import QAction, QColor, QFont, QFontDatabase, QIcon, QImageReader, QPainter, QPixmap, QTextCursor, QPen, QDrag, QDesktopServices
+from PySide6.QtCore import Qt, QSettings, QTimer, QSize, Signal, QMimeData, QUrl, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
+from PySide6.QtGui import QAction, QColor, QFont, QFontDatabase, QIcon, QImageReader, QPainter, QPixmap, QTextCursor, QPen, QDrag, QDesktopServices, QPalette, QTextBlockFormat, QTextCharFormat
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMainWindow, QMessageBox, QPushButton, QScrollArea, QSplitter, QStackedWidget, QStatusBar,
-    QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QAbstractItemView, QHeaderView, QMenu, QTabWidget
+    QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QAbstractItemView, QHeaderView, QMenu, QTabWidget, QGraphicsDropShadowEffect
 )
 
 from . import APP_NAME
 from .storage import Library, slugify
-from .themes import THEMES, stylesheet
+from .themes import THEMES, stylesheet, resolved_editor_font
 from .ollama import OllamaClient
 from .ai.ui import AIPanel
 from .ai.providers import ProviderFactory
@@ -51,13 +51,22 @@ def confirm(parent, title: str, text: str, default_no: bool = True) -> bool:
 
 
 class ManuscriptEditor(QTextEdit):
-    """Rustige schrijfruimte met een begrensde tekstkolom zoals in boekeditors."""
+    """Rustige schrijfruimte met begrensde tekstkolom en lichte scene-break styling."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.max_text_width = 760
         self.setAcceptRichText(False)
-        self.document().setDefaultFont(QFont('Georgia', 14))
+        self._formatting_scene_breaks = False
+        preferred = QSettings('QuietWriter', 'QuietWriter').value('editor_font', 'Merriweather')
+        self.set_editor_font(str(preferred or 'Merriweather'))
         self._update_margins()
+
+    def set_editor_font(self, preferred: str):
+        family = resolved_editor_font(preferred)
+        font = QFont(family, 14)
+        font.setWeight(QFont.Weight.Light)
+        self.document().setDefaultFont(font)
+        self.viewport().update()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -65,7 +74,60 @@ class ManuscriptEditor(QTextEdit):
 
     def _update_margins(self):
         side = max(42, (max(0, self.width()) - self.max_text_width) // 2)
-        self.setViewportMargins(side, 28, side, 36)
+        self.setViewportMargins(side, 30, side, 42)
+
+    def apply_scene_break_formatting(self):
+        """Render regels die exact *** bevatten als rustige gecentreerde scene break.
+
+        De bron blijft platte Markdown; alleen de QTextDocument-opmaak verandert.
+        """
+        if self._formatting_scene_breaks:
+            return
+        self._formatting_scene_breaks = True
+        signals_were_blocked = self.signalsBlocked()
+        self.blockSignals(True)
+        old_cursor = self.textCursor()
+        old_pos, old_anchor = old_cursor.position(), old_cursor.anchor()
+        try:
+            block = self.document().begin()
+            theme = THEMES.get(str(QSettings('QuietWriter','QuietWriter').value('theme','Helder')), THEMES['Helder'])
+            muted = QColor(theme['muted'])
+            while block.isValid():
+                cur = QTextCursor(block)
+                fmt = block.blockFormat()
+                is_break = block.text().strip() == '***'
+                was_centered = fmt.alignment() == Qt.AlignCenter
+                if is_break:
+                    if not was_centered or fmt.topMargin() != 14 or fmt.bottomMargin() != 14:
+                        fmt.setAlignment(Qt.AlignCenter)
+                        fmt.setTopMargin(14)
+                        fmt.setBottomMargin(14)
+                        cur.setBlockFormat(fmt)
+                    cur.select(QTextCursor.BlockUnderCursor)
+                    charfmt = QTextCharFormat()
+                    charfmt.setForeground(muted)
+                    charfmt.setFontLetterSpacing(160)
+                    charfmt.setFontWeight(QFont.Weight.DemiBold)
+                    cur.mergeCharFormat(charfmt)
+                elif was_centered:
+                    # Een voormalige scene break is gewone tekst geworden.
+                    fmt.setAlignment(Qt.AlignLeft)
+                    fmt.setTopMargin(0); fmt.setBottomMargin(0)
+                    cur.setBlockFormat(fmt)
+                    cur.select(QTextCursor.BlockUnderCursor)
+                    charfmt = QTextCharFormat()
+                    charfmt.clearForeground()
+                    charfmt.setFontLetterSpacing(0)
+                    charfmt.setFontWeight(QFont.Weight.Light)
+                    cur.mergeCharFormat(charfmt)
+                block = block.next()
+        finally:
+            restore = self.textCursor()
+            restore.setPosition(min(old_anchor, max(0, self.document().characterCount()-1)))
+            restore.setPosition(min(old_pos, max(0, self.document().characterCount()-1)), QTextCursor.KeepAnchor)
+            self.setTextCursor(restore)
+            self.blockSignals(signals_were_blocked)
+            self._formatting_scene_breaks = False
 
 
 class Splash(QDialog):
@@ -111,18 +173,19 @@ class BookCover(QWidget):
                 y = max(0, (scaled.height() - target.height()) // 2)
                 painter.drawPixmap((target.width() - scaled.width()) // 2, (target.height() - scaled.height()) // 2, scaled)
             else:
-                painter.fillRect(target, QColor('#dfe3e7'))
+                theme = THEMES.get(str(QSettings('QuietWriter','QuietWriter').value('theme','Helder')), THEMES['Helder']); painter.fillRect(target, QColor(theme['cover1']))
         else:
-            painter.fillRect(target, QColor('#dfe3e7'))
-            # Abstracte, rustige fallback. Geen titel in het beeldbestand zelf.
-            painter.fillRect(0, 0, target.width(), target.height() // 3, QColor('#c9d2d8'))
-            painter.fillRect(0, target.height() // 3, target.width(), target.height() // 3, QColor('#d6dadd'))
+            theme = THEMES.get(str(QSettings('QuietWriter','QuietWriter').value('theme','Helder')), THEMES['Helder'])
+            painter.fillRect(target, QColor(theme['cover1']))
+            # Abstracte, rustige fallback. Kleuren volgen automatisch het actieve thema.
+            painter.fillRect(0, 0, target.width(), target.height() // 3, QColor(theme['cover2']))
+            painter.fillRect(0, target.height() // 3, target.width(), target.height() // 3, QColor(theme['cover3']))
 
         # De titel blijft echte, dynamische tekst en maakt dus geen deel uit van de omslagafbeelding.
         band_h = 78
         painter.fillRect(0, target.height() - band_h, target.width(), band_h, QColor(0, 0, 0, 118))
         painter.setPen(QColor('white'))
-        font = QFont('Georgia', 14)
+        font = QFont(resolved_editor_font(QSettings('QuietWriter','QuietWriter').value('editor_font','Merriweather')), 14)
         font.setBold(True)
         painter.setFont(font)
         painter.drawText(self.rect().adjusted(12, target.height() - band_h + 10, -12, -10),
@@ -138,7 +201,11 @@ class BookCard(QFrame):
         self.library = library
         self.book = book
         self.setObjectName('bookCard')
+        self.setAttribute(Qt.WA_Hover, True)
         self.setFixedSize(198, 372)
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(18); shadow.setOffset(0, 5); shadow.setColor(QColor(0, 0, 0, 28))
+        self.setGraphicsEffect(shadow)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(8, 8, 8, 10)
         lay.setSpacing(7)
@@ -156,8 +223,8 @@ class BookCard(QFrame):
         info.setObjectName('muted')
         info.setAlignment(Qt.AlignCenter)
         buttons = QHBoxLayout(); buttons.setSpacing(6)
-        open_btn = QPushButton('Openen')
-        details_btn = QPushButton('Details')
+        open_btn = QPushButton('Openen'); open_btn.setObjectName('primaryButton')
+        details_btn = QPushButton('Details'); details_btn.setObjectName('secondaryButton')
         open_btn.clicked.connect(lambda: self.opened.emit(self.book))
         details_btn.clicked.connect(lambda: self.details.emit(self.book))
         buttons.addWidget(open_btn); buttons.addWidget(details_btn)
@@ -254,12 +321,13 @@ class StartPage(QWidget):
             self.count.setText(f'{total} boek' if total == 1 else f'{total} boeken')
         self.no_results.setVisible(bool(query) and not books)
 
-        create = QFrame(); create.setObjectName('newBookCard'); create.setFixedSize(198, 372)
+        create = QFrame(); create.setObjectName('newBookCard'); create.setAttribute(Qt.WA_Hover, True); create.setFixedSize(198, 372)
+        create_shadow = QGraphicsDropShadowEffect(create); create_shadow.setBlurRadius(16); create_shadow.setOffset(0,4); create_shadow.setColor(QColor(0,0,0,22)); create.setGraphicsEffect(create_shadow)
         cl = QVBoxLayout(create); cl.setContentsMargins(18, 28, 18, 22)
         plus = QLabel('+'); plus.setObjectName('newBookPlus'); plus.setAlignment(Qt.AlignCenter)
         text = QLabel('Nieuw boek'); text.setObjectName('sectionTitle'); text.setAlignment(Qt.AlignCenter)
-        btn = QPushButton('Aanmaken'); btn.clicked.connect(self.new_book.emit)
-        imp = QPushButton('Importeren…'); imp.clicked.connect(self.import_book.emit)
+        btn = QPushButton('Aanmaken'); btn.setObjectName('primaryButton'); btn.clicked.connect(self.new_book.emit)
+        imp = QPushButton('Importeren…'); imp.setObjectName('secondaryButton'); imp.clicked.connect(self.import_book.emit)
         cl.addStretch(); cl.addWidget(plus); cl.addWidget(text); cl.addStretch(); cl.addWidget(btn); cl.addWidget(imp)
         self.grid.addWidget(create, 0, 0)
         for i, book in enumerate(books, 1):
@@ -289,7 +357,9 @@ class StoryBrowser(QWidget):
         self.meta = QLabel(''); self.meta.setObjectName('muted'); self.meta.setWordWrap(True)
         self.chapter_picker = QComboBox(); self.chapter_picker.currentIndexChanged.connect(self._chapter_changed); self.chapter_picker.hide()
         self.reader = QTextEdit(); self.reader.setReadOnly(True); self.reader.setObjectName('storyReader')
-        self.reader.document().setDefaultFont(QFont('Georgia', 13))
+        rf = QFont(resolved_editor_font(QSettings('QuietWriter','QuietWriter').value('editor_font','Merriweather')), 13)
+        rf.setWeight(QFont.Weight.Light)
+        self.reader.document().setDefaultFont(rf)
         rl.addWidget(self.story_title); rl.addWidget(self.meta); rl.addWidget(self.chapter_picker); rl.addSpacing(8); rl.addWidget(self.reader,1)
         root.addWidget(left); root.addWidget(right,1)
         self.refresh()
@@ -352,7 +422,7 @@ class BookDetailsDialog(QDialog):
         self.old_slug = book.slug
         self.pending_cover = None
         self.setWindowTitle('Boekdetails')
-        self.resize(720, 690)
+        self.resize(760, 780)
         root = QVBoxLayout(self)
         title = QLabel('Boekdetails'); title.setObjectName('title')
         intro = QLabel('Deze gegevens horen bij het boek en kunnen later bij export naar Markdown als metadata worden gebruikt.')
@@ -367,19 +437,27 @@ class BookDetailsDialog(QDialog):
         make_slug.clicked.connect(lambda: self.slug_edit.setText(slugify(self.title_edit.text())))
         sh.addWidget(self.slug_edit); sh.addWidget(make_slug)
         md = book.metadata or {}
+        self.date_edit = QLineEdit(md.get('date',''))
         self.description = QTextEdit(md.get('description','')); self.description.setMaximumHeight(82)
-        self.meta = QTextEdit(md.get('meta','')); self.meta.setMaximumHeight(82)
         self.intro_text = QTextEdit(md.get('intro','')); self.intro_text.setMaximumHeight(100)
-        self.tags = QLineEdit(md.get('tags',''))
+        self.meta = QTextEdit(md.get('meta','')); self.meta.setMaximumHeight(82)
+        self.image_alt = QTextEdit(md.get('image_alt','')); self.image_alt.setMaximumHeight(82)
         self.author = QLineEdit(md.get('author',''))
+        self.tags = QLineEdit(md.get('tags',''))
+        self.published = QComboBox(); self.published.addItems(['No', 'Yes'])
+        self.published.setCurrentText(str(md.get('published','No') or 'No'))
+        self.synopsis = QTextEdit(md.get('synopsis','')); self.synopsis.setMaximumHeight(82)
         form.addRow('Titel', self.title_edit)
+        form.addRow('Datum', self.date_edit)
         form.addRow('Slug', slug_box)
         form.addRow('Korte beschrijving', self.description)
-        form.addRow('Meta / SEO-beschrijving', self.meta)
         form.addRow('Intro boven het verhaal', self.intro_text)
-        form.addRow('Tags', self.tags)
+        form.addRow('Meta / SEO-beschrijving', self.meta)
+        form.addRow('Beschrijving afbeelding', self.image_alt)
         form.addRow('Auteur', self.author)
-        root.addLayout(form)
+        form.addRow('Tags', self.tags)
+        form.addRow('Gepubliceerd', self.published)
+        form.addRow('Synopsis', self.synopsis)
 
         cover_box = QFrame(); cover_box.setObjectName('panel')
         cb = QHBoxLayout(cover_box); cb.setContentsMargins(12,12,12,12)
@@ -393,18 +471,28 @@ class BookDetailsDialog(QDialog):
         cover_buttons = QHBoxLayout(); cover_buttons.addWidget(choose); cover_buttons.addWidget(remove_cover); cover_buttons.addStretch()
         cover_right.addWidget(self.cover_name); cover_right.addLayout(cover_buttons); cover_right.addWidget(self.header_path); cover_right.addStretch()
         cb.addWidget(self.cover_preview); cb.addLayout(cover_right,1)
-        root.addWidget(cover_box)
+
+        # Metadata groeit mee met toekomstige frontmattervelden; houd de acties
+        # onderaan altijd bereikbaar door het inhoudsdeel scrollbaar te maken.
+        details_widget = QWidget()
+        details_layout = QVBoxLayout(details_widget); details_layout.setContentsMargins(0,0,0,0)
+        details_layout.addLayout(form); details_layout.addWidget(cover_box); details_layout.addStretch()
+        details_scroll = QScrollArea(); details_scroll.setWidgetResizable(True); details_scroll.setFrameShape(QFrame.NoFrame)
+        details_scroll.setWidget(details_widget)
+        root.addWidget(details_scroll, 1)
         self.slug_edit.textChanged.connect(self._update_header_path)
         self._refresh_cover_preview()
         self._update_header_path()
 
         actions = QHBoxLayout()
-        export_btn = QPushButton('Exporteren…'); export_btn.clicked.connect(self.export_markdown)
+        export_btn = QPushButton('Exporteren…'); export_btn.setObjectName('secondaryButton'); export_btn.clicked.connect(self.export_markdown)
         delete = QPushButton('Naar prullenbak'); delete.setObjectName('dangerButton'); delete.clicked.connect(self.delete_book)
         actions.addWidget(export_btn); actions.addWidget(delete); actions.addStretch()
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Save).setText(tr('common.save', 'Opslaan'))
+        buttons.button(QDialogButtonBox.Save).setObjectName('primaryButton')
         buttons.button(QDialogButtonBox.Cancel).setText(tr('common.cancel', 'Annuleren'))
+        buttons.button(QDialogButtonBox.Cancel).setObjectName('secondaryButton')
         buttons.accepted.connect(self.save); buttons.rejected.connect(self.reject)
         actions.addWidget(buttons); root.addLayout(actions)
 
@@ -423,12 +511,20 @@ class BookDetailsDialog(QDialog):
             self.cover_preview.clear(); self.cover_preview.setText('Geen\nomslag')
 
     def _update_header_path(self):
+        has_cover = self.pending_cover not in (None, '__REMOVE__') or (self.pending_cover is None and self.library.cover_path(self.book))
+        if not has_cover:
+            self.header_path.setText('Afbeeldingspad in metadata: leeg (geen omslag)')
+            return
         template = self.settings.value('cover_header_template', '/{slug}.jpg')
         slug = self.slug_edit.text().strip() or 'boek'
+        ext = 'jpg'
+        cover = self.pending_cover if isinstance(self.pending_cover, Path) else self.library.cover_path(self.book)
+        if cover:
+            ext = Path(cover).suffix.lstrip('.') or 'jpg'
         try:
-            path = str(template).format(slug=slug, ext='jpg')
+            path = str(template).format(slug=slug, ext=ext)
         except Exception:
-            path = f'/{slug}.jpg'
+            path = f'/{slug}.{ext}'
         self.header_path.setText(f'Afbeeldingspad in metadata: {path}')
 
     def choose_cover(self):
@@ -445,7 +541,7 @@ class BookDetailsDialog(QDialog):
         if abs(ratio - (1/1.6)) > 0.035:
             QMessageBox.warning(self, 'Boekomslag', f'De verhouding is {w}:{h}. Gebruik ongeveer 1:1,6 (bijvoorbeeld 1024×1638).'); return
         self.pending_cover = Path(path)
-        self._refresh_cover_preview()
+        self._refresh_cover_preview(); self._update_header_path()
 
     def remove_cover(self):
         # De wijziging is meteen zichtbaar, maar wordt pas definitief bij Opslaan.
@@ -457,6 +553,7 @@ class BookDetailsDialog(QDialog):
             self.cover_preview.setPixmap(pix.scaled(self.cover_preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
         else:
             self.cover_preview.clear(); self.cover_preview.setText('Standaard\nomslag')
+        self._update_header_path()
 
     def save(self):
         title = self.title_edit.text().strip()
@@ -476,12 +573,16 @@ class BookDetailsDialog(QDialog):
             image_ref = f'/{slug}.jpg'
         self.book.metadata.update({
             'slug': slug,
+            'date': self.date_edit.text().strip(),
             'description': self.description.toPlainText().strip(),
-            'meta': self.meta.toPlainText().strip(),
             'intro': self.intro_text.toPlainText().strip(),
-            'tags': self.tags.text().strip(),
+            'meta': self.meta.toPlainText().strip(),
+            'image': image_ref if self.pending_cover != '__REMOVE__' and (self.pending_cover or self.library.cover_path(self.book)) else '',
+            'image_alt': self.image_alt.toPlainText().strip(),
             'author': self.author.text().strip(),
-            'image': image_ref,
+            'tags': self.tags.text().strip(),
+            'published': self.published.currentText().strip() or 'No',
+            'synopsis': self.synopsis.toPlainText().strip(),
         })
         try:
             self.library.rename_cover_for_slug(self.book, self.old_slug, slug)
@@ -501,11 +602,15 @@ class BookDetailsDialog(QDialog):
         self.book.title = title
         self.book.metadata.update({
             'slug': slug,
+            'date': self.date_edit.text().strip(),
             'description': self.description.toPlainText().strip(),
-            'meta': self.meta.toPlainText().strip(),
             'intro': self.intro_text.toPlainText().strip(),
-            'tags': self.tags.text().strip(),
+            'meta': self.meta.toPlainText().strip(),
+            'image_alt': self.image_alt.toPlainText().strip(),
             'author': self.author.text().strip(),
+            'tags': self.tags.text().strip(),
+            'published': self.published.currentText().strip() or 'No',
+            'synopsis': self.synopsis.toPlainText().strip(),
         })
         default_name = f'{slug}.md'
         path, _ = QFileDialog.getSaveFileName(self, 'Boek exporteren naar Markdown', str(Path.home() / default_name), 'Markdown (*.md)')
@@ -518,14 +623,14 @@ class BookDetailsDialog(QDialog):
             return
         template = self.settings.value('cover_header_template', '/{slug}.jpg')
         image_ref = ''
-        if self.library.cover_path(self.book):
+        cover = self.library.cover_path(self.book)
+        if cover:
             try:
-                image_ref = str(template).format(slug=slug, ext=self.library.cover_path(self.book).suffix.lstrip('.'))
+                image_ref = str(template).format(slug=slug, ext=cover.suffix.lstrip('.'))
             except Exception:
                 image_ref = f'/{slug}.jpg'
-        else:
-            # Een bestaand geïmporteerd image-veld blijft behouden als er geen lokale omslag is gekozen.
-            image_ref = str(self.book.metadata.get('image', '') or '')
+        # Zonder lokale omslag blijft image bewust leeg in de export.
+        self.book.metadata['image'] = image_ref
         try:
             self.library.export_markdown_book(self.book, destination, image_ref=image_ref, include_frontmatter=True, include_section_markers=True)
         except Exception as exc:
@@ -554,7 +659,7 @@ class TrashPage(QWidget):
         root = QVBoxLayout(self); root.setContentsMargins(42, 34, 42, 34)
         top = QHBoxLayout()
         title = QLabel('Prullenbak'); title.setObjectName('title')
-        self.restore_btn = QPushButton('Herstellen'); self.restore_btn.clicked.connect(self.restore_selected)
+        self.restore_btn = QPushButton('Herstellen'); self.restore_btn.setObjectName('primaryButton'); self.restore_btn.clicked.connect(self.restore_selected)
         self.delete_btn = QPushButton('Selectie definitief verwijderen'); self.delete_btn.setObjectName('dangerButton'); self.delete_btn.clicked.connect(self.delete_selected)
         self.empty_btn = QPushButton('Prullenbak legen'); self.empty_btn.setObjectName('dangerButton'); self.empty_btn.clicked.connect(self.empty_trash)
         top.addWidget(title); top.addStretch(); top.addWidget(self.restore_btn); top.addWidget(self.delete_btn); top.addWidget(self.empty_btn)
@@ -622,7 +727,7 @@ class PersonaPage(QWidget):
         info.setObjectName('muted')
         self.edit = QTextEdit()
         self.edit.setPlainText(library.read_persona())
-        save = QPushButton('Opslaan')
+        save = QPushButton('Opslaan'); save.setObjectName('primaryButton')
         save.clicked.connect(self.save)
         lay.addLayout(top)
         lay.addWidget(info)
@@ -649,6 +754,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.settings = settings
         self.original_theme = settings.value('theme', 'Helder')
+        self.original_editor_font = str(settings.value('editor_font', 'Merriweather') or 'Merriweather')
         self.available_models = list(models or [])
         self.setWindowTitle(tr('settings.title', 'Instellingen'))
         self.resize(720, 560)
@@ -668,8 +774,10 @@ class SettingsDialog(QDialog):
         # Uiterlijk
         appearance = QWidget(); af = QFormLayout(appearance)
         self.theme = QComboBox(); self.theme.addItems(THEMES.keys()); self.theme.setCurrentText(settings.value('theme', 'Helder'))
+        self.editor_font = QComboBox(); self.editor_font.addItems(['Merriweather', 'Georgia']); self.editor_font.setCurrentText(str(settings.value('editor_font', 'Merriweather') or 'Merriweather'))
         af.addRow('Kleurenschema', self.theme)
-        appearance_note = QLabel('De gekozen stijl wordt direct als voorbeeld toegepast. Bij Annuleren wordt het vorige thema hersteld.')
+        af.addRow('Schrijflettertype', self.editor_font)
+        appearance_note = QLabel('Merriweather is de standaard voor de schrijfruimte. Als het font niet op de computer staat gebruikt QuietWriter automatisch Georgia. De gekozen stijl wordt direct als voorbeeld toegepast; Annuleren herstelt de vorige instellingen.')
         appearance_note.setObjectName('muted'); appearance_note.setWordWrap(True); af.addRow('', appearance_note)
         self.tabs.addTab(appearance, 'Uiterlijk')
 
@@ -739,13 +847,27 @@ class SettingsDialog(QDialog):
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Save).setText(tr('common.save', 'Opslaan'))
+        buttons.button(QDialogButtonBox.Save).setObjectName('primaryButton')
         buttons.button(QDialogButtonBox.Cancel).setText(tr('common.cancel', 'Annuleren'))
+        buttons.button(QDialogButtonBox.Cancel).setObjectName('secondaryButton')
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
-        self.theme.currentTextChanged.connect(lambda n: QApplication.instance().setStyleSheet(stylesheet(n)))
+        self.theme.currentTextChanged.connect(self._preview_appearance)
+        self.editor_font.currentTextChanged.connect(self._preview_appearance)
+
+    def _preview_appearance(self, *_):
+        theme = self.theme.currentText() or 'Helder'
+        font = self.editor_font.currentText() or 'Merriweather'
+        QApplication.instance().setStyleSheet(stylesheet(theme, font))
+        win = self.parent()
+        if win and hasattr(win, 'editor_page'):
+            win.editor_page.editor.set_editor_font(font)
 
     def reject(self):
-        QApplication.instance().setStyleSheet(stylesheet(self.original_theme))
+        QApplication.instance().setStyleSheet(stylesheet(self.original_theme, self.original_editor_font))
+        win = self.parent()
+        if win and hasattr(win, 'editor_page'):
+            win.editor_page.editor.set_editor_font(self.original_editor_font)
         super().reject()
 
     def update_sync_warning(self):
@@ -864,6 +986,7 @@ class SettingsDialog(QDialog):
 
     def accept(self):
         self.settings.setValue('theme', self.theme.currentText())
+        self.settings.setValue('editor_font', self.editor_font.currentText() or 'Merriweather')
         self.settings.setValue('autosave', self.autosave.isChecked())
         self.settings.setValue('workspace', self.root.text())
         provider = self.ai_provider.currentData() or 'ollama'
@@ -948,10 +1071,21 @@ class ManuscriptTree(QTreeWidget):
         self.setItemsExpandable(False)
         self.setIndentation(14)
         self.setUniformRowHeights(True)
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)
         self._drag_allowed = False
         self._drag_item = None
         self._drop_item = None
         self._drop_before = True
+
+
+    def mouseMoveEvent(self, event):
+        idx = self.indexAt(event.position().toPoint())
+        item = self.itemAt(event.position().toPoint())
+        data = item.data(0, Qt.UserRole) if item else None
+        over_handle = bool(idx.isValid() and idx.column() == 1 and data and data[0] == 'chapter')
+        self.viewport().setCursor(Qt.OpenHandCursor if over_handle else Qt.ArrowCursor)
+        super().mouseMoveEvent(event)
 
     def mousePressEvent(self, event):
         item = self.itemAt(event.position().toPoint())
@@ -960,6 +1094,8 @@ class ManuscriptTree(QTreeWidget):
         # Only the six-dot handle in column 1 can start a drag.
         self._drag_allowed = bool(item and idx.isValid() and idx.column() == 1 and data and data[0] == 'chapter')
         self._drag_item = item if self._drag_allowed else None
+        if self._drag_allowed:
+            self.viewport().setCursor(Qt.ClosedHandCursor)
         super().mousePressEvent(event)
 
     def startDrag(self, supportedActions):
@@ -976,11 +1112,12 @@ class ManuscriptTree(QTreeWidget):
         pix = QPixmap(max(180, self.visualItemRect(self._drag_item).width()), max(28, self.visualItemRect(self._drag_item).height()))
         pix.fill(Qt.transparent)
         painter = QPainter(pix)
-        painter.setPen(QColor('#6b7280'))
+        painter.setPen(QColor(THEMES.get(str(QSettings('QuietWriter','QuietWriter').value('theme','Helder')), THEMES['Helder'])['muted']))
         painter.drawText(pix.rect().adjusted(8, 0, -8, 0), Qt.AlignVCenter | Qt.AlignLeft, self._drag_item.text(0))
         painter.end()
         drag.setPixmap(pix)
         drag.exec(Qt.MoveAction)
+        self.viewport().setCursor(Qt.ArrowCursor)
         self._drag_allowed = False
         self._drag_item = None
         self._drop_item = None
@@ -1040,7 +1177,7 @@ class ManuscriptTree(QTreeWidget):
             r = self.visualItemRect(self._drop_item)
             y = r.top() if self._drop_before else r.bottom()
             p = QPainter(self.viewport())
-            p.setPen(QPen(QColor('#4d738f'), 3))
+            p.setPen(QPen(self.palette().color(QPalette.Highlight), 3))
             p.drawLine(8, y, max(8, self.viewport().width() - 8), y)
 
 
@@ -1187,7 +1324,7 @@ class HistoryPanel(QWidget):
         title = QLabel('Versiegeschiedenis'); title.setObjectName('sectionTitle')
         self.starred_only = QCheckBox('Alleen versies met ster')
         self.starred_only.stateChanged.connect(self.refresh)
-        self.create_btn = QPushButton('+ Nieuwe versie maken')
+        self.create_btn = QPushButton('+ Nieuwe versie maken'); self.create_btn.setObjectName('primaryButton')
         self.create_btn.clicked.connect(self.createRequested.emit)
         self.list = QListWidget()
         self.list.itemClicked.connect(self._clicked)
@@ -1296,7 +1433,7 @@ class EditorPage(QWidget):
         self.manuscript = QWidget(); self.manuscript.setObjectName('panel'); self.manuscript.setMinimumWidth(250); ml = QVBoxLayout(self.manuscript); ml.setContentsMargins(14,14,14,14)
         head = QHBoxLayout(); title = QLabel('Manuscript'); title.setObjectName('sectionTitle'); add = QPushButton('+ Toevoegen'); add.clicked.connect(self.add_menu)
         head.addWidget(title); head.addStretch(); head.addWidget(add)
-        self.tree = ManuscriptTree(); self.tree.itemClicked.connect(self.tree_clicked); self.tree.chapterDropped.connect(self.move_chapter); self.tree.setContextMenuPolicy(Qt.CustomContextMenu); self.tree.customContextMenuRequested.connect(self.tree_context_menu)
+        self.tree = ManuscriptTree(); self.tree.setObjectName('manuscriptTree'); self.tree.itemClicked.connect(self.tree_clicked); self.tree.chapterDropped.connect(self.move_chapter); self.tree.setContextMenuPolicy(Qt.CustomContextMenu); self.tree.customContextMenuRequested.connect(self.tree_context_menu)
         self.book_words = QLabel('0 woorden'); self.book_words.setObjectName('muted')
         ml.addLayout(head); ml.addWidget(self.tree); ml.addWidget(self.book_words)
 
@@ -1311,7 +1448,8 @@ class EditorPage(QWidget):
         undo = QPushButton(); undo.setObjectName('compactButton'); undo.setIcon(icon('undo')); undo.setIconSize(QSize(22,22)); undo.setToolTip('Ongedaan maken')
         redo = QPushButton(); redo.setObjectName('compactButton'); redo.setIcon(icon('redo')); redo.setIconSize(QSize(22,22)); redo.setToolTip('Opnieuw')
         self.book_title_label = QLabel(''); self.book_title_label.setObjectName('bookTitleLabel')
-        tl.addWidget(undo); tl.addWidget(redo); tl.addSpacing(8); tl.addWidget(self.book_title_label); tl.addStretch()
+        self.autosave_status = QLabel(''); self.autosave_status.setObjectName('autosaveStatus')
+        tl.addWidget(undo); tl.addWidget(redo); tl.addSpacing(8); tl.addWidget(self.book_title_label); tl.addStretch(); tl.addWidget(self.autosave_status)
         self.chapter_title = QLineEdit(); self.chapter_title.setPlaceholderText('Hoofdstuktitel'); self.chapter_title.setAlignment(Qt.AlignCenter); self.chapter_title.setObjectName('chapterTitle')
         self.chapter_title.editingFinished.connect(self.rename_current)
         self.editor = ManuscriptEditor(); self.editor.setObjectName('editor'); self.editor.textChanged.connect(self.on_text_changed)
@@ -1361,7 +1499,10 @@ class EditorPage(QWidget):
                 for chapter in section.chapters:
                     it = QTreeWidgetItem([chapter.title, '']); it.setData(0, Qt.UserRole, ('chapter', chapter.id)); it.setIcon(1, icon('drag_handle')); it.setTextAlignment(1, Qt.AlignCenter); it.setToolTip(1, 'Sleep om hoofdstuk te verplaatsen'); self.tree.addTopLevelItem(it)
             else:
-                sit = QTreeWidgetItem([section.title, '']); sit.setData(0, Qt.UserRole, ('section', section.id)); sit.setFlags(sit.flags() & ~Qt.ItemIsDragEnabled); self.tree.addTopLevelItem(sit)
+                sit = QTreeWidgetItem([section.title, '']); sit.setData(0, Qt.UserRole, ('section', section.id)); sit.setFlags(sit.flags() & ~Qt.ItemIsDragEnabled)
+                section_font = sit.font(0); section_font.setPointSize(max(9, section_font.pointSize())); section_font.setWeight(QFont.Weight.DemiBold); sit.setFont(0, section_font)
+                sit.setForeground(0, QColor(THEMES.get(str(self.main.settings.value('theme','Helder')), THEMES['Helder'])['muted']))
+                self.tree.addTopLevelItem(sit)
                 for chapter in section.chapters:
                     cit = QTreeWidgetItem([chapter.title, '']); cit.setData(0, Qt.UserRole, ('chapter', chapter.id)); cit.setIcon(1, icon('drag_handle')); cit.setTextAlignment(1, Qt.AlignCenter); cit.setToolTip(1, 'Sleep om hoofdstuk te verplaatsen'); sit.addChild(cit)
                 sit.setExpanded(True)
@@ -1527,14 +1668,16 @@ class EditorPage(QWidget):
     def open_chapter(self, chapter):
         self.save(); self.chapter = chapter; self.chapter_title.setText(chapter.title)
         self.editor.blockSignals(True); self.editor.setPlainText(self.main.library.read_chapter(self.book, chapter)); self.editor.blockSignals(False)
-        self.dirty = False; self.update_counts(); self.main.sync_tool_buttons()
+        self.editor.apply_scene_break_formatting()
+        self.dirty = False; self.autosave_status.setText('● Opgeslagen'); self.update_counts(); self.main.sync_tool_buttons()
         if self.right.isVisible() and self.right.currentWidget() is self.spell:
             self.spell.refresh()
 
     def on_text_changed(self):
         if self.preview_live_book:
             return
-        self.dirty = True; self.update_counts()
+        self.dirty = True; self.autosave_status.setText('Niet opgeslagen')
+        self.editor.apply_scene_break_formatting(); self.update_counts()
         if self.main.settings.value('autosave', True, bool): self.autosave_timer.start()
 
     def save(self):
@@ -1542,7 +1685,7 @@ class EditorPage(QWidget):
             return
         if self.book and self.chapter and self.dirty:
             self.main.library.save_chapter(self.book, self.chapter, self.editor.toPlainText()); self.dirty = False
-            self.main.search_index.rebuild_book(self.book); self.update_counts(saved=True)
+            self.main.search_index.rebuild_book(self.book); self.autosave_status.setText('● Opgeslagen · zojuist'); self.update_counts(saved=True)
 
     def rename_current(self):
         if self.preview_live_book:
@@ -1562,7 +1705,14 @@ class EditorPage(QWidget):
                         try: total += len(self.main.library.read_chapter(self.book, chapter).split())
                         except Exception: pass
         self.book_words.setText(f'{total:,}'.replace(',', '.') + ' woorden')
-        self.main.status.showMessage(f'{words:,}'.replace(',', '.') + ' woorden' + (f' · Opgeslagen {datetime.now():%H:%M}' if saved else ''))
+        chapter_index = 0; chapter_total = 0
+        if self.book:
+            flat = [c for sec in self.book.sections for c in sec.chapters]
+            chapter_total = len(flat)
+            if self.chapter:
+                chapter_index = next((i+1 for i,c in enumerate(flat) if c.id == self.chapter.id), 0)
+        prefix = f'Hoofdstuk {chapter_index} van {chapter_total} · ' if chapter_total else ''
+        self.main.status.showMessage(prefix + f'{words:,}'.replace(',', '.') + ' woorden')
 
     def add_menu(self):
         if not self.book or self.preview_live_book: return
@@ -1917,7 +2067,7 @@ class MainWindow(QMainWindow):
         self.search_index = BookSearchIndex(library.cache_dir / 'book_search.db')
         self.story_index = StoryIndex(library.cache_dir / 'stories.db')
         self.status = QStatusBar(); self.setStatusBar(self.status)
-        self.setWindowTitle(APP_NAME); self.resize(1480, 900)
+        self.setWindowTitle(APP_NAME); self.setWindowIcon(icon('books')); self.resize(1480, 900)
         self.rail_expanded = self.settings.value('nav_expanded', False, bool)
 
         wrap = QWidget(); self.setCentralWidget(wrap); root = QHBoxLayout(wrap); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
@@ -1949,7 +2099,7 @@ class MainWindow(QMainWindow):
         self.toolrail = QFrame(); self.toolrail.setObjectName('toolrail'); self.toolrail.setFixedWidth(64)
         tr=QVBoxLayout(self.toolrail); tr.setContentsMargins(8,10,8,10); tr.setSpacing(7)
         def trb(icon_name, tip, fn, checkable=True):
-            b=QPushButton(); b.setObjectName('railButton'); b.setIcon(icon(icon_name)); b.setIconSize(QSize(28,28)); b.setFixedSize(48,48); b.setToolTip(tip); b.setCheckable(checkable); b.clicked.connect(fn); tr.addWidget(b); return b
+            b=QPushButton(); b.setObjectName('railButton'); b.setIcon(icon(icon_name)); b.setIconSize(QSize(24,24)); b.setFixedSize(48,48); b.setToolTip(tip); b.setCheckable(checkable); b.clicked.connect(fn); tr.addWidget(b); return b
         self.search_button = trb('search','Zoeken', self.editor_page.show_search)
         self.ai_button = trb('spark','AI-assistent', self.editor_page.show_ai)
         self.spell_button = trb('spell','Spellingscontrole', self.editor_page.show_spell)
@@ -1972,14 +2122,14 @@ class MainWindow(QMainWindow):
     def _nav_button(self, icon_name, label, fn, checkable=True):
         b = QPushButton()
         b.setObjectName('navButton')
-        b.setIcon(icon(icon_name)); b.setIconSize(QSize(28,28))
+        b.setIcon(icon(icon_name)); b.setIconSize(QSize(22,22))
         b.setToolTip(label); b.setCheckable(checkable); b.clicked.connect(fn)
         b.setProperty('navLabel', label)
         self.rail_layout.addWidget(b); self.nav_buttons.append(b)
         return b
 
-    def _apply_nav_width(self):
-        self.rail.setFixedWidth(218 if self.rail_expanded else 64)
+    def _apply_nav_width(self, animate=False):
+        target = 218 if self.rail_expanded else 64
         for b in self.nav_buttons:
             label = b.property('navLabel') or ''
             b.setText(('  ' + label) if self.rail_expanded else '')
@@ -1989,11 +2139,22 @@ class MainWindow(QMainWindow):
             else:
                 b.setFixedWidth(48)
         self.menu_button.setToolTip('Menu inklappen' if self.rail_expanded else 'Menu uitklappen')
+        if not animate:
+            self.rail.setMinimumWidth(target); self.rail.setMaximumWidth(target)
+            return
+        start_width = self.rail.width()
+        self._nav_animation = QParallelAnimationGroup(self)
+        for prop in (b'minimumWidth', b'maximumWidth'):
+            anim = QPropertyAnimation(self.rail, prop, self._nav_animation)
+            anim.setDuration(150); anim.setStartValue(start_width); anim.setEndValue(target)
+            anim.setEasingCurve(QEasingCurve.InOutCubic)
+            self._nav_animation.addAnimation(anim)
+        self._nav_animation.start()
 
     def toggle_nav(self):
         self.rail_expanded = not self.rail_expanded
         self.settings.setValue('nav_expanded', self.rail_expanded)
-        self._apply_nav_width()
+        self._apply_nav_width(animate=True)
 
     def _mode_changed(self, idx):
         in_editor = self.stack.currentWidget() is self.editor_page
@@ -2087,7 +2248,12 @@ class MainWindow(QMainWindow):
         old_root = self.settings.value('workspace', str(Path.home()/APP_NAME))
         d=SettingsDialog(self.settings,self,self.models)
         if d.exec():
-            QApplication.instance().setStyleSheet(stylesheet(self.settings.value('theme','Helder')))
+            editor_font = str(self.settings.value('editor_font','Merriweather') or 'Merriweather')
+            QApplication.instance().setStyleSheet(stylesheet(self.settings.value('theme','Helder'), editor_font))
+            self.editor_page.editor.set_editor_font(editor_font)
+            self.editor_page.editor.apply_scene_break_formatting()
+            rf = QFont(resolved_editor_font(editor_font), 13); rf.setWeight(QFont.Weight.Light)
+            self.stories.reader.document().setDefaultFont(rf)
             self.editor_page.load_dictionary_from_settings()
             if self.settings.value('workspace') != old_root:
                 QMessageBox.information(self,'Werkmap gewijzigd','De nieuwe werkmap wordt gebruikt nadat de applicatie opnieuw is gestart.')
@@ -2161,7 +2327,7 @@ class MainWindow(QMainWindow):
 
 
 def run():
-    app=QApplication(sys.argv); app.setApplicationName(APP_NAME); app.setOrganizationName('QuietWriter')
+    app=QApplication(sys.argv); app.setApplicationName(APP_NAME); app.setOrganizationName('QuietWriter'); app.setWindowIcon(icon('books'))
     # Start from Qt's real system font and only repair it if Windows reports an
     # invalid point size. This avoids propagating a -1 point size into child fonts.
     app_font = QFontDatabase.systemFont(QFontDatabase.GeneralFont)
@@ -2170,7 +2336,7 @@ def run():
     app_font.setFamily('Segoe UI')
     app.setFont(app_font)
     settings=QSettings('QuietWriter','QuietWriter')
-    app.setStyleSheet(stylesheet(settings.value('theme','Helder')))
+    app.setStyleSheet(stylesheet(settings.value('theme','Helder'), str(settings.value('editor_font','Merriweather') or 'Merriweather')))
     splash=Splash(); splash.show(); splash.set_status('Instellingen laden…')
     root=Path(settings.value('workspace', str(Path.home()/APP_NAME)))
     splash.set_status('Werkmap controleren…'); library=Library(root)
