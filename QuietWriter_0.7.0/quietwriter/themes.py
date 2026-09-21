@@ -40,6 +40,9 @@ def stylesheet(name: str) -> str:
     QFrame#panel, QWidget#panel {{ background: {t['panel']}; border: 0; }}
     QFrame#toolrail {{ background: {t['panel2']}; border: 0; }}
     QFrame#editorTopbar {{ background: {t['panel']}; border-bottom: 1px solid {t['border']}; }}
+    QFrame#historyBanner {{ background: {t['hero']}; border: 0; }}
+    QLabel#historyBannerLabel {{ color: {t['hero_text']}; background: transparent; font-weight: 600; }}
+    QPushButton#restoreButton {{ background: {t['accent']}; color: {t['hero_text']}; border: 0; font-weight: 600; }}
     QLabel#muted {{ color: {t['muted']}; }}
     QLabel#title {{ font-size: 24px; font-weight: 600; }}
     QLabel#sectionTitle {{ font-size: 14px; font-weight: 600; }}
@@ -59,6 +62,8 @@ def stylesheet(name: str) -> str:
     QPushButton#navButton:checked {{ background: {t['select']}; color: {t['text']}; }}
     QPushButton#compactButton {{ border: 0; padding: 5px; min-width: 28px; }}
     QPushButton#thinkingButton {{ border: 0; color: {t['muted']}; text-align: left; padding: 4px 0; }}
+    QPushButton#suggestionButton {{ border: 0; border-radius: 3px; padding: 3px 6px; text-align: left; min-height: 24px; max-height: 30px; }}
+    QPushButton#suggestionButton:checked {{ background: {t['select']}; }}
     QPushButton#dangerButton {{ border-color: #b56a6a; }}
     QPushButton#dangerButton:hover {{ background: #5a2d2d; color: white; }}
     QLineEdit, QComboBox, QSpinBox, QTextEdit, QPlainTextEdit {{
