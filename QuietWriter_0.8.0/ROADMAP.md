@@ -26,7 +26,7 @@ Bewust doorgeschoven:
 
 ## Iteratie 7 — Versiegeschiedenis
 
-**Status: basis afgerond in 0.7.0.**
+**Status: afgerond in 0.7.1.**
 
 Opgeleverd:
 - Dagarchieven zichtbaar in de rechter tijdlijn.
@@ -38,6 +38,8 @@ Opgeleverd:
 - Best-effort rollback bij een mislukte herstelactie.
 - Versies markeren met ster en filteren op ster.
 - Bestaande 0.6.x dagarchieven blijven bruikbaar.
+- Voor het verwijderen van een hoofdstuk wordt automatisch een herstelversie in de tijdlijn gemaakt.
+- Hoofdstukverwijdering zit als contextactie in de rechter gereedschapsbalk, niet in de manuscriptboom.
 
 Later mogelijk:
 - Visuele diff tussen twee versies.
@@ -45,14 +47,31 @@ Later mogelijk:
 - Herstelbare verwijdering van losse oude versies.
 
 ## Iteratie 8 — AI
-- Markdown in AI-antwoorden renderen: koppen, vet, cursief, lijsten en codeblokken.
-- Context zichtbaar maken: persona, selectie, hoofdstuk, sectie, boek en geraadpleegde verhalen.
-- Snelle achtergrondmodel-laag voor classificatie, selectie en samenvattingen.
-- Bibliotheek-RAG met tags, metadata, full-text en embeddings.
-- Bronvermelding van geraadpleegde verhalen in AI-paneel.
-- Prompt/contextbeheer voor grote boeken en verhalenbibliotheken.
-- AI-gesprekken per boek eventueel bewaren.
-- OpenRouter-provider naast Ollama.
+
+**Status: grotendeels afgerond in 0.8.0.**
+
+Opgeleverd:
+- Provider-onafhankelijke AI-architectuur.
+- Ollama en OpenRouter als losse providers.
+- Hoofdmodel los van snel lokaal achtergrondmodel.
+- Markdown-rendering in de chat.
+- Streaming met gebufferde UI-updates.
+- Persona altijd actief.
+- Context voor selectie, hoofdstuk, sectie, boek en verhalenbibliotheek.
+- Context en geraadpleegde verhalen zichtbaar in de UI.
+- Gesprekken per boek bewaren.
+- Tags + metadata + full-text als lokale RAG-laag.
+- Klein model als bibliothecaris met batchgewijze catalogusselectie.
+- Optionele semantische retrieval met Ollama-embeddings en persistente cache.
+- Bronnen/gebruikte verhalen bij het antwoord tonen.
+- Contextlimieten voor grote manuscripten en verhalen.
+
+Mogelijke vervolgstappen binnen AI:
+- Contextbudget baseren op echte modeltokens in plaats van alleen tekens.
+- UI voor AI-indexstatus en expliciet opnieuw indexeren.
+- Chats hernoemen/meerdere gesprekken per boek.
+- Promptprofielen zoals 'Redacteur', 'Herschrijven', 'Continuïteit' en 'Brainstorm'.
+- OpenRouter API-key later veiliger opslaan via Windows Credential Manager.
 
 ## Iteratie 9 — Import & export
 - QuietWriter-boek exporteren naar één Markdown-bestand met frontmatter.
@@ -87,3 +106,10 @@ Later mogelijk:
 - Logging en foutmeldingen voor eindgebruikers.
 - Uitgebreide testset voor opslag, import, zoeken/vervangen, archieven en AI-context.
 - Installer en automatische update-strategie onderzoeken.
+
+
+## Stabiliteitsfix 0.7.2
+
+- QSplitter zijpanelen robuust herstellen bij openen/sluiten.
+- Hoofdstukregels volledig uitlijnen met sleepgreep rechts.
+- Passieve rode spellinghints loskoppelen van de actieve spellingscontrole-workflow.

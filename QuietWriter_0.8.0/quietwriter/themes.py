@@ -40,9 +40,13 @@ def stylesheet(name: str) -> str:
     QFrame#panel, QWidget#panel {{ background: {t['panel']}; border: 0; }}
     QFrame#toolrail {{ background: {t['panel2']}; border: 0; }}
     QFrame#editorTopbar {{ background: {t['panel']}; border-bottom: 1px solid {t['border']}; }}
-    QFrame#historyBanner {{ background: {t['hero']}; border: 0; }}
-    QLabel#historyBannerLabel {{ color: {t['hero_text']}; background: transparent; font-weight: 600; }}
-    QPushButton#restoreButton {{ background: {t['accent']}; color: {t['hero_text']}; border: 0; font-weight: 600; }}
+    QFrame#historyBanner {{ background: #334155; border: 0; }}
+    QLabel#historyBannerLabel {{ color: #f8fafc; background: transparent; font-weight: 600; }}
+    QPushButton#restoreButton {{ background: #84cc16; color: #172033; border: 0; font-weight: 700; }}
+    QPushButton#restoreButton:hover {{ background: #a3e635; }}
+    QPushButton#historyExitButton {{ background: #f8fafc; color: #172033; border: 1px solid #cbd5e1; font-weight: 600; }}
+    QPushButton#historyExitButton:hover {{ background: #e2e8f0; }}
+    QLabel#syncWarning {{ background: #fff7d6; color: #5d4715; border: 1px solid #e7cf7d; border-radius: 6px; padding: 8px; }}
     QLabel#muted {{ color: {t['muted']}; }}
     QLabel#title {{ font-size: 24px; font-weight: 600; }}
     QLabel#sectionTitle {{ font-size: 14px; font-weight: 600; }}
