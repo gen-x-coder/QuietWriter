@@ -18,7 +18,9 @@ from PySide6.QtWidgets import (
 from . import APP_NAME
 from .storage import Library, slugify
 from .themes import THEMES, stylesheet
-from .ollama import OllamaClient, ChatWorker
+from .ollama import OllamaClient
+from .ai.ui import AIPanel
+from .ai.providers import ProviderFactory
 from .search import BookSearchIndex
 from .story_index import StoryIndex
 from .spellcheck import WordDictionary, SpellHighlighter
@@ -636,23 +638,35 @@ class SettingsDialog(QDialog):
         choose = QPushButton('Map kiezen…'); choose.clicked.connect(self.choose_root)
         box = QWidget(); h = QHBoxLayout(box); h.setContentsMargins(0,0,0,0); h.addWidget(self.root); h.addWidget(choose)
         self.cover_template = QLineEdit(settings.value('cover_header_template', '/{slug}.jpg')); self.cover_template.setPlaceholderText('/{slug}.jpg')
-        sf.addRow('Werkmap / Dropbox-map', box)
+        sf.addRow('Werkmap', box)
+        self.sync_warning = QLabel('')
+        self.sync_warning.setObjectName('syncWarning'); self.sync_warning.setWordWrap(True)
+        sf.addRow('', self.sync_warning)
+        self.root.textChanged.connect(self.update_sync_warning)
         sf.addRow('Afbeeldingspad in metadata', self.cover_template)
         storage_note = QLabel('Voor afbeeldingspaden kun je {slug} gebruiken, bijvoorbeeld /{slug}.jpg of /images/{slug}.jpg. QuietWriter bewaart alleen het relatieve pad en kent geen websiteadres.')
         storage_note.setObjectName('muted'); storage_note.setWordWrap(True); sf.addRow('', storage_note)
         self.tabs.addTab(storage, 'Opslag')
 
-        # AI
+        # AI — provider en functies zijn bewust van elkaar losgekoppeld.
         ai = QWidget(); aif = QFormLayout(ai)
+        self.ai_provider = QComboBox(); self.ai_provider.addItem('Ollama (lokaal)', 'ollama'); self.ai_provider.addItem('OpenRouter', 'openrouter')
+        provider_value = str(settings.value('ai_provider', 'ollama') or 'ollama')
+        idx = self.ai_provider.findData(provider_value); self.ai_provider.setCurrentIndex(max(0, idx))
         self.ollama = QLineEdit(settings.value('ollama_url', 'http://127.0.0.1:11434'))
+        self.openrouter_key = QLineEdit(settings.value('openrouter_api_key', '')); self.openrouter_key.setEchoMode(QLineEdit.Password); self.openrouter_key.setPlaceholderText('API-key')
         self.model = QComboBox(); self.model.setEditable(True)
         refresh = QPushButton('Modellen ophalen'); refresh.clicked.connect(self.refresh_models)
         modelbox = QWidget(); mh = QHBoxLayout(modelbox); mh.setContentsMargins(0,0,0,0); mh.addWidget(self.model); mh.addWidget(refresh)
         self.fast_model = QComboBox(); self.fast_model.setEditable(True)
+        self.embedding_model = QComboBox(); self.embedding_model.setEditable(True); self.embedding_model.addItem('')
+        aif.addRow('AI-provider', self.ai_provider)
         aif.addRow('Ollama-adres', self.ollama)
+        aif.addRow('OpenRouter API-key', self.openrouter_key)
         aif.addRow('Schrijf- en analysemodel', modelbox)
         aif.addRow('Snel achtergrondmodel', self.fast_model)
-        ai_note = QLabel('OpenRouter is voorbereid in de architectuur, maar nog niet actief in deze versie.')
+        aif.addRow('Embeddingmodel (optioneel)', self.embedding_model)
+        ai_note = QLabel('QuietWriter gebruikt één provider-onafhankelijke AI-laag. Het snelle model wordt gebruikt als bibliothecaris/reranker; het hoofdmodel schrijft en analyseert. OpenRouter werkt zodra een API-key en model zijn ingesteld.')
         ai_note.setObjectName('muted'); ai_note.setWordWrap(True); aif.addRow('', ai_note)
         self.tabs.addTab(ai, 'AI')
 
@@ -683,6 +697,7 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(spelling, 'Spelling')
 
         self._populate_models(self.available_models)
+        self.update_sync_warning()
         self.refresh_dictionaries(preserve_locale=str(settings.value('spell_language', 'nl_NL') or 'nl_NL'))
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -695,6 +710,30 @@ class SettingsDialog(QDialog):
     def reject(self):
         QApplication.instance().setStyleSheet(stylesheet(self.original_theme))
         super().reject()
+
+    def update_sync_warning(self):
+        path = self.root.text().strip()
+        provider = None
+        lowered = path.casefold().replace('\\', '/')
+        checks = [
+            ('Dropbox', 'dropbox'),
+            ('OneDrive', 'onedrive'),
+            ('Google Drive', 'google drive'),
+            ('Google Drive', 'googledrive'),
+            ('iCloud Drive', 'icloud'),
+        ]
+        for label, token in checks:
+            if token in lowered:
+                provider = label
+                break
+        if provider:
+            self.sync_warning.setText(
+                f'Let op: deze werkmap lijkt in {provider} te staan. Gesynchroniseerde mappen kunnen bestanden heel kort vergrendelen tijdens synchronisatie. '
+                'QuietWriter vangt dit zo veel mogelijk op, maar sluit bij onverwachte opslagfouten eerst andere programma’s die dezelfde bestanden gebruiken.'
+            )
+            self.sync_warning.show()
+        else:
+            self.sync_warning.clear(); self.sync_warning.hide()
 
     def choose_root(self):
         p = QFileDialog.getExistingDirectory(self, 'Kies werkmap', self.root.text())
@@ -755,42 +794,61 @@ class SettingsDialog(QDialog):
         QDesktopServices.openUrl(QUrl(self.DICTIONARY_DOWNLOAD_URL))
 
     def _populate_models(self, models):
-        main_current = self.settings.value('ollama_model', '')
+        provider_name=str(self.settings.value('ai_provider','ollama') or 'ollama')
+        main_current = self.settings.value('ollama_model', '') if provider_name == 'ollama' else self.settings.value('openrouter_model','')
         fast_current = self.settings.value('fast_model', '')
-        self.model.clear(); self.fast_model.clear()
-        self.model.addItems(models); self.fast_model.addItems(models)
-        if main_current:
-            self.model.setCurrentText(main_current)
-        elif models:
-            self.model.setCurrentIndex(0)
-        if fast_current:
-            self.fast_model.setCurrentText(fast_current)
-        elif models:
-            self.fast_model.setCurrentIndex(0)
+        embed_current = self.settings.value('embedding_model', '')
+        self.model.clear(); self.fast_model.clear(); self.embedding_model.clear(); self.embedding_model.addItem('')
+        if provider_name == 'ollama': self.model.addItems(models)
+        elif main_current: self.model.addItem(str(main_current))
+        self.fast_model.addItems(models); self.embedding_model.addItems(models)
+        if main_current: self.model.setCurrentText(str(main_current))
+        elif self.model.count(): self.model.setCurrentIndex(0)
+        if fast_current: self.fast_model.setCurrentText(str(fast_current))
+        elif models: self.fast_model.setCurrentIndex(0)
+        if embed_current: self.embedding_model.setCurrentText(str(embed_current))
 
     def refresh_models(self):
+        # Hoofdprovider en lokale achtergrondprovider worden apart bevraagd.
+        self.settings.setValue('ai_provider', self.ai_provider.currentData() or 'ollama')
+        self.settings.setValue('ollama_url', self.ollama.text())
+        self.settings.setValue('openrouter_api_key', self.openrouter_key.text())
+        errors=[]
         try:
-            infos = OllamaClient(self.ollama.text()).model_info()
-            models = [m['name'] for m in infos]
-            main_current = self.model.currentText(); fast_current = self.fast_model.currentText()
-            self.model.clear(); self.fast_model.clear(); self.model.addItems(models); self.fast_model.addItems(models)
-            if main_current in models: self.model.setCurrentText(main_current)
+            provider = ProviderFactory.from_settings(self.settings)
+            infos = provider.list_models(); models=[m['name'] for m in infos]
+            current=self.model.currentText(); self.model.clear(); self.model.addItems(models)
+            if current in models: self.model.setCurrentText(current)
             elif models: self.model.setCurrentIndex(0)
-            if fast_current in models: self.fast_model.setCurrentText(fast_current)
-            elif infos:
-                smallest = min(infos, key=lambda m: m.get('size', 0) or 0)['name']
-                self.fast_model.setCurrentText(smallest)
-            if self.parent() and hasattr(self.parent(), 'models'): self.parent().models = models
+            if self.parent() and hasattr(self.parent(), 'models'): self.parent().models=models
         except Exception as e:
-            QMessageBox.warning(self, 'Ollama', f'Ollama is niet bereikbaar:\n{e}')
+            errors.append(f'Hoofdprovider: {e}')
+        try:
+            local = ProviderFactory.for_name(self.settings, 'ollama')
+            infos = local.list_models(); models=[m['name'] for m in infos]
+            current=self.fast_model.currentText(); self.fast_model.clear(); self.fast_model.addItems(models)
+            if current in models: self.fast_model.setCurrentText(current)
+            elif infos: self.fast_model.setCurrentText(min(infos,key=lambda m:m.get('size',0) or 0)['name'])
+            current_embed=self.embedding_model.currentText(); self.embedding_model.clear(); self.embedding_model.addItem(''); self.embedding_model.addItems(models)
+            if current_embed in models: self.embedding_model.setCurrentText(current_embed)
+        except Exception as e:
+            errors.append(f'Ollama achtergrondmodellen: {e}')
+        if errors:
+            QMessageBox.warning(self, 'AI', 'Niet alle modelbronnen konden worden opgehaald:\n\n'+'\n'.join(errors))
 
     def accept(self):
         self.settings.setValue('theme', self.theme.currentText())
         self.settings.setValue('autosave', self.autosave.isChecked())
         self.settings.setValue('workspace', self.root.text())
+        provider = self.ai_provider.currentData() or 'ollama'
+        self.settings.setValue('ai_provider', provider)
         self.settings.setValue('ollama_url', self.ollama.text())
-        self.settings.setValue('ollama_model', self.model.currentText())
+        self.settings.setValue('openrouter_api_key', self.openrouter_key.text())
+        if provider == 'openrouter': self.settings.setValue('openrouter_model', self.model.currentText())
+        else: self.settings.setValue('ollama_model', self.model.currentText())
+        self.settings.setValue('fast_provider', 'ollama')
         self.settings.setValue('fast_model', self.fast_model.currentText())
+        self.settings.setValue('embedding_model', self.embedding_model.currentText())
         self.settings.setValue('cover_header_template', self.cover_template.text().strip() or '/{slug}.jpg')
         self.settings.setValue('spell_enabled', self.spell_enabled.isChecked())
         self.settings.setValue('spell_language', self.spell_language.currentData() or '')
@@ -840,110 +898,6 @@ class SearchPanel(QWidget):
             self.results.addItem(item)
 
 
-class AIPanel(QWidget):
-    def __init__(self, main):
-        super().__init__()
-        self.main = main
-        self.worker = None
-        self.current_assistant = ''
-        self._thinking_dots = 0
-        self._final_started = False
-        self.thinking_timer = QTimer(self)
-        self.thinking_timer.setInterval(350)
-        self.thinking_timer.timeout.connect(self._animate_thinking)
-
-        lay = QVBoxLayout(self); lay.setContentsMargins(16,16,16,16)
-        top = QHBoxLayout()
-        lab = QLabel('AI-assistent'); lab.setObjectName('sectionTitle')
-        self.context = QComboBox(); self.context.addItems(['Huidig hoofdstuk', 'Huidige sectie', 'Hele boek', 'Verhalenbibliotheek'])
-        top.addWidget(lab); top.addStretch(); top.addWidget(self.context)
-
-        self.thinking_button = QPushButton('Denken…')
-        self.thinking_button.setObjectName('thinkingButton')
-        self.thinking_button.clicked.connect(self._toggle_thinking_details)
-        self.thinking_button.hide()
-        self.thinking_details = QTextEdit()
-        self.thinking_details.setReadOnly(True)
-        self.thinking_details.setMaximumHeight(130)
-        self.thinking_details.setObjectName('thinkingDetails')
-        self.thinking_details.hide()
-
-        self.chat = QTextEdit(); self.chat.setReadOnly(True)
-        self.input = QTextEdit(); self.input.setMaximumHeight(120); self.input.setPlaceholderText('Typ een opdracht…')
-        self.send_button = QPushButton('Versturen'); self.send_button.clicked.connect(self.send)
-        lay.addLayout(top)
-        lay.addWidget(self.thinking_button, 0, Qt.AlignLeft)
-        lay.addWidget(self.thinking_details)
-        lay.addWidget(self.chat); lay.addWidget(self.input); lay.addWidget(self.send_button, 0, Qt.AlignRight)
-
-    def send(self):
-        prompt = self.input.toPlainText().strip()
-        if not prompt or self.worker: return
-        model = self.main.settings.value('ollama_model', '')
-        if not model:
-            QMessageBox.information(self, 'AI', 'Kies eerst een Ollama-model in Instellingen.')
-            return
-        persona = self.main.library.read_persona()
-        context_text, context_label = self.main.build_ai_context(self.context.currentText(), prompt)
-        system = ('Je bent de schrijf- en redactieassistent van de gebruiker. Gebruik ALTIJD het onderstaande '
-                  'schrijversprofiel als vaste persona. Pas nooit rechtstreeks manuscriptbestanden aan. '
-                  'Geef wijzigingen, herschrijvingen en suggesties uitsluitend in je antwoord.\n\n'
-                  f'SCHRIJVERSPROFIEL:\n{persona}\n\nCONTEXT ({context_label}):\n{context_text}')
-        self.chat.append(f'<b>Jij</b><br>{prompt.replace(chr(10), "<br>")}<br>')
-        self.chat.append('<b>AI</b><br>')
-        self.input.clear(); self.current_assistant = ''; self._final_started = False
-        self._start_thinking()
-        self.worker = ChatWorker(self.main.settings.value('ollama_url','http://127.0.0.1:11434'), model,
-                                 [{'role':'system','content':system},{'role':'user','content':prompt}])
-        self.worker.token.connect(self._token)
-        self.worker.thinking.connect(self._thinking)
-        self.worker.failed.connect(self._fail)
-        self.worker.finished_ok.connect(self._done)
-        self.worker.start()
-
-    def _start_thinking(self):
-        self._thinking_dots = 0
-        self.thinking_details.clear()
-        self.thinking_details.hide()
-        self.thinking_button.setText('Denken…')
-        self.thinking_button.show()
-        self.thinking_timer.start()
-
-    def _animate_thinking(self):
-        self._thinking_dots = (self._thinking_dots + 1) % 4
-        self.thinking_button.setText('Denken' + '.' * (self._thinking_dots + 1))
-
-    def _toggle_thinking_details(self):
-        if self.thinking_details.toPlainText().strip():
-            self.thinking_details.setVisible(not self.thinking_details.isVisible())
-
-    def _thinking(self, text):
-        cur = self.thinking_details.textCursor(); cur.movePosition(QTextCursor.End); cur.insertText(text); self.thinking_details.setTextCursor(cur)
-
-    def _finish_thinking(self):
-        self.thinking_timer.stop()
-        self.thinking_details.clear()
-        self.thinking_details.hide()
-        self.thinking_button.hide()
-
-    def _token(self, text):
-        if not self._final_started:
-            self._final_started = True
-            self._finish_thinking()
-        self.current_assistant += text
-        cur = self.chat.textCursor(); cur.movePosition(QTextCursor.End); cur.insertText(text); self.chat.setTextCursor(cur)
-
-    def _done(self):
-        self._finish_thinking()
-        self.chat.append('<br>')
-        self.worker = None
-
-    def _fail(self, err):
-        self._finish_thinking()
-        self.chat.append(f'<br><i>Fout: {err}</i><br>')
-        self.worker = None
-
-
 class ManuscriptTree(QTreeWidget):
     chapterDropped = Signal(str, str, str, bool)
 
@@ -953,9 +907,11 @@ class ManuscriptTree(QTreeWidget):
         super().__init__(parent)
         self.setColumnCount(2)
         self.setHeaderHidden(True)
+        self.header().setStretchLastSection(False)
         self.header().setSectionResizeMode(0, QHeaderView.Stretch)
         self.header().setSectionResizeMode(1, QHeaderView.Fixed)
-        self.setColumnWidth(1, 34)
+        self.header().setMinimumSectionSize(0)
+        self.setColumnWidth(1, 38)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(False)
@@ -965,6 +921,10 @@ class ManuscriptTree(QTreeWidget):
         self.setDragDropMode(QAbstractItemView.DragDrop)
         self.setDefaultDropAction(Qt.MoveAction)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setRootIsDecorated(False)
+        self.setItemsExpandable(False)
+        self.setIndentation(14)
+        self.setUniformRowHeights(True)
         self._drag_allowed = False
         self._drag_item = None
         self._drop_item = None
@@ -1258,7 +1218,7 @@ class HistoryPanel(QWidget):
                 header.setData(Qt.UserRole, '__header__')
                 self.list.addItem(header); last_group = group
             star = '★' if row.get('starred') else '☆'
-            kind = {'daily':'Dagarchief', 'manual':'Handmatig', 'pre_restore':'Voor herstel'}.get(row.get('kind'), 'Versie')
+            kind = {'daily':'Dagarchief', 'manual':'Handmatig', 'pre_restore':'Voor herstel', 'chapter_delete':'Voor verwijderen hoofdstuk'}.get(row.get('kind'), 'Versie')
             text = f'{star}  {time_label}  ·  {kind}\n{row.get("chapters",0)} hoofdstukken · {row.get("words",0):,} woorden'.replace(',', '.')
             item = QListWidgetItem(text)
             item.setData(Qt.UserRole, row['id'])
@@ -1310,7 +1270,7 @@ class EditorPage(QWidget):
 
         root = QHBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
         self.left_split = QSplitter(Qt.Horizontal)
-        self.manuscript = QWidget(); self.manuscript.setObjectName('panel'); ml = QVBoxLayout(self.manuscript); ml.setContentsMargins(14,14,14,14)
+        self.manuscript = QWidget(); self.manuscript.setObjectName('panel'); self.manuscript.setMinimumWidth(250); ml = QVBoxLayout(self.manuscript); ml.setContentsMargins(14,14,14,14)
         head = QHBoxLayout(); title = QLabel('Manuscript'); title.setObjectName('sectionTitle'); add = QPushButton('+ Toevoegen'); add.clicked.connect(self.add_menu)
         head.addWidget(title); head.addStretch(); head.addWidget(add)
         self.tree = ManuscriptTree(); self.tree.itemClicked.connect(self.tree_clicked); self.tree.chapterDropped.connect(self.move_chapter); self.tree.setContextMenuPolicy(Qt.CustomContextMenu); self.tree.customContextMenuRequested.connect(self.tree_context_menu)
@@ -1321,7 +1281,7 @@ class EditorPage(QWidget):
         self.history_banner = QFrame(); self.history_banner.setObjectName('historyBanner'); hb = QHBoxLayout(self.history_banner); hb.setContentsMargins(14,8,14,8)
         self.history_banner_label = QLabel(''); self.history_banner_label.setObjectName('historyBannerLabel')
         self.history_restore_btn = QPushButton('Deze versie herstellen'); self.history_restore_btn.setObjectName('restoreButton'); self.history_restore_btn.clicked.connect(self.restore_preview_version)
-        self.history_exit_btn = QPushButton('Afsluiten'); self.history_exit_btn.clicked.connect(self.exit_history_preview)
+        self.history_exit_btn = QPushButton('Afsluiten'); self.history_exit_btn.setObjectName('historyExitButton'); self.history_exit_btn.clicked.connect(self.exit_history_preview)
         hb.addWidget(self.history_banner_label); hb.addStretch(); hb.addWidget(self.history_restore_btn); hb.addWidget(self.history_exit_btn)
         self.history_banner.hide()
         topbar = QFrame(); topbar.setObjectName('editorTopbar'); tl = QHBoxLayout(topbar); tl.setContentsMargins(14,8,18,8)
@@ -1353,7 +1313,13 @@ class EditorPage(QWidget):
 
         self.left_split.addWidget(self.manuscript); self.left_split.addWidget(self.center); self.left_split.addWidget(self.right)
         self.left_split.setStretchFactor(0,0); self.left_split.setStretchFactor(1,1); self.left_split.setStretchFactor(2,0)
-        self.left_split.setSizes([280, 800, 360])
+        # Visible side panels may never collapse to a 1-2 px sliver. They are
+        # collapsed explicitly by hiding the widget, not by shrinking it in QSplitter.
+        self.left_split.setCollapsible(0, False); self.left_split.setCollapsible(1, False); self.left_split.setCollapsible(2, False)
+        self._manuscript_width = 280
+        self._right_width = 360
+        self.left_split.setSizes([self._manuscript_width, 800, self._right_width])
+        self.left_split.splitterMoved.connect(self._remember_panel_widths)
         root.addWidget(self.left_split)
 
     def load_book(self, book):
@@ -1362,6 +1328,7 @@ class EditorPage(QWidget):
         if first: self.open_chapter(first)
         self.main.search_index.rebuild_book(book)
         if hasattr(self, 'history'): self.history.set_book(book)
+        if hasattr(self, 'ai'): self.ai.set_book(book)
 
     def populate_tree(self):
         self.tree.clear()
@@ -1369,11 +1336,11 @@ class EditorPage(QWidget):
         for section in self.book.sections:
             if section.id == 'root' and len(self.book.sections)==1:
                 for chapter in section.chapters:
-                    it = QTreeWidgetItem([chapter.title, '']); it.setData(0, Qt.UserRole, ('chapter', chapter.id)); it.setIcon(1, icon('drag_handle')); it.setToolTip(1, 'Sleep om hoofdstuk te verplaatsen'); self.tree.addTopLevelItem(it)
+                    it = QTreeWidgetItem([chapter.title, '']); it.setData(0, Qt.UserRole, ('chapter', chapter.id)); it.setIcon(1, icon('drag_handle')); it.setTextAlignment(1, Qt.AlignCenter); it.setToolTip(1, 'Sleep om hoofdstuk te verplaatsen'); self.tree.addTopLevelItem(it)
             else:
                 sit = QTreeWidgetItem([section.title, '']); sit.setData(0, Qt.UserRole, ('section', section.id)); sit.setFlags(sit.flags() & ~Qt.ItemIsDragEnabled); self.tree.addTopLevelItem(sit)
                 for chapter in section.chapters:
-                    cit = QTreeWidgetItem([chapter.title, '']); cit.setData(0, Qt.UserRole, ('chapter', chapter.id)); cit.setIcon(1, icon('drag_handle')); cit.setToolTip(1, 'Sleep om hoofdstuk te verplaatsen'); sit.addChild(cit)
+                    cit = QTreeWidgetItem([chapter.title, '']); cit.setData(0, Qt.UserRole, ('chapter', chapter.id)); cit.setIcon(1, icon('drag_handle')); cit.setTextAlignment(1, Qt.AlignCenter); cit.setToolTip(1, 'Sleep om hoofdstuk te verplaatsen'); sit.addChild(cit)
                 sit.setExpanded(True)
 
     def move_chapter(self, chapter_id: str, target_type: str, target_id: str, before: bool):
@@ -1414,8 +1381,6 @@ class EditorPage(QWidget):
                 return
             rename_action = menu.addAction('Hernoemen…')
             duplicate_action = menu.addAction('Dupliceren')
-            menu.addSeparator()
-            delete_action = menu.addAction('Verwijderen…')
             chosen = menu.exec(self.tree.viewport().mapToGlobal(pos))
 
             if chosen is rename_action:
@@ -1431,22 +1396,6 @@ class EditorPage(QWidget):
                 self.populate_tree()
                 if copied:
                     self.open_chapter(copied); self.select_tree_chapter(copied.id)
-            elif chosen is delete_action:
-                total = sum(len(sec.chapters) for sec in self.book.sections)
-                if total <= 1:
-                    QMessageBox.information(self, 'Hoofdstuk verwijderen', 'Een boek moet minimaal één hoofdstuk behouden.')
-                    return
-                if not confirm(self, 'Hoofdstuk verwijderen', f'Wil je “{chapter.title}” uit dit boek verwijderen?\n\nHet tekstbestand wordt voor herstel in de QuietWriter-prullenbak bewaard.'):
-                    return
-                self.save()
-                deleting_current = bool(self.chapter and self.chapter.id == chapter_id)
-                if self.main.library.delete_chapter(self.book, chapter_id):
-                    self.populate_tree()
-                    if deleting_current:
-                        next_chapter = next((c for sec in self.book.sections for c in sec.chapters), None)
-                        if next_chapter:
-                            self.open_chapter(next_chapter); self.select_tree_chapter(next_chapter.id)
-                    self.main.search_index.rebuild_book(self.book); self.update_counts()
 
         elif data[0] == 'section':
             section_id = data[1]
@@ -1472,6 +1421,42 @@ class EditorPage(QWidget):
                         self.book.sections = [Section(id='root', title='Manuscript')]
                     self.main.library.save_manifest(self.book); self.populate_tree()
 
+    def delete_current_chapter(self):
+        if not self.book or not self.chapter or self.preview_live_book:
+            return
+        total = sum(len(sec.chapters) for sec in self.book.sections)
+        if total <= 1:
+            QMessageBox.information(self, 'Hoofdstuk verwijderen', 'Het laatste hoofdstuk van een boek kan niet worden verwijderd.')
+            return
+        chapter = self.chapter
+        next_chapter = self.main.library.adjacent_chapter_for_delete(self.book, chapter.id)
+        message = (
+            f'Weet je zeker dat je “{chapter.title}” wilt verwijderen?\n\n'
+            'Er wordt eerst een versie in de versiegeschiedenis gemaakt, zodat je de inhoud later kunt herstellen.'
+        )
+        if not confirm(self, 'Hoofdstuk verwijderen', message):
+            return
+        self.save()
+        try:
+            self.main.library.create_version(self.book, kind='chapter_delete')
+            removed = self.main.library.delete_chapter(self.book, chapter.id)
+        except Exception as exc:
+            QMessageBox.critical(self, 'Hoofdstuk verwijderen', f'Verwijderen is mislukt.\n\n{exc}')
+            return
+        if not removed:
+            QMessageBox.warning(self, 'Hoofdstuk verwijderen', 'Het hoofdstuk kon niet worden verwijderd.')
+            return
+        self.chapter = None; self.dirty = False
+        self.populate_tree()
+        if next_chapter:
+            _, existing = self.find_chapter(next_chapter.id)
+            if existing:
+                self.open_chapter(existing); self.select_tree_chapter(existing.id)
+        self.main.search_index.rebuild_book(self.book)
+        self.history.set_book(self.book)
+        self.update_counts()
+        self.main.sync_tool_buttons()
+
     def select_tree_chapter(self, cid):
         root=self.tree.invisibleRootItem()
         stack=[root]
@@ -1485,20 +1470,22 @@ class EditorPage(QWidget):
 
     def load_dictionary_from_settings(self):
         self.dictionary.clear()
-        if not self.main.settings.value('spell_enabled', True, bool):
-            self.highlighter.rehighlight(); return
-        catalog = DictionaryCatalog(self.main.library.dict_dir)
-        locale = str(self.main.settings.value('spell_language', 'nl_NL') or 'nl_NL')
-        entry = catalog.get(locale)
-        path = entry.dic if entry else None
-        legacy = str(self.main.settings.value('spell_dictionary','') or '').strip()
-        if not path and legacy and Path(legacy).exists():
-            path = Path(legacy)
-        if path and Path(path).exists():
-            try: self.dictionary.load_dic(Path(path))
-            except Exception: pass
-        self.highlighter.rehighlight()
-        if hasattr(self,'spell'): self.spell.refresh()
+        enabled = self.main.settings.value('spell_enabled', True, bool)
+        if enabled:
+            catalog = DictionaryCatalog(self.main.library.dict_dir)
+            locale = str(self.main.settings.value('spell_language', 'nl_NL') or 'nl_NL')
+            entry = catalog.get(locale)
+            path = entry.dic if entry else None
+            legacy = str(self.main.settings.value('spell_dictionary','') or '').strip()
+            if not path and legacy and Path(legacy).exists():
+                path = Path(legacy)
+            if path and Path(path).exists():
+                try: self.dictionary.load_dic(Path(path))
+                except Exception: pass
+        # Inline red underlining is passive feedback and remains available even
+        # while the spelling panel is closed. Opening the panel is what starts
+        # the guided walk-through and text selection.
+        self.highlighter.set_active(bool(enabled and self.dictionary.words))
 
     def find_chapter(self, cid):
         for s in self.book.sections:
@@ -1517,8 +1504,9 @@ class EditorPage(QWidget):
     def open_chapter(self, chapter):
         self.save(); self.chapter = chapter; self.chapter_title.setText(chapter.title)
         self.editor.blockSignals(True); self.editor.setPlainText(self.main.library.read_chapter(self.book, chapter)); self.editor.blockSignals(False)
-        self.dirty = False; self.update_counts()
-        if hasattr(self, 'spell'): self.spell.refresh()
+        self.dirty = False; self.update_counts(); self.main.sync_tool_buttons()
+        if self.right.isVisible() and self.right.currentWidget() is self.spell:
+            self.spell.refresh()
 
     def on_text_changed(self):
         if self.preview_live_book:
@@ -1714,6 +1702,8 @@ class EditorPage(QWidget):
         self.editor.blockSignals(True); self.editor.clear(); self.editor.blockSignals(False)
         self.book_words.setText('0 woorden')
         self.right.hide()
+        if hasattr(self, 'ai'): self.ai.set_book(None)
+        self._set_spell_active(False)
         self.main.status.clearMessage()
 
     def _chapters_in_scope(self):
@@ -1789,20 +1779,73 @@ class EditorPage(QWidget):
         self.save(); self.main.search_index.rebuild_book(self.book); self.do_search(); self.update_counts(saved=True)
 
 
+    def _remember_panel_widths(self, *_):
+        sizes = self.left_split.sizes()
+        if self.manuscript.isVisible() and sizes[0] >= 200:
+            self._manuscript_width = sizes[0]
+        if self.right.isVisible() and sizes[2] >= 260:
+            self._right_width = sizes[2]
+
+    def _restore_splitter_widths(self):
+        """Give every visible pane a sane width after show/restore.
+
+        QSplitter remembers a hidden widget as width 0. Restoring that state and
+        later calling show() can otherwise leave a 1-2 px strip.
+        """
+        total = max(self.left_split.width(), sum(self.left_split.sizes()), 900)
+        left = self._manuscript_width if self.manuscript.isVisible() else 0
+        right = self._right_width if self.right.isVisible() else 0
+        center = max(320, total - left - right)
+        self.left_split.setSizes([left, center, right])
+
+    def _show_manuscript_panel(self):
+        self.manuscript.show()
+        QTimer.singleShot(0, self._restore_splitter_widths)
+
+    def _show_right_panel(self):
+        self.right.show()
+        QTimer.singleShot(0, self._restore_splitter_widths)
+
     def toggle_manuscript(self):
-        self.manuscript.setVisible(not self.manuscript.isVisible())
+        if self.manuscript.isVisible():
+            self._remember_panel_widths()
+            self.manuscript.hide()
+        else:
+            self._show_manuscript_panel()
         self.main.sync_tool_buttons()
 
+    def _set_spell_active(self, active: bool):
+        # The passive red underline stays enabled whenever spelling is enabled.
+        # Closing the guided panel only removes its current text selection.
+        if not active:
+            cur = self.editor.textCursor()
+            cur.clearSelection()
+            self.editor.setTextCursor(cur)
+
     def toggle_right(self):
-        self.right.setVisible(not self.right.isVisible())
+        will_hide = self.right.isVisible()
+        if will_hide:
+            self._remember_panel_widths()
+            self.right.hide()
+            self._set_spell_active(False)
+        else:
+            self._show_right_panel()
+            if self.right.currentWidget() is self.spell:
+                self.spell.refresh()
         self.main.sync_tool_buttons()
 
     def _toggle_right_widget(self, widget, focus_widget):
-        if self.right.isVisible() and self.right.currentWidget() is widget:
+        closing_same = self.right.isVisible() and self.right.currentWidget() is widget
+        if closing_same:
+            self._remember_panel_widths()
             self.right.hide()
+            if widget is self.spell:
+                self._set_spell_active(False)
         else:
+            if widget is not self.spell:
+                self._set_spell_active(False)
             self.right.setCurrentWidget(widget)
-            self.right.show()
+            self._show_right_panel()
             focus_widget.setFocus()
         self.main.sync_tool_buttons()
 
@@ -1813,7 +1856,9 @@ class EditorPage(QWidget):
         self._toggle_right_widget(self.ai, self.ai.input)
 
     def show_spell(self):
-        self.spell.refresh()
+        opening = not (self.right.isVisible() and self.right.currentWidget() is self.spell)
+        if opening:
+            self.spell.refresh()
         self._toggle_right_widget(self.spell, self.spell.suggestions)
 
 
@@ -1854,12 +1899,13 @@ class MainWindow(QMainWindow):
         # Rechter gereedschapsrail: alleen actief in het manuscript.
         self.toolrail = QFrame(); self.toolrail.setObjectName('toolrail'); self.toolrail.setFixedWidth(64)
         tr=QVBoxLayout(self.toolrail); tr.setContentsMargins(8,10,8,10); tr.setSpacing(7)
-        def trb(icon_name, tip, fn):
-            b=QPushButton(); b.setObjectName('railButton'); b.setIcon(icon(icon_name)); b.setIconSize(QSize(28,28)); b.setFixedSize(48,48); b.setToolTip(tip); b.setCheckable(True); b.clicked.connect(fn); tr.addWidget(b); return b
+        def trb(icon_name, tip, fn, checkable=True):
+            b=QPushButton(); b.setObjectName('railButton'); b.setIcon(icon(icon_name)); b.setIconSize(QSize(28,28)); b.setFixedSize(48,48); b.setToolTip(tip); b.setCheckable(checkable); b.clicked.connect(fn); tr.addWidget(b); return b
         self.search_button = trb('search','Zoeken', self.editor_page.show_search)
         self.ai_button = trb('spark','AI-assistent', self.editor_page.show_ai)
         self.spell_button = trb('spell','Spellingscontrole', self.editor_page.show_spell)
         self.history_button = trb('history','Versiegeschiedenis', self.editor_page.show_history)
+        self.delete_chapter_button = trb('trash','Huidig hoofdstuk verwijderen', self.editor_page.delete_current_chapter, checkable=False)
         self.manuscript_button = trb('panel-left','Hoofdstukpaneel tonen/verbergen', self.editor_page.toggle_manuscript)
         self.right_button = trb('panel-right','Rechterpaneel tonen/verbergen', self.editor_page.toggle_right)
         tr.addStretch(); root.addWidget(self.toolrail)
@@ -2003,6 +2049,9 @@ class MainWindow(QMainWindow):
         self.history_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.history)
         self.manuscript_button.setChecked(self.editor_page.manuscript.isVisible() and in_editor)
         self.right_button.setChecked(right_visible)
+        if hasattr(self, 'delete_chapter_button'):
+            total = sum(len(sec.chapters) for sec in self.editor_page.book.sections) if self.editor_page.book else 0
+            self.delete_chapter_button.setEnabled(bool(in_editor and self.editor_page.chapter and not self.editor_page.preview_live_book and total > 1))
 
     def build_ai_context(self, mode: str, prompt: str):
         ep=self.editor_page; book=ep.book; chapter=ep.chapter
@@ -2048,9 +2097,16 @@ class MainWindow(QMainWindow):
         g=self.settings.value('geometry'); s=self.settings.value('windowState'); sp=self.settings.value('splitter')
         if g: self.restoreGeometry(g)
         if s: self.restoreState(s)
-        if sp: self.editor_page.left_split.restoreState(sp)
+        if sp:
+            self.editor_page.left_split.restoreState(sp)
+            sizes = self.editor_page.left_split.sizes()
+            if len(sizes) >= 3:
+                if sizes[0] >= 200: self.editor_page._manuscript_width = sizes[0]
+                if sizes[2] >= 260: self.editor_page._right_width = sizes[2]
         self.editor_page.manuscript.setVisible(self.settings.value('manuscript_visible', True, bool))
         self.editor_page.right.setVisible(self.settings.value('right_visible', False, bool))
+        # Sanitize old splitter states that may contain a collapsed 0-2 px pane.
+        QTimer.singleShot(0, self.editor_page._restore_splitter_widths)
 
 
 def run():

@@ -260,6 +260,21 @@ class Library:
         self.save_manifest(book)
         return target
 
+
+    def adjacent_chapter_for_delete(self, book: Book, chapter_id: str) -> Chapter | None:
+        """Return the chapter to open after deleting *chapter_id*.
+
+        Prefer the immediately preceding chapter in manuscript order. If there is
+        no preceding chapter, use the immediately following chapter.
+        """
+        ordered = [chapter for section in book.sections for chapter in section.chapters]
+        index = next((i for i, chapter in enumerate(ordered) if chapter.id == chapter_id), -1)
+        if index < 0 or len(ordered) <= 1:
+            return None
+        if index > 0:
+            return ordered[index - 1]
+        return ordered[index + 1] if index + 1 < len(ordered) else None
+
     def delete_chapter(self, book: Book, chapter_id: str) -> bool:
         """Remove a chapter from the manuscript while preserving its file in trash."""
         total = sum(len(section.chapters) for section in book.sections)
