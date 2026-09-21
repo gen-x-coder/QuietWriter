@@ -4,7 +4,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-CORE_FIELDS = {'title', 'description', 'synopsis', 'tags', 'date', 'slug', 'meta', 'intro', 'author', 'published'}
+CORE_FIELDS = {'title', 'description', 'synopsis', 'tags', 'date', 'slug', 'meta', 'intro', 'author', 'published', 'image', 'cover', 'featured_image'}
 
 
 def _split_tags(value: str) -> list[str]:
@@ -41,7 +41,8 @@ def split_chapters(body: str, fallback_title: str) -> list[dict]:
 
 def parse_story(path: Path) -> dict:
     text = path.read_text(encoding='utf-8', errors='replace')
-    meta = {'title': path.stem, 'description': '', 'synopsis': '', 'tags': ''}
+    meta = {key: '' for key in CORE_FIELDS}
+    meta['title'] = path.stem
     extra = {}
     body_start = 0
     lines = text.splitlines()
@@ -61,16 +62,13 @@ def parse_story(path: Path) -> dict:
             continue
         key, value = m.group(1).lower(), m.group(2).strip()
         if key in CORE_FIELDS:
-            if key in meta:
-                meta[key] = value
-            else:
-                extra[key] = value
+            meta[key] = value
         else:
             extra[key] = value
         body_start = i + 1
 
     if not meta.get('synopsis'):
-        meta['synopsis'] = extra.get('intro') or extra.get('meta') or ''
+        meta['synopsis'] = meta.get('intro') or meta.get('meta') or ''
     body = '\n'.join(lines[body_start:]).strip()
     chapters = split_chapters(body, meta['title'])
     meta['body'] = body

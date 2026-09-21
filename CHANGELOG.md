@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0
+
+- Boekenplank toont echte omslagafbeeldingen in vaste verhouding 1:1,6; boektitel blijft dynamische tekst en maakt geen deel uit van de afbeelding.
+- Nieuwe map `boekomslagen/`. Omslagen worden standaard gezocht op de slug van het boek.
+- Ondersteuning voor `default-cover.jpg`, `default-cover.jpeg`, `default-cover.png` of `default-cover.webp` als standaardomslag; zonder bestand gebruikt QuietWriter een rustige ingebouwde fallback.
+- Nieuwe knop **Details** op ieder boek en **Boekdetails** in de linkernavigatie zolang een boek geopend is.
+- Boekdetails ondersteunt titel, slug, korte beschrijving, meta/SEO-beschrijving, intro boven het verhaal, tags, auteur en boekomslag.
+- Boekomslagselectie valideert portretverhouding ongeveer 1:1,6 en minimaal 1024 pixels op de lange zijde.
+- Boek verwijderen vanuit Boekdetails met expliciete waarschuwing.
+- Instelling **Afbeeldingspad in metadata** met `{slug}` placeholder, standaard `/{slug}.jpg`; QuietWriter kent geen domeinnaam of website-adres.
+- Zoekvelden op Boekenplank, Verhalen en manuscript hebben nu een ingebouwde wis-knop.
+- Duidelijke melding wanneer een zoekopdracht geen resultaten oplevert.
+- Boekenplank doorzoekt nu ook slug, beschrijvingen, tags en auteur in plaats van alleen de titel.
+- Verhalenparser exposeert de bestaande velden `description`, `meta`, `intro`, `author` en afbeeldingsvelden consequenter.
+
 ## 0.3.0
 
 - Nieuwe boekenplank als echt startscherm met boekkaarten, zoekveld en woordtelling.
@@ -12,12 +27,3 @@
 - De editor heeft nu een sobere bovenbalk met undo/redo en de boektitel.
 - Rechter gereedschapsbalk blijft alleen bij het manuscript zichtbaar en gebruikt grotere iconen.
 - Meegeleverde, opgeschoonde `schrijver.md` op basis van de oude schrijfwijzer; vanuit Persona kan deze geladen worden.
-- Schrijfwijzer is compacter gemaakt voor AI-context en nadrukkelijk ingericht als stijlprofiel in plaats van lange voorbeeldverzameling.
-- Interfacestijlen verfijnd voor boekenplank, navigatie, kaarten, editor en verhalenlezer.
-
-## 0.2.0
-
-- Inklapbare manuscript- en rechterpanelen.
-- Grotere SVG-iconen.
-- AI-denkindicator en streaming think-output.
-- Verbeterde manuscripttypografie en Ollama-modelkeuze.
