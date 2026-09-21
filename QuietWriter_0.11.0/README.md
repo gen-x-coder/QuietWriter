@@ -1,0 +1,68 @@
+# QuietWriter
+
+QuietWriter is een lokale Python/PySide6-schrijfomgeving met boeken, secties, hoofdstukken, Markdown-opslag, versiegeschiedenis, spellingscontrole en een modulaire AI-assistent.
+
+## Eén documentmodel
+
+QuietWriter gebruikt één eenvoudig model: alles wat je schrijft is een **boek**. Dat kan een roman zijn, een kort verhaal met één hoofdstuk of een verhalenbundel met secties en meerdere hoofdstukken. Een aparte verhalenbibliotheek bestaat niet meer.
+
+Bestaande `.md`-verhalen open je via **Boekenplank → Importeren…**. QuietWriter maakt daar een normaal bewerkbaar boek van, zonder het bronbestand te wijzigen.
+
+## Navigatie
+
+Wanneer geen boek geopend is, is de Boekenplank het centrale startpunt. Na openen van een boek worden **Inhoud** en **Boekdetails** beschikbaar.
+
+Globale functies staan onderaan de linkernavigatie:
+
+- Schrijverspersona
+- Instellingen
+- Prullenbak
+
+Boekdetails en Instellingen zijn centrale pagina's in de applicatie en geen losse popupvensters meer. De rechter gereedschapsrail is uitsluitend bedoeld voor gereedschappen rond de huidige tekst, zoals Zoeken, AI, Spellingscontrole, Toevoegen en Versiegeschiedenis.
+
+## Boekenplank
+
+De boekenplank gebruikt een responsive raster: QuietWriter berekent hoeveel boekkaarten naast elkaar passen op basis van de beschikbare vensterbreedte. Een boek open je met **Openen**; metadata en omslag beheer je daarna via **Boekdetails**.
+
+## Uiterlijk en typografie
+
+Onder **Instellingen → Uiterlijk** kun je elk lokaal geïnstalleerd schrijflettertype kiezen en de tekstgrootte onafhankelijk daarvan instellen. Merriweather is de standaard; ontbreekt dat font, dan valt QuietWriter terug op Georgia of een beschikbaar systeemfont.
+
+De linker inhoudsstructuur kan worden getoond/verbergen met het kleine tabje aan de linkerrand van de schrijfruimte. De rechter gereedschapsrail kan zelf worden uitgevouwen om tekstlabels naast de iconen te tonen.
+
+## Starten
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+py main.py
+```
+
+## Markdown import
+
+Op de boekenplank kies je **Importeren…** en selecteer je een `.md`-bestand. QuietWriter leest frontmatter zoals `title`, `date`, `slug`, `description`, `intro`, `meta`, `image`, `image_alt`, `author`, `tags`, `published` en `synopsis`. Onbekende velden worden bewaard.
+
+Een top-level kop wordt een hoofdstuk:
+
+```markdown
+# Hoofdstuk 1
+Tekst...
+
+# Hoofdstuk 2
+Tekst...
+```
+
+Zonder `#`-kop wordt het hele bestand één hoofdstuk.
+
+## Markdown export
+
+Open een boek en ga naar **Boekdetails → Exporteren…**. QuietWriter schrijft één `.md`-bestand met frontmatter en alle hoofdstukken. Secties worden als onzichtbare HTML-comments opgeslagen zodat QuietWriter ze bij herimport kan herstellen.
+
+## Scènebreuk
+
+Gebruik de **+** knop in de rechter werkbalk en kies **Scènebreuk**. Op schijf blijft dat gewone Markdown:
+
+```markdown
+***
+```
