@@ -1,55 +1,46 @@
-# QuietWriter
+# QuietWriter 0.3.0
 
-QuietWriter is een lokale Python-desktopapp voor het schrijven van boeken en verhalen, met optionele Ollama-integratie. Manuscripten blijven gewone Markdown-bestanden; de applicatie gebruikt alleen aanvullende JSON/SQLite-bestanden voor structuur en zoeken.
+QuietWriter is een lokale Python-desktopapp voor het schrijven van boeken en verhalen met optionele Ollama-integratie. Manuscripten blijven gewone Markdown-bestanden. JSON en SQLite worden alleen gebruikt voor structuur, instellingen en zoekindexen.
 
-## Wat deze eerste versie al bevat
+## Belangrijkste functies
 
-- modern PySide6/Qt 6 venster;
-- startscherm met bestaande boeken en nieuw boek;
-- boeken, secties en hoofdstukken;
-- rustige editor met woordtelling;
-- linker manuscriptbalk en rechter gereedschapsbalk;
-- beide zijpanelen afzonderlijk verberg-/toonbaar;
-- zoekfunctie over alle hoofdstukken van het geopende boek via SQLite FTS5;
-- handmatig opslaan (`Ctrl+S`) en autosave;
-- dagelijkse archiefkopie van de laatst oudere boekversie;
-- werkmap kan rechtstreeks naar een lokale Dropbox-map wijzen;
-- zes ingebouwde lichte/donkere kleurenschema's;
-- venstergrootte en splitterposities worden onthouden;
-- aparte Persona-knop in de linker balk (`persona/schrijver.md`);
-- Ollama wordt bij start gecontroleerd en lokale modellen worden opgehaald;
-- streaming Ollama-chat in het rechterpaneel;
-- AI gebruikt altijd `schrijver.md`;
-- AI kan geselecteerde tekst, huidig hoofdstuk, huidige sectie, heel boek of relevante oude verhalen als context krijgen;
-- `stories/*.md` wordt geïndexeerd op titel, beschrijving, synopsis, tags en tekst;
-- eenvoudige voorbereidende ondersteuning voor Hunspell-achtige `.dic` woordenlijsten.
+- moderne PySide6/Qt 6-interface;
+- boekenplank als startscherm;
+- boeken met secties en hoofdstukken;
+- rustige schrijfweergave met beperkte regelbreedte en woordtelling;
+- autosave plus handmatig opslaan (`Ctrl+S`);
+- dagelijkse herstelkopieën van oudere boekversies;
+- werkmap kan rechtstreeks in Dropbox staan;
+- zes lichte/donkere kleurenschema's;
+- inklapbare linkernavigatie met compacte en uitgebreide stand;
+- contextgevoelige navigatie: **Boekenplank** sluit het huidige boek, **Manuscript** keert terug naar het geladen boek;
+- aparte **Verhalen**-bibliotheek voor bestaande Markdown-verhalen;
+- aparte **Schrijverspersona**;
+- zoeken door het geopende boek;
+- streaming Ollama-chat met schrijfpersona;
+- zichtbaar `Denken…` tijdens AI-verwerking, zonder denklog in het uiteindelijke antwoord;
+- oude verhalen kunnen door de AI als aanvullende context worden gebruikt.
 
-## Installatie
+## Installeren
 
 Python 3.12 of nieuwer wordt aanbevolen.
 
-```bash
+```powershell
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 python main.py
 ```
 
-Op Linux/macOS gebruik je voor activeren doorgaans:
-
-```bash
-source .venv/bin/activate
-```
-
 ## Werkmap
 
-Standaard wordt `~/QuietWriter` gebruikt. In **Instellingen** kun je dit wijzigen, bijvoorbeeld naar:
+Standaard gebruikt QuietWriter:
 
 ```text
-C:\Users\jij\Dropbox\QuietWriter
+C:\Users\<naam>\QuietWriter
 ```
 
-De structuur wordt automatisch aangemaakt:
+Je kunt in **Instellingen** bijvoorbeeld een lokale Dropbox-map kiezen. QuietWriter maakt daarin automatisch:
 
 ```text
 QuietWriter/
@@ -62,50 +53,59 @@ QuietWriter/
 └── .cache/
 ```
 
-### Oude verhalen
+## Verhalenbibliotheek
 
-Zet bestaande Markdown-verhalen in `stories/`. De parser accepteert nu zowel eenvoudige headers als YAML-frontmatter. Bijvoorbeeld:
+Bestaande `.md`-verhalen plaats je in `stories/`. QuietWriter ondersteunt YAML-frontmatter zoals:
 
 ```markdown
 ---
-title: Dit is een titel
+title: Aan mijn lezers
+date: 2025-12-10T16:00
+slug: aan-mijn-lezers
 description: Beschrijving van het verhaal
-synopsis: Korte samenvatting
-tags: boerderij, familie, winter
+meta: Korte metadataomschrijving
+intro: Introductietekst
+author: Auteur
+tags: tag 1, tag 2, tag 3
 ---
 
-# Dit is een titel
-
-De tekst van het verhaal...
+Tekst van het verhaal.
 ```
 
-Ook zonder de `---`-regels worden eenvoudige `key: value` headers herkend. Extra velden kunnen later zonder probleem aan de parser worden toegevoegd.
+Extra onbekende velden worden niet weggegooid. De index gebruikt momenteel vooral titel, description, synopsis, tags en inhoud.
 
-## AI
+### Meerdere hoofdstukken in een oud verhaal
 
-QuietWriter verwacht standaard Ollama op:
+Een regel met precies één Markdownkopniveau wordt als nieuw hoofdstuk gezien:
+
+```markdown
+# De aankomst
+
+Tekst...
+
+# De volgende ochtend
+
+Tekst...
+```
+
+`##` en lagere koppen blijven onderdeel van het huidige hoofdstuk.
+
+## Schrijverspersona
+
+De meegeleverde `schrijver.md` is een opgeschoonde en compactere versie van de aangeleverde schrijfwijzer. In **Schrijverspersona** kun je via **Meegeleverde schrijfwijzer laden** de tekst in de editor plaatsen en daarna zelf opslaan.
+
+QuietWriter voegt deze persona automatisch toe aan iedere AI-opdracht. De AI schrijft nooit rechtstreeks in het manuscript.
+
+## Ollama
+
+Standaard verwacht QuietWriter Ollama op:
 
 ```text
 http://127.0.0.1:11434
 ```
 
-Bij het starten wordt `/api/tags` gebruikt om de beschikbare modellen te controleren. Als Ollama uit staat, start QuietWriter gewoon door; alleen de AI-functie is dan tijdelijk niet beschikbaar.
+Bij het opstarten worden de beschikbare modellen opgehaald. Als Ollama niet actief is, blijft de volledige schrijfapp bruikbaar.
 
-In deze eerste versie gebruikt de verhalenbibliotheek SQLite FTS voor snelle voorselectie. De architectuur is bewust zo opgezet dat later een embedding-index en een klein achtergrondmodel als bibliothecaris kunnen worden toegevoegd vóór het grote schrijfmodel.
+## Ontwikkelrichting
 
-## Belangrijk ontwerpprincipe
-
-De AI schrijft nooit zelfstandig in manuscriptbestanden. Herschrijvingen en suggesties verschijnen uitsluitend in het chatpaneel. De schrijver beslist wat er naar het manuscript wordt gekopieerd.
-
-## Eerstvolgende logische uitbreidingen
-
-- echte drag-and-drop van secties en hoofdstukken;
-- volwaardige Hunspell/Spylls spellingscontrole met downloaden/verwijderen van woordenboeken en hover-suggesties;
-- embedding-index voor de oude verhalen;
-- optioneel klein Ollama-model voor classificatie, tags en bibliotheekselectie;
-- AI-contextinspecteur: zichtbaar maken welke oude verhalen/fragmenten zijn meegestuurd;
-- OpenRouter-provider;
-- export naar DOCX/EPUB/PDF;
-- herstelvenster voor dagarchieven;
-- meer metadata-velden zodra voorbeelden van de bestaande Markdown-headers beschikbaar zijn;
-- packaging naar Windows `.exe` met PyInstaller.
+De verhalenindex gebruikt nu SQLite FTS. De volgende AI-stap is een combinatie van tags, full-text search, embeddings en optioneel een klein achtergrondmodel dat relevante verhalen selecteert voordat het grotere schrijfmodel ze analyseert.
