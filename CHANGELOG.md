@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0
+
+- Windows/Qt-fontwaarschuwing defensief opgelost door een geldige applicatiefontgrootte te forceren.
+- **Boek importeren** op de boekenplank: kies een Markdown-bestand via de bestandsbrowser; frontmatter wordt overgenomen en `# Hoofdstuktitel` wordt als hoofdstuk geïmporteerd.
+- Nieuwe **Prullenbak** in het linkermenu. Verwijderen van een boek verplaatst het voortaan naar de prullenbak.
+- In de prullenbak kunnen één of meer geselecteerde boeken worden hersteld of definitief verwijderd; de hele prullenbak kan ook in één keer worden geleegd.
+- Boekomslag kan in Boekdetails worden verwijderd, waarna automatisch de standaardomslag wordt gebruikt.
+- Boekenplank kan sorteren op laatst gebruikt, titel A–Z, titel Z–A en aantal woorden. Standaard is **Laatst gebruikt**.
+- Openen en opslaan actualiseert de activiteit van een boek voor de standaardsortering.
+- Dagarchief kijkt voortaan naar hoofdstukbestanden en blijft daardoor correct werken wanneer alleen metadata of laatste-open-tijd wordt bijgewerkt.
+
 ## 0.4.0
 
 - Boekenplank toont echte omslagafbeeldingen in vaste verhouding 1:1,6; boektitel blijft dynamische tekst en maakt geen deel uit van de afbeelding.

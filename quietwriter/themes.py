@@ -59,6 +59,8 @@ def stylesheet(name: str) -> str:
     QPushButton#navButton:checked {{ background: {t['select']}; color: {t['text']}; }}
     QPushButton#compactButton {{ border: 0; padding: 5px; min-width: 28px; }}
     QPushButton#thinkingButton {{ border: 0; color: {t['muted']}; text-align: left; padding: 4px 0; }}
+    QPushButton#dangerButton {{ border-color: #b56a6a; }}
+    QPushButton#dangerButton:hover {{ background: #5a2d2d; color: white; }}
     QLineEdit, QComboBox, QSpinBox, QTextEdit, QPlainTextEdit {{
         background: {t['editor']}; color: {t['text']}; border: 1px solid {t['border']};
         border-radius: 6px; padding: 6px;

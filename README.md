@@ -1,16 +1,17 @@
-# QuietWriter 0.4.0
+# QuietWriter 0.5.0
 
 QuietWriter is een lokale Python-desktopapp voor het schrijven van boeken en verhalen met optionele Ollama-integratie. Manuscripten blijven gewone Markdown-bestanden. JSON en SQLite worden alleen gebruikt voor structuur, instellingen, metadata en zoekindexen.
 
 ## Belangrijkste functies
 
 - moderne PySide6/Qt 6-interface;
-- boekenplank als startscherm met omslagen;
+- boekenplank als startscherm met omslagen, importeren en sorteren;
 - boeken met secties en hoofdstukken;
-- boekdetails met titel, slug, beschrijvingen, tags, auteur en omslag;
+- boekdetails met titel, slug, beschrijvingen, tags, auteur en omslag; een eigen omslag kan ook weer worden verwijderd;
 - rustige schrijfweergave met beperkte regelbreedte en woordtelling;
 - autosave plus handmatig opslaan (`Ctrl+S`);
 - dagelijkse herstelkopieën van oudere boekversies;
+- prullenbak met herstellen, selectie definitief verwijderen en alles legen;
 - werkmap kan rechtstreeks in Dropbox staan;
 - zes lichte/donkere kleurenschema's;
 - inklapbare linkernavigatie met compacte en uitgebreide stand;
@@ -95,3 +96,20 @@ QuietWriter kent bewust geen domeinnaam of website-adres. Het bewaart alleen het
 ## Oude verhalen
 
 Plaats bestaande `.md`-verhalen in `stories/`. QuietWriter leest YAML/frontmatterachtige velden zoals `title`, `description`, `meta`, `intro`, `tags`, `author`, `slug` en afbeeldingsvelden. Een regel met één Markdownkop (`# Hoofdstuktitel`) begint een nieuw hoofdstuk in de verhalenlezer.
+
+
+## Boek importeren
+
+Kies op de Boekenplank **Importeren…** en selecteer een `.md`-bestand. QuietWriter leest de bestaande frontmatter en maakt er een bewerkbaar QuietWriter-boek van. Regels met één `#`, bijvoorbeeld `# Hoofdstuk 2`, beginnen een nieuw hoofdstuk. Het bronbestand blijft ongewijzigd; QuietWriter maakt een eigen kopie in `books/`.
+
+## Nog gepland
+
+- spellingscontrole met woordenboeken en suggesties;
+- spellingscontrolepaneel rechts dat fouten stap voor stap doorloopt;
+- Zoek & Vervang voor hoofdstuk, sectie en heel boek;
+- Markdown-opmaak in AI-antwoorden renderen in plaats van ruwe Markdown;
+- drag-and-drop van hoofdstukken en secties;
+- versiegeschiedenis zichtbaar maken en oudere dagversies herstellen;
+- uitgebreidere AI-contextselectie en bibliotheekindex/embeddings;
+- OpenRouter-provider;
+- export van een QuietWriter-boek naar één Markdown-bestand met frontmatter.
