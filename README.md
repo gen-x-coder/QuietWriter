@@ -40,3 +40,9 @@ Gebruik de **+** knop in de rechter werkbalk en kies **Scènebreuk**. QuietWrite
 ```
 
 De scènebreuk blijft dus ook buiten QuietWriter gewone, leesbare Markdown.
+
+## Uiterlijk
+
+QuietWriter 0.10 gebruikt één semantisch themesysteem voor alle zes kleurenschema's. De schrijfruimte gebruikt standaard **Merriweather** met een lichte font weight; als Merriweather niet op het systeem aanwezig is valt QuietWriter automatisch terug op **Georgia**. Onder **Instellingen > Uiterlijk** kun je ook expliciet Georgia kiezen.
+
+De interface is bewust rustig gehouden: de editor blijft het dominante werkvlak, navigatie en contextpanelen gebruiken subtiele states, en scènebreuken worden visueel gecentreerd terwijl ze op schijf gewone `***`-Markdown blijven.
