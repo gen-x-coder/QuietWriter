@@ -148,6 +148,7 @@ class BookCard(QFrame):
 class StartPage(QWidget):
     open_book = __import__('PySide6.QtCore').QtCore.Signal(object)
     new_book = __import__('PySide6.QtCore').QtCore.Signal()
+    import_book = __import__('PySide6.QtCore').QtCore.Signal()
     manage_book = __import__('PySide6.QtCore').QtCore.Signal(object)
 
     def __init__(self, library):
@@ -166,10 +167,13 @@ class StartPage(QWidget):
 
         controls = QHBoxLayout(); controls.setContentsMargins(42, 16, 42, 8)
         self.count = QLabel('0 boeken'); self.count.setObjectName('sectionTitle')
+        self.sorting = QComboBox(); self.sorting.addItems(['Laatst gebruikt', 'Titel A–Z', 'Titel Z–A', 'Aantal woorden'])
+        self.sorting.setToolTip('Sorteer de boekenplank')
+        self.sorting.currentTextChanged.connect(self.refresh)
         self.search = QLineEdit(); self.search.setPlaceholderText('Zoek op titel, tag of beschrijving…'); self.search.setMaximumWidth(390)
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh)
-        controls.addWidget(self.count); controls.addStretch(); controls.addWidget(self.search)
+        controls.addWidget(self.count); controls.addStretch(); controls.addWidget(self.sorting); controls.addWidget(self.search)
         outer.addLayout(controls)
         self.no_results = QLabel('Geen boeken gevonden.')
         self.no_results.setObjectName('muted')
@@ -190,6 +194,24 @@ class StartPage(QWidget):
             if item.widget(): item.widget().deleteLater()
         books = self.library.list_books()
         total = len(books)
+        def word_count(book):
+            total_words = 0
+            for section in book.sections:
+                for chapter in section.chapters:
+                    try:
+                        total_words += len(self.library.read_chapter(book, chapter).split())
+                    except Exception:
+                        pass
+            return total_words
+        order = self.sorting.currentText() if hasattr(self, 'sorting') else 'Laatst gebruikt'
+        if order == 'Titel A–Z':
+            books.sort(key=lambda b: b.title.casefold())
+        elif order == 'Titel Z–A':
+            books.sort(key=lambda b: b.title.casefold(), reverse=True)
+        elif order == 'Aantal woorden':
+            books.sort(key=word_count, reverse=True)
+        else:
+            books.sort(key=self.library.book_activity, reverse=True)
         query = self.search.text().strip().casefold() if hasattr(self, 'search') else ''
         if query:
             def searchable(book):
@@ -216,7 +238,8 @@ class StartPage(QWidget):
         plus = QLabel('+'); plus.setObjectName('newBookPlus'); plus.setAlignment(Qt.AlignCenter)
         text = QLabel('Nieuw boek'); text.setObjectName('sectionTitle'); text.setAlignment(Qt.AlignCenter)
         btn = QPushButton('Aanmaken'); btn.clicked.connect(self.new_book.emit)
-        cl.addStretch(); cl.addWidget(plus); cl.addWidget(text); cl.addStretch(); cl.addWidget(btn)
+        imp = QPushButton('Importeren…'); imp.clicked.connect(self.import_book.emit)
+        cl.addStretch(); cl.addWidget(plus); cl.addWidget(text); cl.addStretch(); cl.addWidget(btn); cl.addWidget(imp)
         self.grid.addWidget(create, 0, 0)
         for i, book in enumerate(books, 1):
             card = BookCard(self.library, book)
@@ -343,9 +366,11 @@ class BookDetailsDialog(QDialog):
         cover_right = QVBoxLayout()
         self.cover_name = QLabel(''); self.cover_name.setObjectName('muted'); self.cover_name.setWordWrap(True)
         choose = QPushButton('Omslag kiezen…'); choose.clicked.connect(self.choose_cover)
+        remove_cover = QPushButton('Omslag verwijderen'); remove_cover.clicked.connect(self.remove_cover)
         self.header_path = QLabel(''); self.header_path.setObjectName('muted'); self.header_path.setWordWrap(True)
         cover_right.addWidget(QLabel('Boekomslag · verhouding 1:1,6 · lange zijde minimaal 1024 px'))
-        cover_right.addWidget(self.cover_name); cover_right.addWidget(choose,0,Qt.AlignLeft); cover_right.addWidget(self.header_path); cover_right.addStretch()
+        cover_buttons = QHBoxLayout(); cover_buttons.addWidget(choose); cover_buttons.addWidget(remove_cover); cover_buttons.addStretch()
+        cover_right.addWidget(self.cover_name); cover_right.addLayout(cover_buttons); cover_right.addWidget(self.header_path); cover_right.addStretch()
         cb.addWidget(self.cover_preview); cb.addLayout(cover_right,1)
         root.addWidget(cover_box)
         self.slug_edit.textChanged.connect(self._update_header_path)
@@ -353,7 +378,7 @@ class BookDetailsDialog(QDialog):
         self._update_header_path()
 
         actions = QHBoxLayout()
-        delete = QPushButton('Boek verwijderen'); delete.setObjectName('dangerButton'); delete.clicked.connect(self.delete_book)
+        delete = QPushButton('Naar prullenbak'); delete.setObjectName('dangerButton'); delete.clicked.connect(self.delete_book)
         actions.addWidget(delete); actions.addStretch()
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Save).setText('Opslaan')
@@ -362,6 +387,8 @@ class BookDetailsDialog(QDialog):
         actions.addWidget(buttons); root.addLayout(actions)
 
     def _cover_candidate(self):
+        if self.pending_cover == '__REMOVE__':
+            return self.library.default_cover_path()
         return self.pending_cover or self.library.cover_path(self.book) or self.library.default_cover_path()
 
     def _refresh_cover_preview(self):
@@ -398,6 +425,17 @@ class BookDetailsDialog(QDialog):
         self.pending_cover = Path(path)
         self._refresh_cover_preview()
 
+    def remove_cover(self):
+        # De wijziging is meteen zichtbaar, maar wordt pas definitief bij Opslaan.
+        self.pending_cover = '__REMOVE__'
+        self.cover_name.setText('Geen eigen omslag. De standaardomslag wordt gebruikt.')
+        default = self.library.default_cover_path()
+        if default and Path(default).exists():
+            pix = QPixmap(str(default))
+            self.cover_preview.setPixmap(pix.scaled(self.cover_preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            self.cover_preview.clear(); self.cover_preview.setText('Standaard\nomslag')
+
     def save(self):
         title = self.title_edit.text().strip()
         slug = self.slug_edit.text().strip()
@@ -425,7 +463,9 @@ class BookDetailsDialog(QDialog):
         })
         try:
             self.library.rename_cover_for_slug(self.book, self.old_slug, slug)
-            if self.pending_cover:
+            if self.pending_cover == '__REMOVE__':
+                self.library.remove_cover(self.book)
+            elif self.pending_cover:
                 self.library.set_cover(self.book, self.pending_cover)
             self.library.save_manifest(self.book)
         except Exception as e:
@@ -434,8 +474,8 @@ class BookDetailsDialog(QDialog):
 
     def delete_book(self):
         answer = QMessageBox.warning(
-            self, 'Boek verwijderen',
-            f'Wil je “{self.book.title}” echt verwijderen?\n\nDit verwijdert het boek en alle hoofdstukken uit de boekenmap. Deze actie kan niet ongedaan worden gemaakt.',
+            self, 'Boek naar prullenbak',
+            f'Wil je “{self.book.title}” naar de prullenbak verplaatsen?\n\nJe kunt het boek later herstellen of definitief verwijderen vanaf de prullenbakpagina.',
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if answer != QMessageBox.Yes:
             return
@@ -445,6 +485,65 @@ class BookDetailsDialog(QDialog):
             QMessageBox.critical(self, 'Boek verwijderen', str(e)); return
         self.deleted.emit(self.book)
         self.done(2)
+
+
+class TrashPage(QWidget):
+    def __init__(self, main):
+        super().__init__()
+        self.main = main
+        root = QVBoxLayout(self); root.setContentsMargins(42, 34, 42, 34)
+        top = QHBoxLayout()
+        title = QLabel('Prullenbak'); title.setObjectName('title')
+        self.restore_btn = QPushButton('Herstellen'); self.restore_btn.clicked.connect(self.restore_selected)
+        self.delete_btn = QPushButton('Selectie definitief verwijderen'); self.delete_btn.setObjectName('dangerButton'); self.delete_btn.clicked.connect(self.delete_selected)
+        self.empty_btn = QPushButton('Prullenbak legen'); self.empty_btn.setObjectName('dangerButton'); self.empty_btn.clicked.connect(self.empty_trash)
+        top.addWidget(title); top.addStretch(); top.addWidget(self.restore_btn); top.addWidget(self.delete_btn); top.addWidget(self.empty_btn)
+        info = QLabel('Selecteer één of meer boeken. Definitief verwijderen kan niet ongedaan worden gemaakt.')
+        info.setObjectName('muted')
+        self.list = QListWidget(); self.list.setSelectionMode(QListWidget.ExtendedSelection)
+        self.empty = QLabel('De prullenbak is leeg.'); self.empty.setObjectName('muted'); self.empty.setAlignment(Qt.AlignCenter)
+        root.addLayout(top); root.addWidget(info); root.addSpacing(10); root.addWidget(self.empty); root.addWidget(self.list, 1)
+        self.refresh()
+
+    def refresh(self):
+        rows = self.main.library.list_trashed_books()
+        self.list.clear()
+        for row in rows:
+            dt = datetime.fromtimestamp(row['deleted']).strftime('%d-%m-%Y %H:%M')
+            item = QListWidgetItem(f"{row['title']}   ·   verwijderd {dt}")
+            item.setData(Qt.UserRole, str(row['path']))
+            self.list.addItem(item)
+        self.empty.setVisible(not rows); self.list.setVisible(bool(rows))
+        self.restore_btn.setEnabled(bool(rows)); self.delete_btn.setEnabled(bool(rows)); self.empty_btn.setEnabled(bool(rows))
+
+    def selected_paths(self):
+        return [Path(i.data(Qt.UserRole)) for i in self.list.selectedItems()]
+
+    def restore_selected(self):
+        paths = self.selected_paths()
+        if not paths:
+            QMessageBox.information(self, 'Prullenbak', 'Selecteer eerst één of meer boeken.')
+            return
+        for p in paths:
+            try: self.main.library.restore_trashed_book(p)
+            except Exception as e: QMessageBox.warning(self, 'Herstellen', str(e))
+        self.main.start.refresh(); self.refresh()
+
+    def delete_selected(self):
+        paths = self.selected_paths()
+        if not paths:
+            QMessageBox.information(self, 'Prullenbak', 'Selecteer eerst één of meer boeken.')
+            return
+        if QMessageBox.warning(self, 'Definitief verwijderen', f'Wil je {len(paths)} geselecteerde item(s) definitief verwijderen?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        for p in paths:
+            self.main.library.permanently_delete_trashed_book(p)
+        self.refresh()
+
+    def empty_trash(self):
+        if QMessageBox.warning(self, 'Prullenbak legen', 'Wil je alle boeken in de prullenbak definitief verwijderen?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        self.main.library.empty_trash(); self.refresh()
 
 
 class PersonaPage(QWidget):
@@ -900,7 +999,8 @@ class MainWindow(QMainWindow):
         self.editor_page = EditorPage(self)
         self.stories = StoryBrowser(self)
         self.persona = PersonaPage(library)
-        for page in (self.start, self.editor_page, self.stories, self.persona): self.stack.addWidget(page)
+        self.trash = TrashPage(self)
+        for page in (self.start, self.editor_page, self.stories, self.persona, self.trash): self.stack.addWidget(page)
         root.addWidget(self.rail); root.addWidget(self.stack, 1)
 
         self.nav_buttons = []
@@ -911,6 +1011,7 @@ class MainWindow(QMainWindow):
         self.book_details_button = self._nav_button('edit', 'Boekdetails', self.open_current_book_details, checkable=False)
         self.stories_button = self._nav_button('stories', 'Verhalen', self.show_stories)
         self.persona_button = self._nav_button('persona', 'Schrijverspersona', self.show_persona)
+        self.trash_button = self._nav_button('trash', 'Prullenbak', self.show_trash)
         self.rail_layout.addStretch()
         self.settings_button = self._nav_button('settings', 'Instellingen', self.open_settings, checkable=False)
 
@@ -925,7 +1026,7 @@ class MainWindow(QMainWindow):
         self.right_button = trb('panel-right','Rechterpaneel tonen/verbergen', self.editor_page.toggle_right)
         tr.addStretch(); root.addWidget(self.toolrail)
 
-        self.start.open_book.connect(self.open_book); self.start.new_book.connect(self.new_book); self.start.manage_book.connect(self.manage_book)
+        self.start.open_book.connect(self.open_book); self.start.new_book.connect(self.new_book); self.start.import_book.connect(self.import_book); self.start.manage_book.connect(self.manage_book)
         self.restore_state(); self._apply_nav_width()
         self.stack.currentChanged.connect(self._mode_changed); self._mode_changed(0)
 
@@ -969,11 +1070,12 @@ class MainWindow(QMainWindow):
 
     def _sync_nav_selection(self):
         current = self.stack.currentWidget()
-        for b in (self.bookshelf_button, self.write_button, self.stories_button, self.persona_button): b.setChecked(False)
+        for b in (self.bookshelf_button, self.write_button, self.stories_button, self.persona_button, self.trash_button): b.setChecked(False)
         if current is self.start: self.bookshelf_button.setChecked(True)
         elif current is self.editor_page: self.write_button.setChecked(True)
         elif current is self.stories: self.stories_button.setChecked(True)
         elif current is self.persona: self.persona_button.setChecked(True)
+        elif current is self.trash: self.trash_button.setChecked(True)
 
     def show_editor(self):
         if self.editor_page.book:
@@ -988,6 +1090,10 @@ class MainWindow(QMainWindow):
         self.persona.edit.setPlainText(self.library.read_persona())
         self.stack.setCurrentWidget(self.persona)
 
+    def show_trash(self):
+        self.trash.refresh()
+        self.stack.setCurrentWidget(self.trash)
+
     def go_home(self):
         self.editor_page.close_book()
         self.start.refresh()
@@ -1001,7 +1107,20 @@ class MainWindow(QMainWindow):
         if ok:
             book = self.library.create_book(title or 'Naamloos boek'); self.start.refresh(); self.open_book(book)
 
+    def import_book(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Boek importeren', str(self.library.stories_dir), 'Markdown (*.md);;Alle bestanden (*)')
+        if not path:
+            return
+        try:
+            book = self.library.import_markdown_book(Path(path))
+        except Exception as e:
+            QMessageBox.critical(self, 'Boek importeren', f'Importeren mislukt:\n{e}')
+            return
+        self.start.refresh()
+        self.open_book(book)
+
     def open_book(self, book):
+        self.library.touch_book(book)
         self.editor_page.load_book(book)
         self.write_button.setVisible(True)
         self.book_details_button.setVisible(True)
@@ -1095,6 +1214,10 @@ class MainWindow(QMainWindow):
 
 def run():
     app=QApplication(sys.argv); app.setApplicationName(APP_NAME); app.setOrganizationName('QuietWriter')
+    # Sommige Windows/Qt-configuraties leveren een standaardfont met pointSize -1 op.
+    # Forceer een geldige puntgrootte om QFont::setPointSize-waarschuwingen te voorkomen.
+    app_font = QFont('Segoe UI', 10)
+    app.setFont(app_font)
     settings=QSettings('QuietWriter','QuietWriter')
     app.setStyleSheet(stylesheet(settings.value('theme','Helder')))
     splash=Splash(); splash.show(); splash.set_status('Instellingen laden…')
