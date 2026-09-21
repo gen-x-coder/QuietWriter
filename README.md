@@ -1,4 +1,4 @@
-# QuietWriter 0.5.0
+# QuietWriter 0.6.0
 
 QuietWriter is een lokale Python-desktopapp voor het schrijven van boeken en verhalen met optionele Ollama-integratie. Manuscripten blijven gewone Markdown-bestanden. JSON en SQLite worden alleen gebruikt voor structuur, instellingen, metadata en zoekindexen.
 
@@ -18,7 +18,10 @@ QuietWriter is een lokale Python-desktopapp voor het schrijven van boeken en ver
 - contextgevoelige navigatie: **Boekenplank** sluit het huidige boek, **Manuscript** keert terug naar het geladen boek;
 - aparte **Verhalen**-bibliotheek voor bestaande Markdown-verhalen;
 - aparte **Schrijverspersona**;
-- zoeken met wis-knoppen en duidelijke melding wanneer niets wordt gevonden;
+- zoeken en vervangen in hoofdstuk, sectie of heel boek, inclusief hoofdlettergevoelig en heel woord;
+- hoofdstukken via drag-and-drop ordenen en tussen secties verplaatsen;
+- eerste spellingscontrole met rode onderstreping en stap-voor-stap rechterpaneel;
+- centrale Nederlandse UI-termen in `quietwriter/locales/nl.json`;
 - streaming Ollama-chat met schrijfpersona;
 - zichtbaar `Denken…` tijdens AI-verwerking, zonder denklog in het uiteindelijke antwoord;
 - oude verhalen kunnen door de AI als aanvullende context worden gebruikt.
@@ -104,12 +107,4 @@ Kies op de Boekenplank **Importeren…** en selecteer een `.md`-bestand. QuietWr
 
 ## Nog gepland
 
-- spellingscontrole met woordenboeken en suggesties;
-- spellingscontrolepaneel rechts dat fouten stap voor stap doorloopt;
-- Zoek & Vervang voor hoofdstuk, sectie en heel boek;
-- Markdown-opmaak in AI-antwoorden renderen in plaats van ruwe Markdown;
-- drag-and-drop van hoofdstukken en secties;
-- versiegeschiedenis zichtbaar maken en oudere dagversies herstellen;
-- uitgebreidere AI-contextselectie en bibliotheekindex/embeddings;
-- OpenRouter-provider;
-- export van een QuietWriter-boek naar één Markdown-bestand met frontmatter.
+Zie `ROADMAP.md` voor de geplande iteraties. De eerstvolgende grotere blokken zijn versiegeschiedenis, AI, import/export, bibliotheekverbeteringen en daarna een aparte UI/UX-polishronde.
