@@ -25,6 +25,7 @@ class ManuscriptEditor(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.max_text_width = 850
+        self.min_side_margin = 42
         self.setAcceptRichText(False)
         self._formatting = False
         self._selection_range: tuple[int, int] | None = None
@@ -86,7 +87,7 @@ class ManuscriptEditor(QTextEdit):
         self._update_margins()
 
     def _update_margins(self):
-        side = max(42, (max(0, self.width()) - self.max_text_width) // 2)
+        side = max(self.min_side_margin, (max(0, self.width()) - self.max_text_width) // 2)
         self.setViewportMargins(side, 30, side, 42)
 
     def schedule_formatting(self, *_args, immediate: bool = False):
