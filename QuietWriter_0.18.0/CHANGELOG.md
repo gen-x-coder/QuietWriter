@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.18.0 — UI-consistentie en editorinteractie
+
+- Instellingen opnieuw opgebouwd als rustige tweekoloms settingspagina: naam en noodzakelijke uitleg links, bediening rechts.
+- Verwante instellingen zijn gegroepeerd onder subtiele sectiekoppen; de vormgeving is vastgelegd in `UI_GUIDE.md` voor toekomstige schermen.
+- Uiterlijk toont het lettertypevoorbeeld nu naast de fontkeuze, zodat de open dropdown de preview niet meer bedekt.
+- Microcopy toegevoegd voor minder vanzelfsprekende opties, waaronder Automatisch opslaan (3 seconden na typen; Ctrl+S bij uitgeschakelde autosave), manuscriptinspringing, slimme quotes, opslag, AI en spelling.
+- De Opslaan-knop van Instellingen is alleen actief wanneer formulierwaarden werkelijk afwijken van de laatst opgeslagen staat; na succesvol opslaan wordt de dirty-state gereset en blijft de bestaande `Opgeslagen`-feedback behouden.
+- De zwevende selectie-toolbar is non-activating: hij accepteert geen keyboard focus en zijn knoppen hebben `NoFocus`, zodat geselecteerde tekst met Delete/Backspace/typen bewerkt kan blijven worden.
+- Het normale Qt-rechtermuisknopmenu van de editor blijft intact en heeft nu aanvullend **Opmaak** met vet, cursief, onderstrepen, doorhalen, code en alineastijlen.
+- Nieuwe regressietests bewaken de settings-row taal, font-previewplaatsing, dirty-state, non-activating toolbar en uitbreiding van het standaard contextmenu.
+
+## 0.17.1 — Layout hardening op lage schermhoogte
+
+- Structurele fix voor de Windows/Qt minimum-size bug: verborgen pagina's in stacks bepalen niet langer de minimumhoogte van het hoofdvenster.
+- Nieuwe `CurrentPageStack` rapporteert uitsluitend de size hints van de zichtbare pagina; toegepast op hoofdmodus, Instellingen, Planning, personagecanvas, editorcontent en publicatie-editor.
+- Instellingenpagina's gebruiken voortaan een echte scrollviewport; lange inhoud kan groeien zonder de vensterhoogte op te drijven.
+- De vaste Opslaan-zone van Instellingen blijft buiten de scrollbare inhoud en dus bereikbaar op lage laptopschermen.
+- Qt's native `saveGeometry()/restoreGeometry()` blijft leidend; er is geen custom clamp, handmatige `setGeometry()` of Windows-specifieke workaround meer.
+- De standaard eerste venstergrootte is verlaagd naar 1280×720 zodat een verse start ook op compactere laptops binnen de werkruimte valt.
+- Nieuwe regressietests bewaken zowel de stackarchitectuur als het gedrag waarbij een verborgen enorme pagina de minimumhoogte niet mag beïnvloeden.
+
 ## 0.17.0 — Meegeleverde schrijftypografie en Over
 
 - Nieuwe fontcatalogus met vier aanbevolen schrijffamilies: Merriweather, Literata, Source Serif 4 en EB Garamond.

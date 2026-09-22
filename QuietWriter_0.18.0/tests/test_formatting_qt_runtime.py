@@ -80,3 +80,18 @@ class FormattingQtRuntimeTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+@unittest.skipUnless(HAVE_QT, 'PySide6 is not available in this test environment')
+class FormattingFocusQtRuntimeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_selection_toolbar_does_not_accept_keyboard_focus(self):
+        from PySide6.QtCore import Qt
+        toolbar = SelectionToolbar()
+        self.assertTrue(bool(toolbar.windowFlags() & Qt.WindowDoesNotAcceptFocus))
+        self.assertEqual(toolbar.focusPolicy(), Qt.NoFocus)
+        for button in toolbar.buttons.values():
+            self.assertEqual(button.focusPolicy(), Qt.NoFocus)
+        toolbar.close()

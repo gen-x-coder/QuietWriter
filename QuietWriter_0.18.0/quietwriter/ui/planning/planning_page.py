@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
+from ..current_page_stack import CurrentPageStack
 from ...planning_storage import PlanningStore
 from ...revisions import ExternalModificationError, RevisionVerificationError
 from .characters_page import CharactersPage
@@ -32,7 +33,7 @@ class PlanningPage(QWidget):
         self.outline_button=self._nav(sl,'Outline',1)
         self.notes_button=self._nav(sl,'Notities',2)
         sl.addStretch()
-        self.pages=QStackedWidget(); self.characters_page=CharactersPage(self); self.outline_page=OutlinePage(self); self.notes_page=NotesPage(self)
+        self.pages=CurrentPageStack(); self.characters_page=CharactersPage(self); self.outline_page=OutlinePage(self); self.notes_page=NotesPage(self)
         for p in (self.characters_page,self.outline_page,self.notes_page): self.pages.addWidget(p)
         self.characters_page.changed.connect(self.outline_page.refresh)
         root.addWidget(side); root.addWidget(self.pages,1)
