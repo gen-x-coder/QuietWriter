@@ -1,4 +1,3 @@
-import ast
 import unittest
 from pathlib import Path
 
@@ -12,23 +11,21 @@ class TypographyArchitectureTests(unittest.TestCase):
         self.assertIn('def stylesheet(name: str)', themes)
         self.assertNotIn('editor_font:', themes)
         self.assertNotIn('font_stack', themes)
-        # QApplication font owns the generic UI font; QSS no longer overrides
-        # every child widget's font family, which prevented live writer font changes.
         widget_rule = themes.split('QWidget {', 1)[1].split('}', 1)[0]
         self.assertNotIn('font-family', widget_rule)
         self.assertNotIn('font-size', widget_rule)
 
     def test_writer_font_and_size_are_independent_settings(self):
-        app = (ROOT / 'quietwriter' / 'app.py').read_text(encoding='utf-8')
-        self.assertIn("self.settings.setValue('editor_font',", app)
-        self.assertIn("self.settings.setValue('editor_font_size',", app)
-        self.assertIn('self.editor_font.addItems(available_families())', app)
+        settings = (ROOT / 'quietwriter' / 'ui' / 'settings_page.py').read_text(encoding='utf-8')
+        self.assertIn("self.settings.setValue('editor_font',", settings)
+        self.assertIn("self.settings.setValue('editor_font_size',", settings)
+        self.assertIn('self.editor_font.addItems(available_families())', settings)
 
     def test_live_font_change_does_not_rewrite_document_character_formats(self):
-        app = (ROOT / 'quietwriter' / 'app.py').read_text(encoding='utf-8')
-        start = app.index('    def apply_typography(self, typography: WritingTypography):')
-        end = app.index('    def set_editor_font(', start)
-        block = app[start:end]
+        editor = (ROOT / 'quietwriter' / 'ui' / 'manuscript_editor.py').read_text(encoding='utf-8')
+        start = editor.index('    def apply_typography(self, typography: WritingTypography):')
+        end = editor.index('    def set_editor_font(', start)
+        block = editor[start:end]
         self.assertIn('self.setFont(font)', block)
         self.assertIn('self.document().setDefaultFont(font)', block)
         self.assertNotIn('mergeCharFormat', block)
@@ -39,7 +36,6 @@ class TypographyArchitectureTests(unittest.TestCase):
         quietwriter = ROOT / 'quietwriter'
         sources = '\n'.join(p.read_text(encoding='utf-8') for p in quietwriter.rglob('*.py'))
         self.assertNotIn('.pointSize()', sources)
-        # The only direct setPointSize calls are fed from validated typography sizes.
         self.assertNotIn('setPointSize(max(9,', sources)
 
 

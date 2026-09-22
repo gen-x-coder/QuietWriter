@@ -18,7 +18,7 @@ Globale functies staan onderaan de linkernavigatie:
 - Instellingen
 - Prullenbak
 
-Boekdetails en Instellingen zijn centrale pagina's in de applicatie en geen losse popupvensters meer. De rechter gereedschapsrail is uitsluitend bedoeld voor gereedschappen rond de huidige tekst, zoals Zoeken, AI, Spellingscontrole, Toevoegen en Versiegeschiedenis.
+Boekdetails en Instellingen zijn centrale pagina's in de applicatie en geen losse popupvensters meer. Instellingen hebben een eigen linker categorienavigatie voor Algemeen, Uiterlijk, Opslag, AI en Spelling. De rechter gereedschapsrail is uitsluitend bedoeld voor gereedschappen rond de huidige tekst, zoals Zoeken, AI, Spellingscontrole, Toevoegen en Versiegeschiedenis.
 
 ## Boekenplank
 
@@ -66,3 +66,27 @@ Gebruik de **+** knop in de rechter werkbalk en kies **Scènebreuk**. Op schijf 
 ```markdown
 ***
 ```
+## Code-architectuur
+
+Sinds 0.12.0 is de UI niet meer geconcentreerd in één groot `app.py`-bestand. `app.py` bevat alleen de applicatiebootstrap. De Qt-interface staat onder `quietwriter/ui/` en is per verantwoordelijkheid opgesplitst:
+
+```text
+quietwriter/ui/
+├── main_window.py
+├── bookshelf.py
+├── editor_page.py
+├── manuscript_editor.py
+├── manuscript_tree.py
+├── book_details.py
+├── settings_page.py
+├── persona_page.py
+├── trash_page.py
+├── search_panel.py
+├── spell_panel.py
+├── history_panel.py
+├── splash.py
+└── dialogs.py
+```
+
+Nieuwe UI-functionaliteit hoort bij voorkeur in de module van het betreffende scherm of paneel. `main_window.py` blijft de applicatieshell en `app.py` blijft alleen verantwoordelijk voor startup.
+
