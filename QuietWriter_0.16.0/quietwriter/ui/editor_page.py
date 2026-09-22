@@ -2,6 +2,7 @@
 from pathlib import Path
 from datetime import datetime
 import copy
+import json
 import re
 
 from PySide6.QtCore import Qt, QSettings, QTimer, QSize, QPoint
@@ -19,6 +20,8 @@ from ..i18n import tr
 from ..icon_theme import icon
 from ..markdown_io import insert_scene_break as build_scene_break_text
 from ..revisions import ExternalModificationError, RevisionVerificationError
+from ..publication_models import FRONT_MATTER, BACK_MATTER, item_definition
+from ..publication_storage import PublicationStore
 from ..spell_engine import WordDictionary
 from ..storage import Chapter, Section
 from ..themes import THEMES
@@ -29,6 +32,8 @@ from .manuscript_editor import ManuscriptEditor
 from .manuscript_tree import ManuscriptTree
 from .search_panel import SearchPanel
 from .spell_panel import SpellPanel
+from .publication.publication_editor import PublicationEditor
+from .publication.publication_setup import PublicationSetup
 
 class EditorPage(QWidget):
     def __init__(self, main):
@@ -74,7 +79,15 @@ class EditorPage(QWidget):
         self.highlighter = self.editor.presentation_highlighter
         self.highlighter.set_dictionary(self.dictionary)
         self.load_dictionary_from_settings()
-        cl.addWidget(self.history_banner); cl.addWidget(topbar); cl.addWidget(self.chapter_title); cl.addWidget(self.editor)
+        self.publication_store = PublicationStore(self.main.library)
+        self.manuscript_content = QWidget(); manuscript_layout = QVBoxLayout(self.manuscript_content); manuscript_layout.setContentsMargins(0,0,0,0); manuscript_layout.setSpacing(0)
+        manuscript_layout.addWidget(self.chapter_title); manuscript_layout.addWidget(self.editor)
+        self.publication_editor = PublicationEditor(self)
+        self.publication_setup = PublicationSetup(self)
+        self.publication_setup.saved.connect(self._save_publication_setup)
+        self.publication_setup.cancelled.connect(self._cancel_publication_setup)
+        self.content_stack = QStackedWidget(); self.content_stack.addWidget(self.manuscript_content); self.content_stack.addWidget(self.publication_editor); self.content_stack.addWidget(self.publication_setup)
+        cl.addWidget(self.history_banner); cl.addWidget(topbar); cl.addWidget(self.content_stack)
 
         self.right = QStackedWidget(); self.right.setObjectName('panel'); self.right.setMinimumWidth(300)
         self.search = SearchPanel(); self.ai = AIPanel(main); self.spell = SpellPanel(self); self.history = HistoryPanel(self)
@@ -123,6 +136,7 @@ class EditorPage(QWidget):
             self.main.library.untrack_book(previous)
         self.book = book; self.chapter = None
         self.main.library.track_book(book)
+        self.publication_editor.set_book(book)
         self.book_title_label.setText(book.title); self.populate_tree()
         self._rebuild_word_count_cache()
         first = next((c for s in book.sections for c in s.chapters), None)
@@ -135,6 +149,22 @@ class EditorPage(QWidget):
     def populate_tree(self):
         self.tree.clear()
         if not self.book: return
+        publication = self.publication_store.load(self.book)
+        enabled = set(publication.enabled)
+
+        def add_publication_group(label, definitions):
+            active = [(key, text, kind) for key, text, kind in definitions if key in enabled]
+            if not active:
+                return
+            group = QTreeWidgetItem([label, '']); group.setData(0, Qt.UserRole, ('publication_group', label)); group.setFlags(group.flags() & ~Qt.ItemIsDragEnabled)
+            font = QFont(QApplication.font()); font.setWeight(QFont.Weight.DemiBold); group.setFont(0, font)
+            group.setForeground(0, QColor(THEMES.get(str(self.main.settings.value('theme','Helder')), THEMES['Helder'])['muted']))
+            self.tree.addTopLevelItem(group)
+            for key, text, _kind in active:
+                item = QTreeWidgetItem([text, '']); item.setData(0, Qt.UserRole, ('publication', key)); item.setFlags(item.flags() & ~Qt.ItemIsDragEnabled); group.addChild(item)
+            group.setExpanded(True)
+
+        add_publication_group('Voorwerk', FRONT_MATTER)
         for section in self.book.sections:
             if section.id == 'root' and len(self.book.sections)==1:
                 for chapter in section.chapters:
@@ -147,6 +177,121 @@ class EditorPage(QWidget):
                 for chapter in section.chapters:
                     cit = QTreeWidgetItem([chapter.title, '']); cit.setData(0, Qt.UserRole, ('chapter', chapter.id)); cit.setIcon(1, icon('drag_handle')); cit.setTextAlignment(1, Qt.AlignCenter); cit.setToolTip(1, tr('editor.drag_chapter', 'Sleep om hoofdstuk te verplaatsen')); sit.addChild(cit)
                 sit.setExpanded(True)
+        add_publication_group('Achterwerk', BACK_MATTER)
+
+    def persist_publication_change(self, relative_path: str, local_text: str, writer) -> str:
+        """Safely persist one publication file with the same conflict UX as planning.
+
+        Returns ``mine`` when the local value was written, ``disk`` when the
+        external value was accepted, and ``failed`` when no safe decision could
+        be completed.
+        """
+        if not self.book:
+            return 'failed'
+        try:
+            writer(self.book)
+            return 'mine'
+        except RevisionVerificationError:
+            QMessageBox.warning(self, 'Opslaan tijdelijk niet mogelijk', 'QuietWriter kan de actuele bestanden tijdelijk niet betrouwbaar controleren. Er is niets overschreven. Probeer het zo opnieuw.')
+            return 'failed'
+        except ExternalModificationError as exc:
+            changed='\n'.join('• '+name for name in exc.changed_files[:6])
+            box=QMessageBox(self); box.setIcon(QMessageBox.Warning); box.setWindowTitle('Boek extern gewijzigd'); box.setText('Dit boek is buiten QuietWriter gewijzigd.')
+            box.setInformativeText('QuietWriter heeft het publicatieonderdeel niet overschreven.\n\nGewijzigd:\n'+changed+'\n\nWelke versie wil je gebruiken? Beide keuzes maken eerst automatisch een herstelversie.')
+            mine=box.addButton('Mijn versie gebruiken',QMessageBox.AcceptRole); disk=box.addButton('Versie op schijf gebruiken',QMessageBox.DestructiveRole); box.setDefaultButton(disk); box.exec()
+            if box.clickedButton() not in (mine,disk):
+                return 'failed'
+            old_book=self.book
+            try:
+                if box.clickedButton() is mine:
+                    self.main.library.create_version(old_book,kind='conflict_external')
+                    latest=self.main.library.load_book(old_book.path); self.main.library.track_book(latest); self.book=latest
+                    writer(latest)
+                    result='mine'
+                else:
+                    self.main.library.create_version_with_file_overrides(old_book,{relative_path:local_text},kind='conflict_local')
+                    latest=self.main.library.load_book(old_book.path); self.main.library.track_book(latest); self.book=latest
+                    result='disk'
+                self.publication_editor.book=self.book
+                self.publication_editor.data=self.publication_store.load(self.book)
+                self.populate_tree()
+                self.history.set_book(self.book); self.ai.set_book(self.book)
+                return result
+            except Exception as error:
+                QMessageBox.critical(self,'Conflict niet opgelost',f'Er is niets bewust overschreven.\n\n{error}')
+                return 'failed'
+        except Exception as exc:
+            QMessageBox.critical(self,'Publicatieonderdeel opslaan',f'Opslaan is mislukt.\n\n{exc}')
+            return 'failed'
+
+    def _set_publication_context(self):
+        self.chapter = None
+        self.autosave_timer.stop()
+        self.right.hide()
+        if hasattr(self.main, 'toolrail'):
+            self.main.toolrail.hide()
+        self.autosave_status.setText('')
+        self.main.status.clearMessage()
+
+    def open_publication_item(self, key):
+        if not self.book or self.preview_live_book:
+            return
+        if self.save() is False:
+            return
+        self._set_publication_context()
+        self.publication_editor.set_book(self.book)
+        if self.publication_editor.open_item(key):
+            self.content_stack.setCurrentWidget(self.publication_editor)
+
+    def show_publication_setup(self):
+        if not self.book or self.preview_live_book:
+            return
+        if self.save() is False:
+            return
+        self._set_publication_context()
+        self.publication_setup.set_data(self.publication_store.load(self.book))
+        self.content_stack.setCurrentWidget(self.publication_setup)
+
+    def _save_publication_setup(self, data):
+        if not self.book:
+            return
+        payload = json.dumps(data.to_dict(), ensure_ascii=False, indent=2)
+        selected = list(data.enabled)
+        def write_enabled_only(book):
+            latest_data = self.publication_store.load(book)
+            latest_data.enabled = list(selected)
+            self.publication_store.save(book, latest_data)
+        result = self.persist_publication_change('publication/publication.json', payload, write_enabled_only)
+        if result == 'failed':
+            return
+        if result == 'disk':
+            data = self.publication_store.load(self.book)
+        self.publication_editor.book = self.book
+        self.publication_editor.data = data
+        self.populate_tree()
+        enabled = list(data.enabled)
+        if enabled:
+            self.select_tree_publication(enabled[0]); self.open_publication_item(enabled[0])
+        elif self.chapter:
+            self.content_stack.setCurrentWidget(self.manuscript_content)
+        else:
+            first = next((c for sec in self.book.sections for c in sec.chapters), None)
+            if first: self.open_chapter(first); self.select_tree_chapter(first.id)
+
+    def _cancel_publication_setup(self):
+        first = next((c for sec in self.book.sections for c in sec.chapters), None) if self.book else None
+        if first:
+            self.open_chapter(first); self.select_tree_chapter(first.id)
+
+    def select_tree_publication(self, key):
+        root=self.tree.invisibleRootItem(); stack=[root]
+        while stack:
+            parent=stack.pop()
+            for i in range(parent.childCount()):
+                item=parent.child(i); data=item.data(0,Qt.UserRole)
+                if data and data[0]=='publication' and data[1]==key:
+                    self.tree.setCurrentItem(item); return
+                stack.append(item)
 
     def move_chapter(self, chapter_id: str, target_type: str, target_id: str, before: bool):
         if not self.book or self.preview_live_book:
@@ -323,13 +468,16 @@ class EditorPage(QWidget):
 
     def tree_clicked(self, item, col):
         data = item.data(0, Qt.UserRole)
-        if data and data[0]=='chapter': self.open_chapter_id(data[1])
+        if not data: return
+        if data[0]=='chapter': self.open_chapter_id(data[1])
+        elif data[0]=='publication': self.open_publication_item(data[1])
 
     def open_chapter_id(self, cid):
         _, c = self.find_chapter_in_book(cid)
         if c: self.open_chapter(c)
 
     def _set_editor_chapter(self, chapter):
+        self.content_stack.setCurrentWidget(self.manuscript_content)
         self.chapter = chapter
         self.chapter_title.setText(chapter.title)
         self.editor.blockSignals(True)
@@ -340,6 +488,8 @@ class EditorPage(QWidget):
         self.dirty = False
         self.autosave_status.setText('● Opgeslagen')
         self.update_counts()
+        if hasattr(self.main, 'toolrail') and self.main.stack.currentWidget() is self:
+            self.main.toolrail.show()
         self.main.sync_tool_buttons()
         if self.right.isVisible() and self.right.currentWidget() is self.spell:
             self.spell.refresh()
@@ -484,6 +634,10 @@ class EditorPage(QWidget):
     def save(self):
         if self.preview_live_book:
             return True
+        if self.content_stack.currentWidget() is self.publication_editor:
+            return self.publication_editor.save_pending()
+        if self.content_stack.currentWidget() is self.publication_setup:
+            return True
         if not (self.book and self.chapter and self.dirty):
             return True
         try:
@@ -581,10 +735,12 @@ class EditorPage(QWidget):
         title = QLabel(tr('editor.add_what', 'Toevoegen')); title.setObjectName('sectionTitle'); lay.addWidget(title)
         chapter_btn = QPushButton(tr('editor.new_chapter', 'Hoofdstuk')); chapter_btn.setObjectName('flyoutButton')
         section_btn = QPushButton(tr('editor.new_section', 'Sectie')); section_btn.setObjectName('flyoutButton')
-        lay.addWidget(chapter_btn); lay.addWidget(section_btn)
+        publication_btn = QPushButton('Publicatiestructuur'); publication_btn.setObjectName('flyoutButton')
+        lay.addWidget(chapter_btn); lay.addWidget(section_btn); lay.addWidget(publication_btn)
         shadow = QGraphicsDropShadowEffect(popup); shadow.setBlurRadius(24); shadow.setOffset(0, 7); shadow.setColor(QColor(0,0,0,70)); popup.setGraphicsEffect(shadow)
         chapter_btn.clicked.connect(lambda: (popup.close(), self._create_chapter()))
         section_btn.clicked.connect(lambda: (popup.close(), self._create_section()))
+        publication_btn.clicked.connect(lambda: (popup.close(), self.show_publication_setup()))
         popup.adjustSize()
         pos = self.add_content_button.mapToGlobal(QPoint(self.add_content_button.width() - popup.sizeHint().width(), self.add_content_button.height() + 6))
         popup.move(pos); popup.show(); popup.raise_()
@@ -792,6 +948,8 @@ class EditorPage(QWidget):
             self.main.library.untrack_book(live)
         self.book = None
         self.chapter = None
+        self.publication_editor.set_book(None)
+        self.content_stack.setCurrentWidget(self.manuscript_content)
         self._chapter_word_counts = {}
         self.dirty = False
         self.tree.clear()

@@ -6,9 +6,9 @@ from ..manuscript_editor import ManuscriptEditor
 class NotesPage(QWidget):
     def __init__(self, planning_page):
         super().__init__(); self.owner=planning_page; self.dirty=False
-        lay=QVBoxLayout(self); lay.setContentsMargins(34,28,34,34); lay.setSpacing(8)
+        lay=QVBoxLayout(self); lay.setContentsMargins(18,18,18,18); lay.setSpacing(8)
         title=QLabel('Notities'); title.setObjectName('title'); info=QLabel('Vrije notities voor dit boek. Onder water blijft dit gewone Markdown.'); info.setObjectName('muted')
-        self.editor=ManuscriptEditor(); self.editor.setObjectName('planningNotesEditor'); self.editor.textChanged.connect(self.changed)
+        self.editor=ManuscriptEditor(); self.editor.setObjectName('planningNotesEditor'); self.editor.max_text_width = 100000; self.editor.min_side_margin = 8; self.editor._update_margins(); self.editor.textChanged.connect(self.changed)
         self.timer=QTimer(self); self.timer.setSingleShot(True); self.timer.setInterval(2500); self.timer.timeout.connect(self.save)
         lay.addWidget(title); lay.addWidget(info); lay.addSpacing(8); lay.addWidget(self.editor,1)
     def load(self):

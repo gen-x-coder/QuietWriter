@@ -11,6 +11,9 @@ from .outline_page import OutlinePage
 from .notes_page import NotesPage
 
 
+PLANNING_PANEL_WIDTH = 190
+
+
 class PlanningPage(QWidget):
     """Book-planning mode: Characters, Outline and Notes.
 
@@ -22,7 +25,7 @@ class PlanningPage(QWidget):
     def __init__(self, main):
         super().__init__(); self.main=main; self.book=None; self.store=PlanningStore(main.library)
         root=QHBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
-        side=QFrame(); side.setObjectName('planningSidebar'); side.setFixedWidth(190)
+        side=QFrame(); side.setObjectName('planningSidebar'); side.setFixedWidth(PLANNING_PANEL_WIDTH)
         sl=QVBoxLayout(side); sl.setContentsMargins(12,22,12,22); sl.setSpacing(5)
         self.buttons=[]
         self.characters_button=self._nav(sl,'Personages',0)

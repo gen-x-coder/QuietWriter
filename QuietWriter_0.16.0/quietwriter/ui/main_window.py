@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from PySide6.QtCore import (
-    Qt, QSettings, QTimer, QSize, QRect, QPropertyAnimation, QEasingCurve,
+    Qt, QSettings, QTimer, QSize, QPropertyAnimation, QEasingCurve,
     QParallelAnimationGroup
 )
 from PySide6.QtGui import QAction
@@ -470,12 +470,11 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.editor_page.save()
-        # Bewaar de normale client-geometry expliciet. Qt's opaque saveGeometry()
-        # kan op een andere monitor/DPI een niet-passende afmeting proberen te
-        # herstellen en daarbij QWindowsWindow::setGeometry-waarschuwingen geven.
-        normal_rect = self.normalGeometry() if self.isMaximized() else self.geometry()
-        self.settings.setValue('window_geometry_v2', normal_rect)
-        self.settings.setValue('window_maximized', self.isMaximized())
+        # Gebruik voorlopig weer Qt's native geometry/state-mechanisme. De custom
+        # clamp uit 0.13.5 is teruggedraaid omdat die op Windows bij maximaliseren
+        # de native frame/titlebar kon verstoren. Een definitieve multi-monitor/DPI
+        # oplossing volgt pas na gerichte review.
+        self.settings.setValue('geometry', self.saveGeometry())
         self.settings.setValue('windowState', self.saveState())
         self.settings.setValue('splitter', self.editor_page.left_split.saveState())
         self.settings.setValue('manuscript_visible', self.editor_page.manuscript.isVisible())
@@ -483,60 +482,10 @@ class MainWindow(QMainWindow):
         self.settings.setValue('nav_expanded', self.rail_expanded)
         super().closeEvent(event)
 
-    def _safe_window_geometry(self, requested):
-        """Return a geometry that fits on one of the currently available screens.
-
-        Window geometry is deliberately stored as a QRect instead of Qt's opaque
-        saveGeometry() blob. That makes moving a workspace between computers,
-        monitors and DPI settings predictable and lets us validate before Qt asks
-        Windows to resize the native window.
-        """
-        screens = QApplication.screens()
-        if not screens:
-            return requested if isinstance(requested, QRect) and requested.isValid() else QRect(80, 80, 1480, 900)
-
-        has_saved_rect = isinstance(requested, QRect) and requested.isValid()
-        rect = QRect(requested) if has_saved_rect else QRect(0, 0, 1480, 900)
-
-        # Prefer the screen containing the largest part of the old window. If the
-        # saved position no longer touches any screen, use the primary screen.
-        best_screen = None
-        best_area = -1
-        for screen in screens:
-            inter = rect.intersected(screen.availableGeometry())
-            area = max(0, inter.width()) * max(0, inter.height())
-            if area > best_area:
-                best_area = area
-                best_screen = screen
-        if best_area <= 0 or not has_saved_rect:
-            best_screen = QApplication.primaryScreen() or screens[0]
-
-        available = best_screen.availableGeometry()
-        hint = self.minimumSizeHint()
-        min_w = max(1, self.minimumWidth(), hint.width())
-        min_h = max(1, self.minimumHeight(), hint.height())
-        width = min(max(rect.width(), min_w), available.width())
-        height = min(max(rect.height(), min_h), available.height())
-
-        if has_saved_rect:
-            x = rect.x()
-            y = rect.y()
-        else:
-            x = available.x() + max(0, (available.width() - width) // 2)
-            y = available.y() + max(0, (available.height() - height) // 2)
-        if x < available.left(): x = available.left()
-        if y < available.top(): y = available.top()
-        if x + width - 1 > available.right(): x = available.right() - width + 1
-        if y + height - 1 > available.bottom(): y = available.bottom() - height + 1
-        return QRect(x, y, width, height)
-
     def restore_state(self):
-        s=self.settings.value('windowState'); sp=self.settings.value('splitter')
-        requested = self.settings.value('window_geometry_v2')
-        self.setGeometry(self._safe_window_geometry(requested))
+        g=self.settings.value('geometry'); s=self.settings.value('windowState'); sp=self.settings.value('splitter')
+        if g: self.restoreGeometry(g)
         if s: self.restoreState(s)
-        if self.settings.value('window_maximized', False, bool):
-            self.setWindowState(self.windowState() | Qt.WindowMaximized)
         if sp:
             self.editor_page.left_split.restoreState(sp)
             sizes = self.editor_page.left_split.sizes()

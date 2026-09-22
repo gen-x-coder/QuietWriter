@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.16.0 — Publicatiestructuur (MVP)
+- Nieuwe publicatielaag die **Voorwerk → Manuscript → Achterwerk** als één boekstructuur behandelt.
+- Via **+ Toevoegen → Publicatiestructuur** kies je met eenvoudige schakelaars welke onderdelen zichtbaar worden.
+- Voorwerk: Titelpagina, Copyright, Opdracht, Epigraaf, Inhoudsopgave, Voorwoord en Inleiding.
+- Achterwerk: Nawoord, Dankwoord en Over de auteur.
+- Geselecteerde onderdelen verschijnen direct in de bestaande Inhoud-boom boven of onder de hoofdstukken.
+- Drie expliciete contenttypen: vrije Markdowntekst, gestructureerde formulieren en gegenereerde onderdelen.
+- Gestructureerde titelpagina met titel, subtitel, auteur/pseudoniem en uitgever/imprint.
+- Gestructureerde copyrightpagina met editie, jaar, uitgever, ISBN-velden per formaat en optionele, vrij bewerkbare clausules.
+- Inhoudsopgavegenerator met keuze tussen alleen hoofdstukken of hoofdstukken plus tussenkoppen, inclusief live voorbeeld.
+- Vrije onderdelen gebruiken dezelfde rustige ManuscriptEditor maar blijven als losse Markdownbestanden opgeslagen.
+- Publicatie-inhoud staat los van Planning en wordt opgeslagen onder `publication/`.
+- Publicatiebestanden vallen onder dezelfde SHA-256 externe-wijzigingsbeveiliging en versiegeschiedenis als manuscript en planning.
+- Versieherstel herstelt nu ook `planning/` en `publication/`, zodat een historische boekversie daadwerkelijk de bijbehorende ondersteunende boekdata terugzet.
+- Exporttemplates/PDF/EPUB zijn bewust nog niet gebouwd; inhoud en semantiek zijn nu losgekoppeld van uiteindelijke vormgeving.
+- Nieuwe tests voor publicatiemodellen, opslag, revision-conflicten en herstel uit versiegeschiedenis.
+
+## 0.15.2
+- Planning: de hoofdsubnavigatie en personagelijst hebben nu exact dezelfde vaste breedte.
+- Personages: lege toestand gebruikt nu een echt blanco contentcanvas; het detailformulier verschijnt alleen bij Nieuw of selectie.
+- Notities: gebruikt vrijwel de volledige beschikbare breedte en hoogte met kleine rustige marges.
+- Windows: de custom geometry-clamp uit 0.13.5 is teruggedraaid; QuietWriter gebruikt voorlopig weer Qt saveGeometry/restoreGeometry totdat multi-monitor/DPI-gedrag apart is beoordeeld.
+
+
+- Personages opent nu met een leeg contentvlak; het formulier verschijnt pas na Nieuw of selectie van een bestaand personage.
+- Een nieuw personage is eerst een lokale draft en wordt pas bij Opslaan naar schijf geschreven.
+- Na opslaan of verwijderen sluit de detailweergave weer naar het lege contentvlak.
+- De personagelijst gebruikt een subtiele micro-label zodat subnavigatie en lijstinhoud visueel duidelijker gescheiden zijn.
+
 ## 0.15.0 — Boekplanning en ideeën (MVP)
 - Nieuwe optionele **Planning**-modus in de hoofdrail, alleen zichtbaar wanneer een boek geopend is.
 - Planning is modulair opgesplitst onder `quietwriter/ui/planning/`: shell, personages, outline en notities hebben elk een eigen scherm/module.

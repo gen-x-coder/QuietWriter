@@ -470,6 +470,13 @@ class Library:
                     source = book.path / chapter.file
                     text = source.read_text(encoding='utf-8') if source.exists() else ''
                 _safe_atomic_write_text(destination, text)
+        # A conflict-local snapshot must remain a complete book snapshot. Keep
+        # auxiliary book-owned data alongside the in-memory manuscript state.
+        for aux_name in ('planning', 'publication'):
+            source_aux = book.path / aux_name
+            target_aux = target / aux_name
+            if source_aux.exists():
+                shutil.copytree(source_aux, target_aux)
         self._write_manifest_unchecked(snapshot)
         self._register_version(book, target.name, target, kind=kind, created_at=now.isoformat(timespec='seconds'))
         return next(version for version in self.list_versions(book) if version['id'] == target.name)
@@ -546,6 +553,46 @@ class Library:
             raise FileNotFoundError(f'Versie {version_id} bestaat niet meer.')
         return self.load_book(folder)
 
+    def _sync_snapshot_auxiliary_dir(self, live_book: Book, snapshot: Book, name: str):
+        """Restore optional book-owned data such as planning/publication files.
+
+        History snapshots are complete copies of the book folder. Restoring only
+        chapters and book.json would leave planning/publication state from the
+        newer book behind, so sync these small text/json trees as part of the same
+        restore operation. Writes use the same robust path as the manuscript.
+        """
+        source_root = snapshot.path / name
+        target_root = live_book.path / name
+        # Historical snapshots created before this auxiliary data type existed
+        # must not erase newer planning/publication data when restored. Absence
+        # therefore means "snapshot has no opinion about this tree".
+        if not source_root.exists():
+            return
+        wanted: set[Path] = set()
+        for source in source_root.rglob('*'):
+            if not source.is_file():
+                continue
+            relative = source.relative_to(source_root)
+            target = target_root / relative
+            wanted.add(target.resolve())
+            if source.suffix.lower() in {'.json', '.md', '.txt'}:
+                _safe_atomic_write_text(target, source.read_text(encoding='utf-8'))
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+        if target_root.exists():
+            for existing in sorted((p for p in target_root.rglob('*') if p.is_file()), reverse=True):
+                if existing.resolve() not in wanted:
+                    try:
+                        existing.unlink()
+                    except PermissionError:
+                        pass
+            for folder in sorted((p for p in target_root.rglob('*') if p.is_dir()), key=lambda x: len(x.parts), reverse=True):
+                try:
+                    folder.rmdir()
+                except OSError:
+                    pass
+
     def _apply_snapshot_to_live(self, live_book: Book, snapshot: Book) -> Book:
         wanted = set()
         for sec in snapshot.sections:
@@ -561,6 +608,8 @@ class Library:
         )
         restored.metadata['last_used'] = datetime.now().timestamp()
         self._write_manifest_unchecked(restored)
+        self._sync_snapshot_auxiliary_dir(live_book, snapshot, 'planning')
+        self._sync_snapshot_auxiliary_dir(live_book, snapshot, 'publication')
 
         # Remove unreferenced chapter files only after all desired files and the
         # manifest have been written successfully. A locked orphan is harmless.

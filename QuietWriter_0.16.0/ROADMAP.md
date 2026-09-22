@@ -53,32 +53,30 @@ Per boek bestaat nu een optionele planningslaag, volledig gescheiden van de uite
 - Custom fields per genre en meerdere outline-weergaven (kanban/tijdlijn).
 - AI-acties die planning/personageprofielen als gerichte context gebruiken.
 
-### Iteratie 16 — Publicatiestructuur
+### Iteratie 16 — Publicatiestructuur — MVP afgerond
 
-Eerst een documentmodel voor front matter, body en back matter ontwerpen; daarna pas PDF/EPUB.
+QuietWriter kent nu een expliciete publicatiestructuur naast Planning: **Voorwerk → Manuscript → Achterwerk**.
 
-**Front matter**
-- Half-title/titelpagina.
-- Copyrightpagina met templates én vrij bewerkbare tekst.
-- Opdracht/dedicatie.
-- Voorwoord/preface als apart front-matter-item, dus niet als "hoofdstuk 1".
-- Automatische inhoudsopgave op basis van hoofdstukken/secties.
-- Optionele lege pagina's/pagina-einden voor printopmaak.
+**MVP aanwezig**
+- Publicatiestructuur kiezen vanuit de bestaande Inhoud-editor; geen aparte dashboardmodus.
+- Voorwerk: Titelpagina, Copyright, Opdracht, Epigraaf, Inhoudsopgave, Voorwoord en Inleiding.
+- Achterwerk: Nawoord, Dankwoord en Over de auteur.
+- Vrije tekstonderdelen blijven Markdown en gebruiken dezelfde editorcomponent.
+- Titelpagina, Copyright en Epigraaf zijn gestructureerde formulieren.
+- Copyright ondersteunt auteursnaam/pseudoniem, editie, jaar, uitgever, ISBNs per formaat en optionele aanpasbare clausules.
+- Inhoudsopgave wordt uit de actuele hoofdstukstructuur gegenereerd, met optioneel tussenkoppen.
+- Publicatiebestanden staan los onder `publication/` en vallen onder revision/conflictbeveiliging en versiegeschiedenis.
+- Inhoud/semantiek zijn bewust losgekoppeld van exportvormgeving.
 
-**Body**
-- Hoofdstukken en secties.
-- Paginering/hoofdstukstartregels voor PDF.
-
-**Back matter**
-- Nawoord.
-- Dankwoord.
-- Over de auteur.
-- Overige vrij definieerbare onderdelen.
-
-Daarna:
-- EPUB-export.
-- PDF-export met gekozen boekformaat, marges, typografie en paginering.
-- Inhoudsopgavegenerator delen tussen EPUB/PDF waar mogelijk.
+**Nog open rond publicatie**
+- Echte PDF- en EPUB-rendering.
+- Keuze uit enkele rustige boektemplates (bijv. klassiek, modern, literair).
+- Boekformaat, marges, paginanummers, recto/verso-regels en hoofdstukstartpagina's voor print/PDF.
+- EPUB-specifieke navigatie/metadata en validatie.
+- Schutbladen, half-title en expliciete lege pagina's/pagina-einden voor print.
+- Preview van de uiteindelijke opmaak per gekozen template.
+- Meer inhoudsopgaveniveaus als de manuscriptstructuur daar later aanleiding toe geeft.
+- Eventueel extra vrij definieerbare voor-/achterwerkonderdelen, pas als daar echte behoefte aan blijkt.
 
 ### Iteratie 17 — Meegeleverde schrijftypografie
 

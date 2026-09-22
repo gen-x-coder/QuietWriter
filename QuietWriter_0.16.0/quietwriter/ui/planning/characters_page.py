@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt, Signal
 import copy
 from PySide6.QtWidgets import (
     QComboBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QTextEdit, QVBoxLayout, QWidget
+    QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QStackedWidget, QTextEdit, QVBoxLayout, QWidget
 )
 
 from ...planning_models import Character, Relation
@@ -30,6 +30,7 @@ class CharacterDetail(QWidget):
         super().__init__()
         self.character: Character | None = None
         self.characters: list[Character] = []
+        self.is_new = False
         outer = QVBoxLayout(self); outer.setContentsMargins(34, 26, 42, 34); outer.setSpacing(12)
         top = QHBoxLayout()
         self.title = QLabel('Personage'); self.title.setObjectName('title')
@@ -64,6 +65,7 @@ class CharacterDetail(QWidget):
         add_btn = QPushButton('Relatie toevoegen'); add_btn.clicked.connect(self._add_relation)
         add.addWidget(self.rel_type, 1); add.addWidget(self.rel_target, 1); add.addWidget(add_btn)
         self.form.addLayout(add)
+        self.relation_controls = (self.rel_type, self.rel_target, add_btn)
         self.form.addStretch()
         scroll.setWidget(host); outer.addWidget(scroll, 1)
         save = QPushButton('Opslaan'); save.setObjectName('primaryButton'); save.clicked.connect(self._save)
@@ -77,14 +79,17 @@ class CharacterDetail(QWidget):
         lab = QLabel(label); lab.setObjectName('settingsFieldLabel'); self.form.addWidget(lab)
         edit = QTextEdit(); edit.setAcceptRichText(False); edit.setFixedHeight(height); self.form.addWidget(edit); return edit
 
-    def set_character(self, character: Character | None, characters: list[Character]):
-        self.character = character; self.characters = characters
-        enabled = character is not None
-        self.setEnabled(enabled)
-        if not enabled:
-            self.title.setText('Selecteer een personage')
+    def set_character(self, character: Character | None, characters: list[Character], *, is_new: bool = False):
+        self.character = character; self.characters = characters; self.is_new = is_new
+        if character is None:
+            self.hide()
             return
-        self.title.setText(character.name or 'Personage')
+        self.show()
+        self.setEnabled(True)
+        self.title.setText('Nieuw personage' if is_new else (character.name or 'Personage'))
+        self.delete.setVisible(not is_new)
+        for widget in self.relation_controls:
+            widget.setEnabled(not is_new)
         for widget, value in (
             (self.name, character.name), (self.role, character.role),
         ): widget.setText(value)
@@ -146,35 +151,51 @@ class CharactersPage(QWidget):
     changed = Signal()
 
     def __init__(self, planning_page):
-        super().__init__(); self.owner = planning_page; self.characters: list[Character] = []
+        super().__init__(); self.owner = planning_page; self.characters: list[Character] = []; self._draft: Character | None = None
         root = QHBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
-        side = QFrame(); side.setObjectName('planningListPanel'); side.setFixedWidth(230)
+        side = QFrame(); side.setObjectName('planningListPanel'); side.setFixedWidth(190)
         sl = QVBoxLayout(side); sl.setContentsMargins(16,22,14,22); sl.setSpacing(8)
-        head = QHBoxLayout(); title=QLabel('Personages'); title.setObjectName('sectionTitle'); add=QPushButton('+'); add.setObjectName('compactButton'); add.setToolTip('Nieuw personage'); add.clicked.connect(self.add_character); head.addWidget(title); head.addStretch(); head.addWidget(add); sl.addLayout(head)
+        head = QHBoxLayout(); title=QLabel('PERSONAGES'); title.setObjectName('planningMicroLabel'); add=QPushButton('+'); add.setObjectName('compactButton'); add.setToolTip('Nieuw personage'); add.clicked.connect(self.add_character); head.addWidget(title); head.addStretch(); head.addWidget(add); sl.addLayout(head)
         self.list = QListWidget(); self.list.currentItemChanged.connect(self._selection_changed); sl.addWidget(self.list,1)
         self.detail = CharacterDetail(); self.detail.saveRequested.connect(self.save_character); self.detail.deleteRequested.connect(self.delete_character); self.detail.relationRequested.connect(self.add_relation); self.detail.relationDeleteRequested.connect(self.delete_relation); self.detail.navigateCharacter.connect(self.select_character)
-        root.addWidget(side); root.addWidget(self.detail,1)
+        self.canvas = QStackedWidget(); self.canvas.setObjectName('planningCanvas')
+        self.blank = QWidget(); self.blank.setObjectName('planningBlankCanvas')
+        self.canvas.addWidget(self.blank); self.canvas.addWidget(self.detail)
+        root.addWidget(side); root.addWidget(self.canvas,1)
+        self.canvas.setCurrentWidget(self.blank)
 
     def load(self):
+        self._draft = None
         self.characters = self.owner.store.load_characters(self.owner.book) if self.owner.book else []
         self.refresh_list()
+        self.close_detail()
 
     def refresh_list(self, keep_id=None):
-        if keep_id is None and self.list.currentItem(): keep_id = self.list.currentItem().data(Qt.UserRole)
         self.list.blockSignals(True); self.list.clear()
         selected = None
         for c in self.characters:
             item = QListWidgetItem(c.name + (f'\n{c.role}' if c.role else '')); item.setData(Qt.UserRole,c.id); self.list.addItem(item)
             if c.id == keep_id: selected = item
         self.list.blockSignals(False)
-        if selected: self.list.setCurrentItem(selected)
-        elif self.list.count(): self.list.setCurrentRow(0)
-        else: self.detail.set_character(None, self.characters)
+        if selected:
+            self.list.setCurrentItem(selected)
+        else:
+            self.list.clearSelection(); self.list.setCurrentRow(-1)
+
+    def close_detail(self):
+        self._draft = None
+        self.list.blockSignals(True)
+        self.list.clearSelection(); self.list.setCurrentRow(-1)
+        self.list.blockSignals(False)
+        self.detail.set_character(None, self.characters)
+        self.canvas.setCurrentWidget(self.blank)
 
     def _selection_changed(self, current, _previous=None):
+        self._draft = None
         cid = current.data(Qt.UserRole) if current else None
         char = next((c for c in self.characters if c.id == cid), None)
         self.detail.set_character(char, self.characters)
+        self.canvas.setCurrentWidget(self.detail if char else self.blank)
 
     def select_character(self, cid):
         for i in range(self.list.count()):
@@ -182,12 +203,29 @@ class CharactersPage(QWidget):
                 self.list.setCurrentRow(i); break
 
     def add_character(self):
-        c = Character(); self.characters.append(c)
-        if self.owner.persist_characters(self.characters): self.refresh_list(c.id); self.changed.emit()
-        else: self.characters.pop()
+        # Creating a personage starts as an in-memory draft. Nothing is written
+        # until the user explicitly presses Opslaan.
+        self.list.blockSignals(True)
+        self.list.clearSelection(); self.list.setCurrentRow(-1)
+        self.list.blockSignals(False)
+        self._draft = Character(name='')
+        self.detail.set_character(self._draft, self.characters + [self._draft], is_new=True)
+        self.canvas.setCurrentWidget(self.detail)
+        self.detail.name.setFocus()
 
     def save_character(self, character):
-        if self.owner.persist_characters(self.characters): self.refresh_list(character.id); self.changed.emit()
+        if self._draft is not None and character.id == self._draft.id:
+            candidate = self.characters + [character]
+            if self.owner.persist_characters(candidate):
+                self.characters = candidate
+                self.refresh_list()
+                self.close_detail()
+                self.changed.emit()
+            return
+        if self.owner.persist_characters(self.characters):
+            self.refresh_list()
+            self.close_detail()
+            self.changed.emit()
 
     def delete_character(self, cid):
         char = next((c for c in self.characters if c.id == cid), None)
@@ -195,7 +233,7 @@ class CharactersPage(QWidget):
         if QMessageBox.question(self,'Personage verwijderen',f'“{char.name}” verwijderen uit de planning?') != QMessageBox.Yes: return
         old = copy.deepcopy(self.characters); self.characters = [c for c in self.characters if c.id != cid]
         for c in self.characters: c.relations = [r for r in c.relations if r.target_id != cid]
-        if self.owner.persist_characters(self.characters): self.refresh_list(); self.changed.emit()
+        if self.owner.persist_characters(self.characters): self.refresh_list(); self.close_detail(); self.changed.emit()
         else: self.characters = old
 
     def delete_relation(self, source_id, relation_id):

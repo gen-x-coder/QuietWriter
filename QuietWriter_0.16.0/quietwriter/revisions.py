@@ -97,7 +97,7 @@ def book_file_names(book_path: Path, chapter_files: Iterable[str]) -> set[str]:
     current in-memory manifest does not know about yet.
     """
 
-    names = {'book.json', 'planning/characters.json', 'planning/outline.json', 'planning/notes.md'}
+    names = {'book.json', 'planning/characters.json', 'planning/outline.json', 'planning/notes.md', 'publication/publication.json'}
     names.update(str(Path(name).as_posix()) for name in chapter_files)
     chapters_dir = Path(book_path) / 'chapters'
     if chapters_dir.exists():
@@ -106,14 +106,15 @@ def book_file_names(book_path: Path, chapter_files: Iterable[str]) -> set[str]:
                 names.add(path.relative_to(book_path).as_posix())
             except ValueError:
                 pass
-    planning_dir = Path(book_path) / 'planning'
-    if planning_dir.exists():
-        for path in planning_dir.rglob('*'):
-            if path.is_file() and path.suffix.lower() in {'.json', '.md'}:
-                try:
-                    names.add(path.relative_to(book_path).as_posix())
-                except ValueError:
-                    pass
+    for aux_name in ('planning', 'publication'):
+        aux_dir = Path(book_path) / aux_name
+        if aux_dir.exists():
+            for path in aux_dir.rglob('*'):
+                if path.is_file() and path.suffix.lower() in {'.json', '.md'}:
+                    try:
+                        names.add(path.relative_to(book_path).as_posix())
+                    except ValueError:
+                        pass
     return names
 
 

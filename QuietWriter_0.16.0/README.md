@@ -91,6 +91,20 @@ Wanneer een boek geopend is, verschijnt **Planning** in de linker hoofdrail. Dez
 
 De planning wordt opgeslagen in een aparte `planning/`-map binnen het boek. Deze bestanden vallen onder dezelfde externe-wijzigingsbeveiliging en versiegeschiedenis als het manuscript.
 
+## Publicatiestructuur
+
+Via **Inhoud → + Toevoegen → Publicatiestructuur** kies je welke onderdelen vóór en na het manuscript bij het uiteindelijke boek horen. Geselecteerde onderdelen verschijnen in dezelfde inhoudsboom als **Voorwerk** en **Achterwerk**.
+
+QuietWriter maakt daarbij bewust onderscheid tussen:
+
+- **vrije tekst** zoals Opdracht, Voorwoord, Nawoord en Dankwoord;
+- **gestructureerde onderdelen** zoals Titelpagina, Copyright en Epigraaf;
+- **gegenereerde onderdelen** zoals de Inhoudsopgave.
+
+De copyrightpagina bevat onder meer editie, jaar, uitgever/imprint, ISBNs per formaat en optionele bewerkbare clausules. De inhoudsopgave wordt uit de actuele hoofdstukstructuur opgebouwd en kan optioneel tussenkoppen meenemen.
+
+Publicatiegegevens staan in een aparte `publication/`-map binnen het boek en vallen onder dezelfde externe-wijzigingsbeveiliging en versiegeschiedenis als manuscript en planning. PDF/EPUB en boektemplates zijn bewust een latere stap: de inhoudsstructuur is nu onafhankelijk van de uiteindelijke vormgeving.
+
 ## Code-architectuur
 
 Sinds 0.12.1 is de UI niet meer geconcentreerd in één groot `app.py`-bestand. `app.py` bevat alleen de applicatiebootstrap. De Qt-interface staat onder `quietwriter/ui/` en is per verantwoordelijkheid opgesplitst:
@@ -110,6 +124,11 @@ quietwriter/ui/
 │   ├── characters_page.py
 │   ├── outline_page.py
 │   └── notes_page.py
+├── publication/
+│   ├── publication_setup.py
+│   ├── publication_editor.py
+│   ├── copyright_page.py
+│   └── contents_page.py
 ├── trash_page.py
 ├── search_panel.py
 ├── spell_panel.py
