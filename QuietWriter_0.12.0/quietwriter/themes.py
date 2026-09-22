@@ -165,6 +165,14 @@ def stylesheet(name: str) -> str:
     QListWidget::item:selected, QTreeWidget::item:selected {{ background: {t['accent_soft']}; color: {t['text']}; }}
     QTreeWidget#manuscriptTree::item:selected {{ border-left: 3px solid {t['accent']}; }}
 
+
+    QFrame#settingsSidebar {{ background: transparent; border-right: 1px solid {t['border_subtle']}; padding-right: 16px; }}
+    QPushButton#settingsNavButton {{ border: 0; border-left: 3px solid transparent; border-radius: 8px; padding: 10px 12px; text-align: left; color: {t['muted']}; }}
+    QPushButton#settingsNavButton:hover {{ background: {t['hover']}; color: {t['text']}; }}
+    QPushButton#settingsNavButton:checked {{ background: {t['accent_soft']}; color: {t['text']}; border-left: 3px solid {t['accent']}; font-weight: 600; }}
+    QLabel#settingsPageTitle {{ font-size: 20px; font-weight: 600; }}
+    QLabel#settingsFieldLabel {{ font-size: 12px; font-weight: 600; color: {t['text']}; margin-top: 3px; }}
+    QStackedWidget#settingsPages {{ background: transparent; }}
     QTabWidget::pane {{ border: 1px solid {t['border_subtle']}; border-radius: 8px; background: {t['panel']}; }}
     QTabBar::tab {{ background: transparent; padding: 9px 14px; color: {t['muted']}; border-bottom: 2px solid transparent; }}
     QTabBar::tab:selected {{ color: {t['text']}; border-bottom: 2px solid {t['accent']}; }}
