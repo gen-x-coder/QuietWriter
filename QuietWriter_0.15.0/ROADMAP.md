@@ -30,16 +30,28 @@
 - Eenvoudige conflictkeuze: eigen versie of schijfversie, met automatische recovery in versiegeschiedenis.
 - Tijdelijke sync-/bestandslocks apart behandelen van echte inhoudsconflicten.
 
-### Iteratie 15 — Boekplanning en ideeën
+### Iteratie 15 — Boekplanning en ideeën — MVP afgerond
 
-Per boek een optionele planningslaag, volledig gescheiden van de uiteindelijke manuscripttekst.
+Per boek bestaat nu een optionele planningslaag, volledig gescheiden van de uiteindelijke manuscripttekst.
 
-- Algemene notitiepagina voor het boek.
-- Ideeënbord / vrije kaarten voor scènes, onderzoek en losse gedachten.
-- Hoofdstukraamwerk met per hoofdstuk een geplande synopsis, doel en status.
-- Karakterpagina's: naam, rol, beschrijving, relaties, notities.
-- Eventueel locaties en tijdlijn later toevoegen als daar echt behoefte aan is.
-- Planning mag nooit verplicht worden voor gebruikers die alleen willen schrijven.
+**MVP aanwezig**
+- Planning als zelfstandige modus met Personages, Outline en Notities.
+- Gestructureerde personageprofielen met vaste, AI-vriendelijke karaktervelden.
+- Klikbare, bidirectionele relaties tussen personages.
+- Outline met scènes gegroepeerd onder de bestaande hoofdstukken en een bak voor Losse ideeën.
+- Scènes met titel, synopsis, betrokken personages, locatie, doel, conflict, uitkomst, status en notities.
+- Eén Markdown-notitiepagina per boek met dezelfde rustige editorcomponent.
+- Planningdata in losse bestanden onder `planning/`, inclusief revision/conflictbeveiliging en versiegeschiedenis.
+
+**Later / bewust niet in MVP**
+- Scènes slepen en vrij herschikken tussen hoofdstukken.
+- Inklapbare hoofdstukgroepen en compactere inline-scènebewerking.
+- Portretten, eerste verschijning en expliciete belangrijke hoofdstukken op personagepagina's.
+- Uitgebreidere relatiebeschrijvingen of een visuele relatieweergave.
+- Wiki-achtige `[[links]]` tussen notities, personages en scènes.
+- Locaties als eigen entiteit, tijdlijn of worldbuilding-database.
+- Custom fields per genre en meerdere outline-weergaven (kanban/tijdlijn).
+- AI-acties die planning/personageprofielen als gerichte context gebruiken.
 
 ### Iteratie 16 — Publicatiestructuur
 

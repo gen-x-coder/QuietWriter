@@ -81,6 +81,16 @@ Als een bestand sinds het openen buiten QuietWriter is gewijzigd, wordt niet opg
 
 Deze beveiliging is bewust generiek: er worden geen lockfiles achtergelaten en er is geen centrale syncservice nodig. Een theoretische gelijktijdige write op twee nog niet gesynchroniseerde computers blijft zonder centrale coördinatie mogelijk; syncsoftware kan in dat geval zelf een conflicted copy maken.
 
+## Boekplanning en ideeën
+
+Wanneer een boek geopend is, verschijnt **Planning** in de linker hoofdrail. Deze modus is optioneel en staat los van de manuscripttekst.
+
+- **Personages** bevat vaste, gestructureerde velden voor rol, beschrijving, persoonlijkheid, motivatie, doelen, angsten, waarden, conflicten, achtergrond, stem/spreekwijze en gedrag onder druk. Relaties gebruiken stabiele personage-ID's.
+- **Outline** toont scènes onder de bestaande hoofdstukken plus een sectie **Losse ideeën**. Scènes kunnen worden gekoppeld aan personages en bevatten onder meer synopsis, locatie, doel, conflict, uitkomst en status.
+- **Notities** is één vrije Markdownpagina per boek en gebruikt dezelfde rustige schrijfeditor.
+
+De planning wordt opgeslagen in een aparte `planning/`-map binnen het boek. Deze bestanden vallen onder dezelfde externe-wijzigingsbeveiliging en versiegeschiedenis als het manuscript.
+
 ## Code-architectuur
 
 Sinds 0.12.1 is de UI niet meer geconcentreerd in één groot `app.py`-bestand. `app.py` bevat alleen de applicatiebootstrap. De Qt-interface staat onder `quietwriter/ui/` en is per verantwoordelijkheid opgesplitst:
@@ -95,6 +105,11 @@ quietwriter/ui/
 ├── book_details.py
 ├── settings_page.py
 ├── persona_page.py
+├── planning/
+│   ├── planning_page.py
+│   ├── characters_page.py
+│   ├── outline_page.py
+│   └── notes_page.py
 ├── trash_page.py
 ├── search_panel.py
 ├── spell_panel.py

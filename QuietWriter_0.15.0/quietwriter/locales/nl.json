@@ -67,5 +67,6 @@
   "format.bold": "Vet",
   "format.italic": "Cursief",
   "format.underline": "Onderstrepen",
-  "format.strike": "Doorhalen"
+  "format.strike": "Doorhalen",
+  "nav.planning": "Planning"
 }
