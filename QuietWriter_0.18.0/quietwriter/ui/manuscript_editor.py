@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 
 from PySide6.QtCore import QPoint, QSettings, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QTextBlockFormat, QTextCursor
-from PySide6.QtWidgets import QApplication, QTextEdit
+from PySide6.QtGui import QAction, QColor, QFont, QPainter, QPen, QTextBlockFormat, QTextCursor
+from PySide6.QtWidgets import QApplication, QMenu, QTextEdit
 
 from ..manuscript_markup import (ManuscriptStyle, apply_block_style, is_scene_break_line,
                                  selection_format_states, smart_double_quote, toggle_inline)
@@ -176,6 +176,58 @@ class ManuscriptEditor(QTextEdit):
             self.setTextCursor(cursor)
             return
         super().keyPressEvent(event)
+
+    def contextMenuEvent(self, event):
+        """Extend Qt's normal edit menu with QuietWriter formatting actions.
+
+        The standard Cut/Copy/Paste/Undo actions remain untouched. Formatting is
+        added as a compact submenu and uses the same Markdown transformations as
+        the floating selection toolbar and keyboard shortcuts.
+        """
+        self.hide_selection_toolbar()
+        cursor = self.textCursor()
+        has_selection = bool(cursor.hasSelection() and not self.isReadOnly())
+        if has_selection:
+            self._selection_range = tuple(sorted((cursor.selectionStart(), cursor.selectionEnd())))
+
+        menu = self.createStandardContextMenu()
+        if has_selection:
+            menu.addSeparator()
+            formatting = menu.addMenu('Opmaak')
+            states = selection_format_states(self.toPlainText(), *self._selection_range)
+
+            inline = (
+                ('bold', 'Vet'),
+                ('italic', 'Cursief'),
+                ('underline', 'Onderstrepen'),
+                ('strike', 'Doorhalen'),
+                ('code', 'Code'),
+            )
+            for action_name, label in inline:
+                action = QAction(label, formatting)
+                action.setCheckable(True)
+                action.setChecked(bool(states.get(action_name, False)))
+                action.triggered.connect(lambda checked=False, a=action_name: self.apply_format_action(a))
+                formatting.addAction(action)
+
+            formatting.addSeparator()
+            paragraph_menu = formatting.addMenu('Alineastijl')
+            blocks = (
+                ('paragraph', 'Normale alinea'),
+                ('heading', 'Tussenkop'),
+                ('quote', 'Citaat'),
+                ('bullet', 'Opsomming'),
+                ('numbered', 'Genummerde lijst'),
+            )
+            for action_name, label in blocks:
+                action = QAction(label, paragraph_menu)
+                action.setCheckable(True)
+                action.setChecked(bool(states.get(action_name, False)))
+                action.triggered.connect(lambda checked=False, a=action_name: self.apply_format_action(a))
+                paragraph_menu.addAction(action)
+
+        menu.exec(event.globalPos())
+        menu.deleteLater()
 
     def apply_format_action(self, action: str):
         if not self._selection_range or self.isReadOnly():

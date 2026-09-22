@@ -8,9 +8,10 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QHBoxLayout, QInputDialog, QMainWindow,
-    QMessageBox, QPushButton, QStackedWidget, QStatusBar, QVBoxLayout, QWidget
+    QMessageBox, QPushButton, QStatusBar, QVBoxLayout, QWidget
 )
 
+from .current_page_stack import CurrentPageStack
 from .. import APP_NAME
 from ..icon_theme import icon, set_icon_theme
 from ..i18n import tr
@@ -33,14 +34,14 @@ class MainWindow(QMainWindow):
         set_icon_theme(self._active_theme)
         self.search_index = BookSearchIndex(library.cache_dir / 'book_search.db')
         self.status = QStatusBar(); self.setStatusBar(self.status)
-        self.setWindowTitle(APP_NAME); self.setWindowIcon(icon('books')); self.resize(1480, 900)
+        self.setWindowTitle(APP_NAME); self.setWindowIcon(icon('books')); self.resize(1280, 720)
         self.rail_expanded = self.settings.value('nav_expanded', False, bool)
 
         wrap = QWidget(); self.setCentralWidget(wrap); root = QHBoxLayout(wrap); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
         self.rail = QFrame(); self.rail.setObjectName('toolrail')
         self.rail_layout = QVBoxLayout(self.rail); self.rail_layout.setContentsMargins(7,10,7,10); self.rail_layout.setSpacing(6)
 
-        self.stack = QStackedWidget()
+        self.stack = CurrentPageStack()
         self.start = StartPage(library)
         self.editor_page = EditorPage(self)
         self.persona = PersonaPage(library)
@@ -470,10 +471,9 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.editor_page.save()
-        # Gebruik voorlopig weer Qt's native geometry/state-mechanisme. De custom
-        # clamp uit 0.13.5 is teruggedraaid omdat die op Windows bij maximaliseren
-        # de native frame/titlebar kon verstoren. Een definitieve multi-monitor/DPI
-        # oplossing volgt pas na gerichte review.
+        # Window geometry/state blijft volledig bij Qt. De layout zelf houdt
+        # minimum-size hints nu binnen de beschikbare viewport; er is dus geen
+        # Windows-specifieke clamp of handmatige setGeometry-workaround nodig.
         self.settings.setValue('geometry', self.saveGeometry())
         self.settings.setValue('windowState', self.saveState())
         self.settings.setValue('splitter', self.editor_page.left_split.saveState())

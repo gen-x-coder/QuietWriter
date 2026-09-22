@@ -4,9 +4,10 @@ from PySide6.QtCore import Qt, Signal
 import copy
 from PySide6.QtWidgets import (
     QComboBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QStackedWidget, QTextEdit, QVBoxLayout, QWidget
+    QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QTextEdit, QVBoxLayout, QWidget
 )
 
+from ..current_page_stack import CurrentPageStack
 from ...planning_models import Character, Relation
 
 
@@ -165,7 +166,7 @@ class CharactersPage(QWidget):
         list_label=QLabel('PERSONAGES'); list_label.setObjectName('planningMicroLabel'); sl.addWidget(list_label)
         self.list = QListWidget(); self.list.currentItemChanged.connect(self._selection_changed); sl.addWidget(self.list,1)
         self.detail = CharacterDetail(); self.detail.saveRequested.connect(self.save_character); self.detail.deleteRequested.connect(self.delete_character); self.detail.relationRequested.connect(self.add_relation); self.detail.relationDeleteRequested.connect(self.delete_relation); self.detail.navigateCharacter.connect(self.select_character)
-        self.canvas = QStackedWidget(); self.canvas.setObjectName('planningCanvas')
+        self.canvas = CurrentPageStack(); self.canvas.setObjectName('planningCanvas')
         self.blank = QWidget(); self.blank.setObjectName('planningBlankCanvas')
         self.canvas.addWidget(self.blank); self.canvas.addWidget(self.detail)
         body.addWidget(side); body.addWidget(self.canvas,1)

@@ -26,9 +26,11 @@ class SelectionToolbar(QFrame):
     )
 
     def __init__(self, parent=None):
-        super().__init__(parent, Qt.Popup | Qt.FramelessWindowHint)
+        super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus)
         self.setObjectName('selectionToolbar')
         self.setAttribute(Qt.WA_DeleteOnClose, False)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setFocusPolicy(Qt.NoFocus)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(7, 7, 7, 7)
         lay.setSpacing(3)
@@ -39,6 +41,7 @@ class SelectionToolbar(QFrame):
             btn.setToolTip(tr(key, default))
             btn.setFixedSize(44, 42)
             btn.setCheckable(True)
+            btn.setFocusPolicy(Qt.NoFocus)
             font = QFont(btn.font())
             font.setPointSize(17 if action != 'code' else 13)
             if action == 'bold':

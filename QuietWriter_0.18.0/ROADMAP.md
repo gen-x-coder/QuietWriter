@@ -78,6 +78,12 @@ QuietWriter kent nu een expliciete publicatiestructuur naast Planning: **Voorwer
 - Meer inhoudsopgaveniveaus als de manuscriptstructuur daar later aanleiding toe geeft.
 - Eventueel extra vrij definieerbare voor-/achterwerkonderdelen, pas als daar echte behoefte aan blijkt.
 
+### Layout hardening — afgerond in 0.17.1
+
+- Verborgen `QStackedWidget`-pagina's mogen de minimumhoogte van het hoofdvenster niet meer bepalen.
+- Lange centrale formulieren en instellingen blijven binnen scrollbare viewports; vaste acties blijven bereikbaar op lage schermhoogtes.
+- Geen custom Windows-geometryclamps: Qt blijft verantwoordelijk voor native restore/maximize-gedrag.
+
 ### Iteratie 17 — Meegeleverde schrijftypografie — afgerond
 
 - Voorkeursset vastgesteld: Merriweather, Literata, Source Serif 4 en EB Garamond.
@@ -88,24 +94,39 @@ QuietWriter kent nu een expliciete publicatiestructuur naast Planning: **Voorwer
 - Nieuwe Over-pagina bevat versie, project/makerinformatie en inklapbare fontlicenties.
 - Build/source-helper haalt de geverifieerde upstream fontbinaries op uit Google Fonts vóór packaging.
 
-### Iteratie 18 — AI-verfijning
+### Iteratie 18 — UI/UX consistency & polish — gestart in 0.18.0
 
-De gewone schrijfchat blijft leidend.
+**Afgerond in 0.18.0**
+- Designregels vastgelegd voor overzichts-, instellingen-, detail-, document- en setup-pagina's.
+- Instellingen gebruiken een consistente tweekoloms settings-row taal met gerichte microcopy.
+- Font-preview staat naast de fontkeuze; Opslaan kent een echte dirty-state.
+- De selectie-toolbar steelt geen keyboard focus meer.
+- Het standaard editor-contextmenu bevat nu ook QuietWriter-opmaakacties.
+- Lage schermhoogte en 125% DPI zijn structureel afgedekt door de layout-hardening uit 0.17.1; meerdere DPI's blijven onderdeel van de eind-smoketest.
+
+**Nog open in deze polish-iteratie**
+- Boekenplank spacing en kaartmaten verder finetunen.
+- Cursors, hover/pressed states, micro-interacties en flyouts scherm voor scherm nalopen.
+- Scene-break interactie visueel afmaken.
+- Focus states, Tab/Shift+Tab, toetsenbordnavigatie en contrast nalopen.
+- Eind-smoketest op 100%, 125% en 150% DPI en op lage laptophoogte.
+
+### Publicatie-export en templates
+
+- PDF/EPUB-rendering bovenop het bestaande publication model.
+- Rustige templates zoals Klassiek, Modern en Literair.
+- Print-/EPUB-specifieke paginering, metadata en validatie.
+
+### AI-verfijning — later
+
+De gewone schrijfchat blijft leidend; deze iteratie is bewust naar beneden geschoven.
 
 - Alleen snelacties toevoegen die in echt gebruik vaak terugkomen, bijvoorbeeld Feedback, Herschrijf selectie of Persona-check.
 - Snelacties zijn alleen vooraf ingevulde prompts; geen aparte AI-logica.
 - OpenRouter uitgebreider testen.
 - Geen RAG/bibliothecaris tenzij daar later opnieuw een duidelijke behoefte aan ontstaat.
 
-### Iteratie 19 — UI/UX polish 2
-
-- Screens op verschillende DPI's/resoluties nalopen.
-- Boekenplank spacing en kaartmaten verder finetunen.
-- Cursors, micro-interacties en flyouts nalopen.
-- Scene-break interactie visueel afmaken.
-- Toegankelijkheid: focus states, toetsenbordnavigatie en contrast.
-
-### Iteratie 20 — Release en robuustheid
+### Release en robuustheid
 
 - Windows executable/installer.
 - Migraties tussen QuietWriter-versies.

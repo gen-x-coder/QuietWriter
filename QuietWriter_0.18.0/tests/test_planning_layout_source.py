@@ -13,7 +13,7 @@ def test_planning_navigation_and_character_list_share_fixed_width():
 
 def test_character_page_has_real_blank_canvas_state():
     source = (ROOT / 'quietwriter' / 'ui' / 'planning' / 'characters_page.py').read_text(encoding='utf-8')
-    assert "self.canvas = QStackedWidget()" in source
+    assert "self.canvas = CurrentPageStack()" in source
     assert "self.blank = QWidget()" in source
     assert "self.canvas.setCurrentWidget(self.blank)" in source
 

@@ -10,9 +10,10 @@ from PySide6.QtGui import QColor, QFont, QTextCursor
 from PySide6.QtWidgets import (
     QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QInputDialog,
     QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QSplitter,
-    QStackedWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+    QTreeWidgetItem, QVBoxLayout, QWidget
 )
 
+from .current_page_stack import CurrentPageStack
 from ..ai.ui import AIPanel
 from ..chapter_order import DropTarget, move_chapter as reorder_chapter
 from ..dictionary_catalog import DictionaryCatalog
@@ -86,10 +87,10 @@ class EditorPage(QWidget):
         self.publication_setup = PublicationSetup(self)
         self.publication_setup.saved.connect(self._save_publication_setup)
         self.publication_setup.cancelled.connect(self._cancel_publication_setup)
-        self.content_stack = QStackedWidget(); self.content_stack.addWidget(self.manuscript_content); self.content_stack.addWidget(self.publication_editor); self.content_stack.addWidget(self.publication_setup)
+        self.content_stack = CurrentPageStack(); self.content_stack.addWidget(self.manuscript_content); self.content_stack.addWidget(self.publication_editor); self.content_stack.addWidget(self.publication_setup)
         cl.addWidget(self.history_banner); cl.addWidget(topbar); cl.addWidget(self.content_stack)
 
-        self.right = QStackedWidget(); self.right.setObjectName('panel'); self.right.setMinimumWidth(300)
+        self.right = CurrentPageStack(); self.right.setObjectName('panel'); self.right.setMinimumWidth(300)
         self.search = SearchPanel(); self.ai = AIPanel(main); self.spell = SpellPanel(self); self.history = HistoryPanel(self)
         self.right.addWidget(self.search); self.right.addWidget(self.ai); self.right.addWidget(self.spell); self.right.addWidget(self.history)
         self.history.versionSelected.connect(self.enter_history_preview)

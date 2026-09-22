@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QTimer, Signal
-from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
+from ..current_page_stack import CurrentPageStack
 from ...publication_models import PublicationData, item_definition
 from ...publication_storage import PublicationStore
 from ..manuscript_editor import ManuscriptEditor
@@ -49,7 +50,7 @@ class PublicationEditor(QWidget):
 
     def __init__(self, editor_page):
         super().__init__(editor_page); self.owner=editor_page; self.main=editor_page.main; self.book=None; self.key=None; self.store=PublicationStore(self.main.library); self.data=PublicationData(); self.structured_dirty=False
-        self.stack=QStackedWidget(); root=QVBoxLayout(self); root.setContentsMargins(0,0,0,0); root.addWidget(self.stack)
+        self.stack=CurrentPageStack(); root=QVBoxLayout(self); root.setContentsMargins(0,0,0,0); root.addWidget(self.stack)
         self.title_page=SimpleStructuredPage('Titelpagina',[('title','Boektitel'),('subtitle','Subtitel'),('author','Auteur / pseudoniem'),('publisher','Uitgever / imprint')])
         self.epigraph=SimpleStructuredPage('Epigraaf',[('quote','Citaat'),('source','Bron / auteur')])
         self.copyright=CopyrightPage(); self.contents=ContentsPage(); self.free_text=FreeTextPage()

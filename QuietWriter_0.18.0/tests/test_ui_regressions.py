@@ -148,7 +148,7 @@ class SettingsNavigationArchitectureTests(unittest.TestCase):
         source = SETTINGS.read_text(encoding='utf-8')
         block = source[source.index('class SettingsPage(QWidget):'):source.index('    def _preview_appearance', source.index('class SettingsPage(QWidget):'))]
         self.assertIn("nav.setObjectName('settingsSidebar')", block)
-        self.assertIn('self.pages = QStackedWidget()', block)
+        self.assertIn('self.pages = CurrentPageStack()', block)
         self.assertIn("button.setObjectName('settingsNavButton')", block)
         self.assertNotIn('self.tabs = QTabWidget()', block)
 

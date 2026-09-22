@@ -199,10 +199,17 @@ def stylesheet(name: str) -> str:
     QPushButton#settingsNavButton:hover {{ background: {t['hover']}; color: {t['text']}; }}
     QPushButton#settingsNavButton:checked {{ background: {t['accent_soft']}; color: {t['text']}; border-left: 3px solid {t['accent']}; font-weight: 600; }}
     QLabel#settingsPageTitle {{ font-size: 20px; font-weight: 600; }}
-    QLabel#settingsFieldLabel {{ font-size: 12px; font-weight: 600; color: {t['text']}; margin-top: 3px; }}
+    QLabel#settingsPageIntro {{ color: {t['muted']}; padding-top: 4px; }}
+    QLabel#settingsSectionTitle {{ color: {t['muted']}; font-size: 11px; font-weight: 700; letter-spacing: 0.8px; }}
+    QFrame#settingsRow {{ background: transparent; border-bottom: 1px solid {t['border_subtle']}; }}
+    QLabel#settingsFieldLabel {{ font-size: 13px; font-weight: 600; color: {t['text']}; }}
+    QLabel#settingsFieldHelp {{ font-size: 12px; color: {t['muted']}; }}
+    QWidget#settingsRowInfo, QWidget#settingsRowControl, QWidget#settingsInlineControl, QWidget#settingsFullWidth, QWidget#settingsContent {{ background: transparent; }}
     QStackedWidget#settingsPages {{ background: transparent; }}
     QLabel#settingsToast {{ background: {t['text']}; color: {t['bg']}; border: 1px solid {t['border']}; border-radius: 9px; padding: 9px 14px; font-weight: 600; }}
     QLabel#fontPreview {{ background: {t['editor']}; color: {t['text']}; border: 1px solid {t['border_subtle']}; border-radius: 9px; padding: 14px 16px; }}
+    QScrollArea#settingsContentScroll {{ background: transparent; border: 0; }}
+    QScrollArea#settingsContentScroll > QWidget > QWidget {{ background: transparent; }}
     QScrollArea#aboutScroll {{ background: transparent; border: 0; }}
     QScrollArea#aboutScroll > QWidget > QWidget {{ background: transparent; }}
     QFrame#licenseCard {{ background: {t['panel']}; border: 1px solid {t['border_subtle']}; border-radius: 10px; }}
