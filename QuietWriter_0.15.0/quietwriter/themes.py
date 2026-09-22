@@ -172,6 +172,18 @@ def stylesheet(name: str) -> str:
     QTreeWidget#manuscriptTree::item:selected {{ border-left: 3px solid {t['accent']}; }}
 
 
+    QFrame#planningSidebar {{ background: {t['panel2']}; border-right: 1px solid {t['border_subtle']}; }}
+    QPushButton#planningNavButton {{ border: 0; border-left: 3px solid transparent; border-radius: 8px; padding: 10px 12px; text-align: left; color: {t['muted']}; }}
+    QPushButton#planningNavButton:hover {{ background: {t['hover']}; color: {t['text']}; }}
+    QPushButton#planningNavButton:checked {{ background: {t['accent_soft']}; color: {t['text']}; border-left: 3px solid {t['accent']}; font-weight: 600; }}
+    QFrame#planningListPanel {{ background: {t['panel']}; border-right: 1px solid {t['border_subtle']}; }}
+    QFrame#sceneCard {{ background: {t['panel']}; border: 1px solid {t['border_subtle']}; border-radius: 10px; }}
+    QFrame#sceneCard:hover {{ border-color: {t['border']}; }}
+    QLabel#outlineChapterTitle {{ background: {t['panel2']}; border-radius: 8px; padding: 8px 10px; font-weight: 600; }}
+    QPushButton#relationChip {{ background: {t['accent_soft']}; color: {t['text']}; border: 0; border-radius: 12px; padding: 5px 10px; text-align: left; }}
+    QPushButton#relationChip:hover {{ color: {t['accent']}; }}
+    QTextEdit#planningNotesEditor {{ border: 0; }}
+
     QFrame#settingsSidebar {{ background: transparent; border-right: 1px solid {t['border_subtle']}; padding-right: 16px; }}
     QPushButton#settingsNavButton {{ border: 0; border-left: 3px solid transparent; border-radius: 8px; padding: 10px 12px; text-align: left; color: {t['muted']}; }}
     QPushButton#settingsNavButton:hover {{ background: {t['hover']}; color: {t['text']}; }}

@@ -474,6 +474,28 @@ class Library:
         self._register_version(book, target.name, target, kind=kind, created_at=now.isoformat(timespec='seconds'))
         return next(version for version in self.list_versions(book) if version['id'] == target.name)
 
+    def create_version_with_file_overrides(self, book: Book, file_overrides: dict[str, str], kind: str = 'conflict_local') -> dict:
+        """Snapshot the current on-disk book and replace selected files in the snapshot.
+
+        This is used by optional book-planning surfaces when a local unsaved
+        planning value would otherwise be discarded after an external-change
+        conflict. It never writes the live book.
+        """
+        root = self._history_root(book)
+        now = datetime.now()
+        version_id = now.strftime('%Y-%m-%dT%H-%M-%S-%f')
+        target = root / version_id
+        counter = 2
+        while target.exists():
+            target = root / f'{version_id}-{counter}'
+            counter += 1
+        shutil.copytree(book.path, target)
+        for relative, text in (file_overrides or {}).items():
+            destination = target / Path(relative)
+            _safe_atomic_write_text(destination, text)
+        self._register_version(book, target.name, target, kind=kind, created_at=now.isoformat(timespec='seconds'))
+        return next(v for v in self.list_versions(book) if v['id'] == target.name)
+
     def list_versions(self, book: Book) -> list[dict]:
         root = self._history_root(book)
         index = self._load_history_index(book)

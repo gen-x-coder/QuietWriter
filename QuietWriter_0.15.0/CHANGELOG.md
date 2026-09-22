@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.15.0 — Boekplanning en ideeën (MVP)
+- Nieuwe optionele **Planning**-modus in de hoofdrail, alleen zichtbaar wanneer een boek geopend is.
+- Planning is modulair opgesplitst onder `quietwriter/ui/planning/`: shell, personages, outline en notities hebben elk een eigen scherm/module.
+- Gestructureerde personageprofielen met vaste velden die later gericht als AI-context gebruikt kunnen worden: rol, beschrijving, persoonlijkheid, motivatie, doelen, angsten, waarden, conflicten, achtergrond, manier van spreken, gedrag onder druk en notities.
+- Personagerelaties gebruiken stabiele IDs en ondersteunen bekende bidirectionele relatieparen; relaties zijn klikbaar en verwijderbaar.
+- Nieuwe outline per bestaand hoofdstuk, plus **Losse ideeën**. Scènes bevatten titel, synopsis, personages, locatie, doel, conflict, uitkomst, status en notities.
+- Scènes verwijzen naar stabiele `character_id`- en `chapter_id`-waarden, zodat hernoemen geen koppelingen breekt.
+- Boeknotities gebruiken dezelfde `ManuscriptEditor` en blijven gewone Markdown (`planning/notes.md`).
+- Planningdata staat bewust los van het manuscript in `planning/characters.json`, `planning/outline.json` en `planning/notes.md`.
+- Planningbestanden vallen onder dezelfde SHA-256 revision/conflictbeveiliging als hoofdstukken en `book.json`.
+- Versiegeschiedenis neemt de planning automatisch mee; lokale planning kan bij een conflict eveneens als herstelversie worden bewaard.
+- Nieuwe storage-/architectuurtests voor personagevelden, relaties, scène-ID-koppelingen, Markdownnotities en externe wijzigingen.
+
 ## 0.14.0 — Veilige externe wijzigingen
 - Nieuwe optimistic-concurrencylaag in `quietwriter/revisions.py`; geen lockfiles, sessieprotocol of Dropbox-specifieke code.
 - Elk geopend boek krijgt in-memory revisions van `book.json` en alle hoofdstukbestanden op basis van bestandsgrootte + SHA-256. `mtime` wordt alleen diagnostisch bewaard en beslist nooit over een conflict.

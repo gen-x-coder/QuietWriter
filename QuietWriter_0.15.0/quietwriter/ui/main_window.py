@@ -22,6 +22,7 @@ from .book_details import BookDetailsPage
 from .bookshelf import StartPage
 from .editor_page import EditorPage
 from .persona_page import PersonaPage
+from .planning import PlanningPage
 from .settings_page import SettingsPage
 from .trash_page import TrashPage
 
@@ -43,10 +44,11 @@ class MainWindow(QMainWindow):
         self.start = StartPage(library)
         self.editor_page = EditorPage(self)
         self.persona = PersonaPage(library)
+        self.planning_page = PlanningPage(self)
         self.settings_page = SettingsPage(settings, self, models)
         self.trash = TrashPage(self)
         self.book_details_page = None
-        for page in (self.start, self.editor_page, self.persona, self.settings_page, self.trash): self.stack.addWidget(page)
+        for page in (self.start, self.editor_page, self.planning_page, self.persona, self.settings_page, self.trash): self.stack.addWidget(page)
         root.addWidget(self.rail); root.addWidget(self.stack, 1)
 
         self.nav_buttons = []
@@ -54,6 +56,7 @@ class MainWindow(QMainWindow):
         self.rail_layout.addSpacing(8)
         self.bookshelf_button = self._nav_button('shelf', tr('nav.bookshelf', 'Boekenplank'), self.go_home)
         self.write_button = self._nav_button('books', tr('nav.contents', 'Inhoud'), self.show_editor)
+        self.planning_button = self._nav_button('planning', tr('nav.planning', 'Planning'), self.show_planning)
         self.book_details_button = self._nav_button('edit', tr('nav.book_details', 'Boekdetails'), self.open_current_book_details)
         self.rail_layout.addStretch()
         self.persona_button = self._nav_button('persona', tr('nav.persona', 'Schrijverspersona'), self.show_persona)
@@ -81,7 +84,7 @@ class MainWindow(QMainWindow):
         self.restore_state(); self._apply_nav_width(); self._apply_toolrail_width(); QTimer.singleShot(0, self.editor_page._position_contents_edge_button)
         self.stack.currentChanged.connect(self._mode_changed); self._mode_changed(0)
 
-        save = QAction('Opslaan', self); save.setShortcut('Ctrl+S'); save.triggered.connect(self.editor_page.save); self.addAction(save)
+        save = QAction('Opslaan', self); save.setShortcut('Ctrl+S'); save.triggered.connect(self.save_active); self.addAction(save)
         focus_left = QAction(self); focus_left.setShortcut('Ctrl+Shift+L'); focus_left.triggered.connect(self.editor_page.toggle_manuscript); self.addAction(focus_left)
         focus_right = QAction(self); focus_right.setShortcut('Ctrl+Shift+R'); focus_right.triggered.connect(self.editor_page.toggle_right); self.addAction(focus_right)
         scene_break = QAction(self); scene_break.setShortcut('Ctrl+Shift+Return'); scene_break.triggered.connect(self.editor_page.insert_scene_break); self.addAction(scene_break)
@@ -172,6 +175,7 @@ class MainWindow(QMainWindow):
         in_editor = self.stack.currentWidget() is self.editor_page
         self.toolrail.setVisible(in_editor)
         self.write_button.setVisible(self.editor_page.book is not None)
+        self.planning_button.setVisible(self.editor_page.book is not None)
         self.book_details_button.setVisible(self.editor_page.book is not None)
         self._sync_nav_selection()
         self.sync_tool_buttons()
@@ -182,16 +186,28 @@ class MainWindow(QMainWindow):
 
     def _sync_nav_selection(self):
         current = self.stack.currentWidget()
-        for b in (self.bookshelf_button, self.write_button, self.book_details_button, self.persona_button, self.settings_button, self.trash_button): b.setChecked(False)
+        for b in (self.bookshelf_button, self.write_button, self.planning_button, self.book_details_button, self.persona_button, self.settings_button, self.trash_button): b.setChecked(False)
         if current is self.start: self.bookshelf_button.setChecked(True)
         elif current is self.editor_page: self.write_button.setChecked(True)
+        elif current is self.planning_page: self.planning_button.setChecked(True)
         elif self.book_details_page is not None and current is self.book_details_page: self.book_details_button.setChecked(True)
         elif current is self.persona: self.persona_button.setChecked(True)
         elif current is self.settings_page: self.settings_button.setChecked(True)
         elif current is self.trash: self.trash_button.setChecked(True)
 
+    def save_active(self):
+        if self.stack.currentWidget() is self.planning_page:
+            return self.planning_page.save_pending()
+        return self.editor_page.save()
+
+    def _save_planning_if_active(self):
+        if self.stack.currentWidget() is self.planning_page:
+            return self.planning_page.save_pending()
+        return True
+
     def show_editor(self):
         self._leave_settings_preview()
+        if not self._save_planning_if_active(): return
         if self.stack.currentWidget() is self.editor_page:
             self._sync_nav_selection()
             return
@@ -200,8 +216,20 @@ class MainWindow(QMainWindow):
         else:
             self.go_home()
 
+    def show_planning(self):
+        self._leave_settings_preview()
+        if not self.editor_page.book:
+            self.go_home(); return
+        if self.editor_page.save() is False:
+            return
+        if self.stack.currentWidget() is self.planning_page:
+            self._sync_nav_selection(); return
+        self.planning_page.set_book(self.editor_page.book)
+        self.stack.setCurrentWidget(self.planning_page)
+
     def show_persona(self):
         self._leave_settings_preview()
+        if not self._save_planning_if_active(): return
         if self.stack.currentWidget() is self.persona:
             self._sync_nav_selection()
             return
@@ -210,6 +238,7 @@ class MainWindow(QMainWindow):
 
     def show_trash(self):
         self._leave_settings_preview()
+        if not self._save_planning_if_active(): return
         if self.stack.currentWidget() is self.trash:
             self._sync_nav_selection()
             return
@@ -221,12 +250,16 @@ class MainWindow(QMainWindow):
         if self.stack.currentWidget() is self.start and self.editor_page.book is None:
             self._sync_nav_selection()
             return
+        if self.planning_page.save_pending() is False:
+            return
+        self.planning_page.set_book(None)
         self.editor_page.close_book()
         if self.book_details_page is not None:
             self.stack.removeWidget(self.book_details_page); self.book_details_page.deleteLater(); self.book_details_page = None
         self.start.refresh()
         self.stack.setCurrentWidget(self.start)
         self.write_button.setVisible(False)
+        self.planning_button.setVisible(False)
         self.book_details_button.setVisible(False)
         self._sync_nav_selection()
 
@@ -248,10 +281,15 @@ class MainWindow(QMainWindow):
         self.open_book(book)
 
     def open_book(self, book):
+        if self.planning_page.book and self.planning_page.book.id != book.id:
+            if self.planning_page.save_pending() is False:
+                return
         self.library.touch_book(book)
         self.editor_page.load_book(book)
+        self.planning_page.set_book(book)
         self._replace_book_details_page(book)
         self.write_button.setVisible(True)
+        self.planning_button.setVisible(True)
         self.book_details_button.setVisible(True)
         self.stack.setCurrentWidget(self.editor_page)
         self._sync_nav_selection()
@@ -267,6 +305,7 @@ class MainWindow(QMainWindow):
 
     def open_current_book_details(self):
         self._leave_settings_preview()
+        if not self._save_planning_if_active(): return
         if not self.editor_page.book:
             self.go_home(); return
         if self.book_details_page is None or self.book_details_page.book.id != self.editor_page.book.id:
@@ -281,9 +320,11 @@ class MainWindow(QMainWindow):
 
     def _book_details_deleted(self, book):
         if self.editor_page.book and self.editor_page.book.id == book.id:
-            self.editor_page.close_book()
+            self.planning_page.save_pending()
+        self.planning_page.set_book(None)
+        self.editor_page.close_book()
         self.start.refresh()
-        self.write_button.setVisible(False); self.book_details_button.setVisible(False)
+        self.write_button.setVisible(False); self.planning_button.setVisible(False); self.book_details_button.setVisible(False)
         page = self.book_details_page
         self.book_details_page = None
         if page is not None:
@@ -352,13 +393,16 @@ class MainWindow(QMainWindow):
         typography = typography_from_values(preferred, point_size)
         self.editor_page.editor.apply_typography(typography)
         self.editor_page.chapter_title.setFont(typography.title_font())
+        self.planning_page.notes_page.editor.apply_typography(typography)
 
     def apply_manuscript_style(self, style: ManuscriptStyle | None = None):
         if style is None:
             style = ManuscriptStyle.from_settings(self.settings)
         self.editor_page.editor.apply_manuscript_style(style)
+        self.planning_page.notes_page.editor.apply_manuscript_style(style)
 
     def open_settings(self):
+        if not self._save_planning_if_active(): return
         if self.stack.currentWidget() is self.settings_page:
             self._sync_nav_selection(); return
         self._settings_return_page = self.stack.currentWidget()
@@ -416,6 +460,9 @@ class MainWindow(QMainWindow):
         return ep.editor.toPlainText(), f'hoofdstuk: {chapter.title}'
 
     def closeEvent(self, event):
+        if self.planning_page.save_pending() is False:
+            event.ignore()
+            return
         # AI-workers moeten echt gestopt zijn voordat Qt widgets/QThreads vernietigt.
         # Anders kan Qt afsluiten met: QThread: Destroyed while thread is still running.
         if hasattr(self.editor_page, 'ai') and not self.editor_page.ai.shutdown(4500):
