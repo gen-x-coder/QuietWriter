@@ -93,13 +93,15 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 ## Exporteren-pagina
 
 - Exporteren is een zelfstandige boekpagina direct onder Boekdetails; Boekdetails beheert metadata/omslag, Exporteren beheert uitvoerformaten en renderinstellingen.
-- Formaatkeuze staat bovenaan als drie kaarten: EPUB, PDF en Markdown. Niet beschikbare formaten blijven zichtbaar maar disabled zodat de informatiestructuur stabiel blijft.
+- Formaatkeuze staat bovenaan als drie kaarten: EPUB, PDF en Markdown. EPUB en PDF zijn volwaardige publicatieformaten; Markdown blijft technisch beschikbaar voor uitwisseling/back-up.
 - De exportpagina verandert de publicatiestructuur nooit impliciet. De knop **Publicatiestructuur aanpassen** navigeert terug naar de bestaande setup.
 - Preflight is inline feedback en gebruikt geen modale dialoog voor waarschuwingen. Alleen blokkerende runtimefouten/overschrijven vragen een dialoog.
-- EPUB-instellingen zijn reflowable-readerinstellingen: template, omslag, omslagtekstmodus en sectietitels. Papierformaat/marges/paginanummers horen uitsluitend bij een toekomstige PDF-renderer.
+- EPUB-instellingen blijven reflowable-readerinstellingen: template, omslag, omslagtekstmodus en sectietitels. PDF heeft apart vaste-pagina-instellingen: template, A5/A4, margepreset, paginanummers, rustige lopende kop en sectietitelpagina’s.
 - Omslagtekst kent bewust slechts twee modi: QuietWriter voegt titel/auteur toe aan tekstloos artwork, of QuietWriter gebruikt een reeds complete omslag. Geen coverdesigner.
 - De exportmap is computergebonden en staat daarom in QSettings; per-boek renderkeuzes staan onder `export/settings.json`.
 - Na succesvolle export blijft de gebruiker op dezelfde pagina en krijgt hij **Bestand openen** en **Map openen**; normale successen gebruiken geen QMessageBox.
+- PDF rendert via `QTextDocument` + `QPdfWriter/QPainter`; geen externe PDF-library. Een geconfigureerde titelpagina krijgt geen running header of paginanummer; daarna begint de zichtbare nummering bij 1.
+- PDF-afbeeldingen volgen de bestaande Klein/Middel/Groot/Volledig en Links/Midden/Rechts-intentie. Korte onderschriften mogen links/rechts mee floaten; een lang onderschrift schakelt in PDF automatisch de omloop uit om het in de Qt-spike gevonden overlap-randgeval te vermijden. Preflight meldt deze veilige fallback als waarschuwing.
 - Markdown is een vast publicatieformaat, geen generieke export met toggles: de frontmatterheader is verplicht en heeft een stabiele veldvolgorde. Een hoofdstukkop/sectiemarker wordt alleen toegevoegd wanneer die structurele informatie bewaart.
 
 ## Startup en lokale cache

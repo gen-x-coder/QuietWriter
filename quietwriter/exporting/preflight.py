@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..media.markup import find_image_references
 from .models import ExportDocument
+from .pdf_exporter import pdf_float_caption_safe
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,17 @@ def run_preflight(document: ExportDocument, format_name: str, settings: dict) ->
         rows.append(PreflightItem('ok', 'images', str(document.inline_asset_count)))
         if format_name == 'markdown':
             rows.append(PreflightItem('error', 'markdown_images_pending', str(document.inline_asset_count)))
+
+    if format_name == 'pdf':
+        fallback_count = 0
+        sources = [chapter.markdown for section in document.sections for chapter in section.chapters]
+        sources.extend(item.text for item in (*document.front_matter, *document.back_matter) if item.kind == 'text')
+        for source in sources:
+            for ref in find_image_references(source):
+                if ref.wrap and ref.align in {'left', 'right'} and not pdf_float_caption_safe(ref.caption):
+                    fallback_count += 1
+        if fallback_count:
+            rows.append(PreflightItem('warning', 'pdf_wrap_fallback', str(fallback_count)))
 
     if format_name == 'epub':
         epub = settings.get('epub', {})

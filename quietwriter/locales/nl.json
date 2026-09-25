@@ -436,7 +436,7 @@
   "export.subtitle": "Maak een publicatiebestand van “{title}”.",
   "export.format": "Formaat",
   "export.epub.short": "Voor e-readers en e-bookapps",
-  "export.pdf.short": "Vaste pagina-opmaak · later",
+  "export.pdf.short": "Vaste pagina-opmaak voor lezen en print",
   "export.markdown.short": "Vast publicatieformaat",
   "export.preflight.title": "Exportcontrole",
   "export.content.title": "Inhoud",
@@ -651,5 +651,16 @@
   "ai.planning_context.empty": "Nog niets in Planning",
   "settings.ai.thinking_model_tip": "Dit model ondersteunt thinking en meldt expliciet dat thinking kan worden uitgeschakeld.",
   "settings.ai.thinking_fixed_tip": "Dit model ondersteunt thinking, maar de provider meldt geen uitgeschakelde modus voor deze variant.",
-  "settings.ai.thinking_unknown_tip": "Dit model ondersteunt thinking. QuietWriter kan thinking uitschakelen aanvragen, maar de provider meldt niet of deze modelvariant dat gegarandeerd ondersteunt."
+  "settings.ai.thinking_unknown_tip": "Dit model ondersteunt thinking. QuietWriter kan thinking uitschakelen aanvragen, maar de provider meldt niet of deze modelvariant dat gegarandeerd ondersteunt.",
+  "export.pdf.appearance": "PDF-opmaak",
+  "export.pdf.paper": "Boekformaat",
+  "export.pdf.margins": "Marges",
+  "export.pdf.margin.compact": "Compact",
+  "export.pdf.margin.standard": "Standaard",
+  "export.pdf.margin.wide": "Ruim",
+  "export.pdf.page_numbers": "Paginanummers opnemen",
+  "export.pdf.running_header": "Boektitel als rustige lopende kop",
+  "export.pdf.help": "PDF gebruikt vaste pagina-opmaak. Een afbeelding met tekstomloop en een lang onderschrift valt veilig terug op een gewoon links/rechts afbeeldingsblok.",
+  "export.action.pdf": "PDF exporteren",
+  "export.check.pdf_wrap_fallback": "{value} afbeelding(en) met lang onderschrift worden in PDF zonder tekstomloop geplaatst."
 }

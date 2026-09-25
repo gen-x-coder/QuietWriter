@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 
 from ..exporting import (
     ExportSettingsStore, TEMPLATES, build_export_document, export_epub,
-    export_markdown, run_preflight,
+    export_markdown, export_pdf, run_preflight,
 )
 from ..i18n import current_locale, tr
 from .dialogs import confirm
@@ -46,7 +46,7 @@ class ExportPage(QWidget):
         formats = QHBoxLayout(); formats.setSpacing(10)
         self.format_group = QButtonGroup(self); self.format_group.setExclusive(True)
         self.epub_button = self._format_button('EPUB', tr('export.epub.short', 'Voor e-readers en e-bookapps'), 'epub')
-        self.pdf_button = self._format_button('PDF', tr('export.pdf.short', 'Vaste pagina-opmaak · later'), 'pdf'); self.pdf_button.setEnabled(False)
+        self.pdf_button = self._format_button('PDF', tr('export.pdf.short', 'Vaste pagina-opmaak voor lezen en print'), 'pdf')
         self.markdown_button = self._format_button('Markdown', tr('export.markdown.short', 'Uitwisselen en back-up'), 'markdown')
         for button in (self.epub_button, self.pdf_button, self.markdown_button): formats.addWidget(button, 1)
         body.addLayout(formats)
@@ -86,6 +86,35 @@ class ExportPage(QWidget):
         self.show_sections = QCheckBox(tr('export.sections.show', 'Sectietitels als eigen pagina opnemen')); self.show_sections.setObjectName('publicationToggle'); el.addWidget(self.show_sections)
         body.addWidget(self.epub_panel)
 
+        self.pdf_panel = QFrame(); self.pdf_panel.setObjectName('panel')
+        pl = QVBoxLayout(self.pdf_panel); pl.setContentsMargins(0, 6, 0, 0); pl.setSpacing(10)
+        pt = QLabel(tr('export.pdf.appearance', 'PDF-opmaak')); pt.setObjectName('sectionTitle'); pl.addWidget(pt)
+
+        pdf_template_row = QHBoxLayout(); pdf_template_row.addWidget(QLabel(tr('export.template', 'Template')))
+        self.pdf_template_combo = QComboBox()
+        for key, template in TEMPLATES.items():
+            label = template.name_en if current_locale() == 'en' else template.name_nl
+            self.pdf_template_combo.addItem(label, key)
+        pdf_template_row.addWidget(self.pdf_template_combo, 1); pl.addLayout(pdf_template_row)
+
+        paper_row = QHBoxLayout(); paper_row.addWidget(QLabel(tr('export.pdf.paper', 'Boekformaat')))
+        self.pdf_paper_combo = QComboBox(); self.pdf_paper_combo.addItem('A5', 'A5'); self.pdf_paper_combo.addItem('A4', 'A4')
+        paper_row.addWidget(self.pdf_paper_combo, 1); pl.addLayout(paper_row)
+
+        margin_row = QHBoxLayout(); margin_row.addWidget(QLabel(tr('export.pdf.margins', 'Marges')))
+        self.pdf_margin_combo = QComboBox()
+        self.pdf_margin_combo.addItem(tr('export.pdf.margin.compact', 'Compact'), 'compact')
+        self.pdf_margin_combo.addItem(tr('export.pdf.margin.standard', 'Standaard'), 'standard')
+        self.pdf_margin_combo.addItem(tr('export.pdf.margin.wide', 'Ruim'), 'wide')
+        margin_row.addWidget(self.pdf_margin_combo, 1); pl.addLayout(margin_row)
+
+        self.pdf_page_numbers = QCheckBox(tr('export.pdf.page_numbers', 'Paginanummers opnemen')); self.pdf_page_numbers.setObjectName('publicationToggle'); pl.addWidget(self.pdf_page_numbers)
+        self.pdf_running_header = QCheckBox(tr('export.pdf.running_header', 'Boektitel als rustige lopende kop')); self.pdf_running_header.setObjectName('publicationToggle'); pl.addWidget(self.pdf_running_header)
+        self.pdf_show_sections = QCheckBox(tr('export.sections.show', 'Sectietitels als eigen pagina opnemen')); self.pdf_show_sections.setObjectName('publicationToggle'); pl.addWidget(self.pdf_show_sections)
+        pdf_help = QLabel(tr('export.pdf.help', 'PDF gebruikt vaste pagina-opmaak. Een afbeelding met tekstomloop en een lang onderschrift valt veilig terug op een gewoon links/rechts afbeeldingsblok.'))
+        pdf_help.setObjectName('muted'); pdf_help.setWordWrap(True); pl.addWidget(pdf_help)
+        body.addWidget(self.pdf_panel)
+
         self.markdown_panel = QFrame(); self.markdown_panel.setObjectName('softPanel')
         ml = QVBoxLayout(self.markdown_panel); ml.setContentsMargins(14, 12, 14, 12); ml.setSpacing(6)
         mt = QLabel(tr('export.markdown.fixed_title', 'Vast Markdown-formaat')); mt.setObjectName('sectionTitle'); ml.addWidget(mt)
@@ -120,6 +149,12 @@ class ExportPage(QWidget):
         self.cover_art_only.toggled.connect(self._options_changed)
         self.cover_has_text.toggled.connect(self._options_changed)
         self.show_sections.toggled.connect(self._options_changed)
+        self.pdf_template_combo.currentIndexChanged.connect(self._options_changed)
+        self.pdf_paper_combo.currentIndexChanged.connect(self._options_changed)
+        self.pdf_margin_combo.currentIndexChanged.connect(self._options_changed)
+        self.pdf_page_numbers.toggled.connect(self._options_changed)
+        self.pdf_running_header.toggled.connect(self._options_changed)
+        self.pdf_show_sections.toggled.connect(self._options_changed)
 
     def _format_button(self, title: str, description: str, key: str) -> QPushButton:
         button = QPushButton(f'{title}\n{description}')
@@ -140,13 +175,20 @@ class ExportPage(QWidget):
         self.setEnabled(True)
         self.export_settings = self.store.load(book)
         fmt = self.export_settings.get('format', 'epub')
-        (self.markdown_button if fmt == 'markdown' else self.epub_button).setChecked(True)
+        {'epub': self.epub_button, 'pdf': self.pdf_button, 'markdown': self.markdown_button}.get(fmt, self.epub_button).setChecked(True)
         epub = self.export_settings.get('epub', {})
         idx = self.template_combo.findData(epub.get('template', 'classic')); self.template_combo.setCurrentIndex(max(0, idx))
         self.include_cover.setChecked(bool(epub.get('include_cover', True)))
         if epub.get('cover_mode') == 'artwork_with_text': self.cover_has_text.setChecked(True)
         else: self.cover_art_only.setChecked(True)
         self.show_sections.setChecked(bool(epub.get('show_section_titles', True)))
+        pdf = self.export_settings.get('pdf', {})
+        idx = self.pdf_template_combo.findData(pdf.get('template', 'classic')); self.pdf_template_combo.setCurrentIndex(max(0, idx))
+        idx = self.pdf_paper_combo.findData(str(pdf.get('paper_size', 'A5')).upper()); self.pdf_paper_combo.setCurrentIndex(max(0, idx))
+        idx = self.pdf_margin_combo.findData(pdf.get('margin_preset', 'standard')); self.pdf_margin_combo.setCurrentIndex(max(0, idx))
+        self.pdf_page_numbers.setChecked(bool(pdf.get('page_numbers', True)))
+        self.pdf_running_header.setChecked(bool(pdf.get('running_header', True)))
+        self.pdf_show_sections.setChecked(bool(pdf.get('show_section_titles', True)))
         self.subtitle.setText(tr('export.subtitle', 'Maak een publicatiebestand van “{title}”.', title=book.title))
         self._refresh_document()
         self._refresh_output_dir()
@@ -164,6 +206,15 @@ class ExportPage(QWidget):
             'include_cover': self.include_cover.isChecked(),
             'cover_mode': 'artwork_with_text' if self.cover_has_text.isChecked() else 'artwork_only',
             'show_section_titles': self.show_sections.isChecked(),
+        })
+        settings['pdf'] = dict(settings.get('pdf') or {})
+        settings['pdf'].update({
+            'template': self.pdf_template_combo.currentData() or 'classic',
+            'paper_size': self.pdf_paper_combo.currentData() or 'A5',
+            'margin_preset': self.pdf_margin_combo.currentData() or 'standard',
+            'page_numbers': self.pdf_page_numbers.isChecked(),
+            'running_header': self.pdf_running_header.isChecked(),
+            'show_section_titles': self.pdf_show_sections.isChecked(),
         })
         settings['markdown'] = {}
         return settings
@@ -201,6 +252,7 @@ class ExportPage(QWidget):
             'cover_missing': tr('export.check.cover_missing', 'Geen eigen boekomslag; EPUB wordt zonder omslag gemaakt.'),
             'cover_disabled': tr('export.check.cover_disabled', 'Omslag is uitgeschakeld voor deze export.'),
             'isbn': tr('export.check.isbn', 'EPUB-ISBN: {value}', value=item.value) if item.value else tr('export.check.no_isbn', 'Geen EPUB-ISBN; boek-ID wordt als identifier gebruikt.'),
+            'pdf_wrap_fallback': tr('export.check.pdf_wrap_fallback', '{value} afbeelding(en) met lang onderschrift worden in PDF zonder tekstomloop geplaatst.', value=item.value),
         }
         return f'{prefix} {values.get(item.key, item.key)}'
 
@@ -210,13 +262,19 @@ class ExportPage(QWidget):
             self.export_button.setEnabled(False); return
         report = run_preflight(self.document, self.format_name, self._settings_from_ui())
         self.preflight_label.setText('\n'.join(self._preflight_text(item) for item in report.items))
-        self.export_button.setEnabled(report.can_export and self.format_name != 'pdf')
+        self.export_button.setEnabled(report.can_export)
 
     def _format_changed(self, *args):
         fmt = self.format_name
         self.epub_panel.setVisible(fmt == 'epub')
+        self.pdf_panel.setVisible(fmt == 'pdf')
         self.markdown_panel.setVisible(fmt == 'markdown')
-        self.export_button.setText(tr('export.action.markdown', 'Markdown exporteren') if fmt == 'markdown' else tr('export.action.epub', 'EPUB exporteren'))
+        if fmt == 'markdown':
+            self.export_button.setText(tr('export.action.markdown', 'Markdown exporteren'))
+        elif fmt == 'pdf':
+            self.export_button.setText(tr('export.action.pdf', 'PDF exporteren'))
+        else:
+            self.export_button.setText(tr('export.action.epub', 'EPUB exporteren'))
         self.export_settings = self._settings_from_ui()
         if self.book: self.store.save(self.book, self.export_settings)
         self._options_changed()
@@ -250,7 +308,7 @@ class ExportPage(QWidget):
         self.main.editor_page.show_publication_setup()
 
     def _export(self):
-        if not self.book or self.format_name == 'pdf': return
+        if not self.book: return
         # Save any active manuscript/publication editor before capturing the snapshot.
         if self.main.editor_page.save() is False: return
         if self.main.planning_page.save_pending() is False: return
@@ -263,13 +321,17 @@ class ExportPage(QWidget):
         self._refresh_preflight()
         if not report.can_export: return
 
-        suffix = '.epub' if self.format_name == 'epub' else '.md'
+        suffix = {'epub': '.epub', 'pdf': '.pdf', 'markdown': '.md'}[self.format_name]
         destination = self._output_dir() / f'{self.document.slug}{suffix}'
         if destination.exists() and not confirm(self, tr('export.overwrite.title', 'Bestand overschrijven'), tr('export.overwrite.text', '“{name}” bestaat al. Wil je dit bestand overschrijven?', name=destination.name)):
             return
         try:
-            if self.format_name == 'epub': export_epub(self.document, destination, self.export_settings)
-            else: export_markdown(self.document, destination, self.export_settings)
+            if self.format_name == 'epub':
+                export_epub(self.document, destination, self.export_settings)
+            elif self.format_name == 'pdf':
+                export_pdf(self.document, destination, self.export_settings)
+            else:
+                export_markdown(self.document, destination, self.export_settings)
         except Exception as exc:
             QMessageBox.critical(self, tr('export.error.title', 'Exporteren'), tr('export.error.failed', 'Exporteren is mislukt.\n\n{error}', error=exc)); return
         self.last_output = destination
