@@ -33,6 +33,7 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 
 ## Interactie
 
+- Acties die vanuit het AI-gesprek lokale boekdata wijzigen (zoals **Onthouden**) geven hun geslaagde resultaat als subtiele QuietWriter-bevestiging in de chat zelf; gebruik hiervoor geen modale succesdialoog. Lokale bevestigingsregels worden niet als gesprekcontext terug naar het AI-model gestuurd.
 - Selecteren van tekst mag toetsenbordbewerkingen nooit blokkeren.
 - Zwevende hulpmiddelen mogen geen keyboard focus van de editor stelen.
 - Het standaard contextmenu blijft beschikbaar en kan QuietWriter-acties aanvullen.
@@ -115,6 +116,11 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 - Wijzigingen aan schrijflettertype, tekstgrootte, regelafstand, inspringing of alinearuimte previewen alleen lokaal in Instellingen. Na **Opslaan** wordt de nieuwe presentatie direct op het reeds geopende manuscript toegepast; een hoofdstukwissel mag daarvoor niet nodig zijn. Een presentatiecommit mag geen misleidende font-/blokopmaakstappen in Ctrl+Z achterlaten.
 - **Toevoegen → Afbeelding** gebruikt dezelfde rechterpaneelflow als Scènebreuk: preview, alt-tekst, optioneel onderschrift, Annuleren/Invoegen. De bronfile wordt pas bij Invoegen gekopieerd.
 - Alt-tekst is toegankelijkheidsinformatie en wordt in EPUB op `<img alt>` gezet. Onderschrift is presentatie-inhoud en wordt `figcaption`.
+- Afbeeldingslayout blijft bewust klein: **Klein/Middel/Groot/Volledige breedte**, **Links/Midden/Rechts** en één optie **Tekst om afbeelding laten lopen**. Omloop is alleen zinvol bij links/rechts en niet bij volledige breedte; de UI schakelt ongeldige combinaties uit.
+- Nieuwe afbeeldingen starten als Groot + Midden. Oude afbeeldingsregels zonder QuietWriter-layoutmetadata blijven Full + Midden voor backward compatibility.
+- Layoutmetadata staat als leesbare HTML-comment achter dezelfde Markdown-image-regel (`<!-- qw:image ... -->`). Het afbeeldingsbestand en de gewone Markdown blijven daarmee de bron; geen verborgen layoutdatabase.
+- De editor visualiseert breedte/uitlijning via de beschermde imagekaart en noemt tekstomloop expliciet. Hij simuleert geen echte tekstomloop met een aparte custom-renderlaag; EPUB/PDF zijn leidend voor uiteindelijke zetting.
+- EPUB gebruikt relatieve 30/50/70/100%-breedtes en CSS-floats voor eenvoudige omloop. Reader-degradatie moet altijd terugvallen op een bruikbaar afbeeldingsblok.
 - De editor toont de Markdown-imagebron voorlopig alleen als subtiel gemarkeerd imageblok; een echte inline beeldpreview is bewust uitgesteld tot een aparte stabiliteitspass.
 - UUID-assets zijn immutable. Een afbeeldingsverwijzing uit tekst verwijderen verwijdert het bestand niet automatisch. Historie gaat vóór agressieve cleanup.
 - Exportpreflight moet ontbrekende of gewijzigde media als blokkerende fout tonen; een exporter mag nooit stil een ontbrekende afbeelding overslaan.
@@ -130,6 +136,50 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 - Zoeken/vervangen mag uitsluitend treffers aanbieden en muteren waarvan het volledige bronbereik buiten beschermde image-syntax valt. Maskering alleen is onvoldoende: ook een zoekterm met een begin- of eindspatie mag nooit een Markdown-delimiter, pad, quote of andere beheerde positie meenemen.
 
 
+
+## AI-geheugenvoorstellen (0.23.3)
+
+- AI mag `ai/memory.md` nooit autonoom wijzigen. Een model kan alleen een voorstel doen; opslag vereist altijd de expliciete gebruikersactie **Onthouden**.
+- Een voorstel wordt buiten de gewone chattekst als compacte kaart getoond met **Onthouden · Bewerken · Negeren**. Technische markering/protocoltekst blijft volledig verborgen, ook tijdens streaming.
+- **Bewerken** laat categorie en tekst aanpassen voordat het voorstel wordt opgeslagen.
+- Geheugenvoorstellen zijn alleen bedoeld voor duurzame boekkennis: canon/feiten, boekspecifieke stijl, bewuste besluiten, terugkerende voorkeuren en open aandachtspunten. Planning-data wordt niet naar geheugen gekopieerd.
+- Bij analyse, feedback, feitencontrole en herschrijven vergelijkt AI relevante Boekgeheugenregels actief met actuele manuscriptcontext. Een duidelijke contradictie wordt benoemd; actuele manuscripttekst heeft voorrang wanneer een verandering aantoonbaar in het verhaal staat.
+
+## Gerichte Planning-context (0.23.4)
+
+- Planning wordt nooit standaard volledig meegestuurd naar AI. De gebruiker kiest via **Planning-context…** expliciet welke personages, scènes en/of Planning-notities relevant zijn.
+- De selectie is tijdelijk per geopend boek en wordt niet als verborgen instelling of tweede gegevensbron opgeslagen.
+- Manuscript beschrijft wat daadwerkelijk geschreven is; Planning beschrijft wat bedoeld/gepland is; Boekgeheugen bevat blijvende afspraken/kennis. AI moet een verschil tussen deze bronnen zichtbaar benoemen en niet stil samenvoegen.
+- Een geselecteerd personage mag relaties bij naam noemen om het profiel begrijpelijk te maken, maar niet-geselecteerde personages krijgen geen volledig profiel.
+- Een geselecteerde scène bevat alleen de bestaande gestructureerde Planning-velden; QuietWriter dupliceert die informatie niet naar `memory.md`.
+
+## AI-snelacties (0.23.8)
+
+- Snelacties zijn uitsluitend bewerkbare prompttemplates boven het gewone AI-invoerveld; een klik mag nooit automatisch een AI-aanvraag versturen.
+- De eerste vaste set is **Feedback**, **Herschrijf selectie**, **Persona-check** en **Feitencheck**. Houd de set klein; voeg pas een nieuwe actie toe wanneer dezelfde opdracht aantoonbaar vaak terugkomt.
+- **Herschrijf selectie** is alleen beschikbaar wanneer er werkelijk manuscripttekst geselecteerd is. De andere acties werken met de normale contextkeuze en eventuele geselecteerde tekst.
+- Een snelactie mag bestaande contextlagen niet dupliceren of omzeilen: Schrijverspersona, Boekprofiel, Boekgeheugen en expliciet gekozen Planning-context blijven via dezelfde centrale promptopbouw lopen.
+- Tijdens een lopende AI-aanvraag zijn snelacties disabled. Ze gebruiken compacte `suggestionButton`-stijl en blijven toetsenbordbereikbaar.
+
+## Compacte AI-zijbalk en thinking (0.23.9)
+
+- De chat is de primaire inhoud van het AI-paneel en krijgt zoveel mogelijk verticale ruimte. Alleen de paneeltitel en **Nieuw gesprek** blijven permanent boven de chat.
+- **Huidig hoofdstuk** is de impliciete standaard voor manuscriptcontext en hoeft daarom niet voortdurend zichtbaar te zijn. De knop **Context** meldt alleen **Context · aangepast** wanneer Sectie/Hele boek of gerichte Planning-context actief is.
+- Contextkeuze en Planning-selectie zitten in een inklapbaar contextblok onder de chat. **Context bekijken** is een tijdelijke inspectiedialoog en reserveert geen permanente zijbalkhoogte.
+- Snelacties zitten eveneens in een inklapbaar blok onder de chat/composer. De instelling **Snelacties standaard uitklappen** bepaalt alleen de beginstand; de gebruiker kan het blok altijd zelf openen of sluiten.
+- Context en Snelacties zijn wederzijds compact: wanneer één tijdelijk blok wordt geopend, sluit het andere.
+- **Thinking uitschakelen** is providerregie, geen prompttekst. QuietWriter vraagt de provider expliciet om thinking/reasoning uit te zetten wanneer deze mogelijkheid wordt ondersteund; zonder deze instelling blijft het modelgedrag ongemoeid.
+- Een provider die geen thinking-toggle ondersteunt mag hierdoor niet tot een alternatieve verborgen promptstrategie leiden. QuietWriter blijft transparant over de ingestelde requestoptie en laat het model/provider bepalen of die ondersteund wordt.
+
+## Thinking-capabilities in modelkeuze (0.23.10)
+
+- De modelcombo mag capability-informatie tonen zonder het echte provider-model-id te veranderen. **🧠** betekent: de provider meldt dat het model thinking/reasoning ondersteunt.
+- Gedetailleerde provider-metadata blijft leidend voor de vraag of thinking aantoonbaar uitschakelbaar is. Als alleen een algemene thinking-capability bekend is, mag QuietWriter `think:false` aanvragen maar claimt de UI niet dat iedere modelvariant dit gegarandeerd honoreert.
+- Geen icoon betekent niet automatisch dat een model nooit intern redeneert; het betekent alleen dat QuietWriter geen thinking/reasoning-capability heeft vastgesteld.
+- Ollama-capabilities komen uit `/api/show`; OpenRouter-capabilities uit `supported_parameters`. QuietWriter raadt ondersteuning niet op basis van modelnamen.
+- **Thinking uitschakelen** is alleen disabled wanneer metadata expliciet laat zien dat het geselecteerde model deze optie niet ondersteunt. Bij ontbrekende metadata blijft de control beschikbaar, omdat oudere providers/models capabilities mogelijk niet rapporteren.
+- Helptekst rond thinking maakt geen universele kwaliteitsclaim: uitschakelen is vaak sneller/directer en kan bij creatief schrijven prettiger werken, maar het effect verschilt per model en taak.
+
 ## Tekstprompts voor hoofdstukken en secties
 
 Tekstprompts voor hoofdstukken en secties gebruiken QuietWriter's eigen `prompt_text()`-dialoog en tonen altijd **Opslaan** en **Annuleren**. Gebruik hiervoor geen native `QInputDialog`, omdat de standaardknoppen op Windows niet betrouwbaar vooraf te lokaliseren zijn. Het hoofdstuk-contextmenu bevat Hernoemen, Dupliceren en Verwijderen; de losse verwijderactie in de werkbalk blijft als tweede ingang bestaan.
@@ -140,5 +190,31 @@ Tekstprompts voor hoofdstukken en secties gebruiken QuietWriter's eigen `prompt_
 - Voorbeeldpersona's zijn bewerkbare startpunten en worden nooit automatisch opgeslagen; de gebruiker bevestigt eerst de vervanging en kiest daarna zelf Opslaan.
 - Bestaande vrije of onbekende Markdown-inhoud mag bij migratie nooit verdwijnen en valt terug op Aanvullende instructies.
 - De locatie van het Markdownbestand is zichtbaar zodat transparant blijft dat het buiten QuietWriter leesbaar en bewerkbaar is.
-- Een persona is globaal voor alle boeken. Boek-specifieke aanwijzingen horen later in Boekprofiel/Boekgeheugen en worden niet in de schrijverspersona gemengd.
+- Een persona is globaal voor alle boeken. Boek-specifieke aanwijzingen horen in Boekprofiel/Boekgeheugen en worden niet in de schrijverspersona gemengd.
+## Boekprofiel (0.23.1)
 
+- `ai/boekprofiel.md` is per boek de enige bron van waarheid; er komt geen verborgen tweede opslaglaag naast.
+- Het profiel gebruikt dezelfde begrijpelijke categorie-navigatie als de Schrijverspersona, maar bevat alleen project-specifieke keuzes en geen duplicaat van Planning/personagegegevens.
+- Planning blijft de plek voor concrete personages, scènes en canonieke structuur. Boekprofiel beschrijft genre, doelgroep, premisse, vertelregels, sfeer, thema’s, settingregels, tempo, intensiteit en bewuste afwijkingen van de globale persona.
+- AI ontvangt de globale schrijverspersona eerst en daarna het boekprofiel. Een expliciete projectspecifieke afwijking in Boekprofiel heeft voor dat boek voorrang.
+- Het bestandspad blijft zichtbaar en de Markdown blijft buiten QuietWriter leesbaar/bewerkbaar.
+- Bij same-book reloads blijven lokaal gewijzigde profielvelden behouden; onaangeraakte velden volgen de nieuwste schijfversie. Externe profielconflicten krijgen een expliciete keuze en herstelversie.
+
+## Boekgeheugen (0.23.2)
+
+- `ai/memory.md` is per boek de enige bron van waarheid; geen verborgen vectorstore of tweede geheugenopslag.
+- Boekgeheugen gebruikt dezelfde rustige categorie-navigatie als Schrijverspersona en Boekprofiel, met vrije tekst onder vijf rubrieken: Canon & feiten, Stijl van dit boek, Besluiten, Terugkerende voorkeuren en Open aandachtspunten.
+- Planning blijft de canonieke plek voor gestructureerde personages, scènes en outline. Boekgeheugen dupliceert die gegevens niet en benoemt dit expliciet in de UI.
+- AI mag het geheugen in 0.23.2 uitsluitend lezen. Opslaan gebeurt alleen door een expliciete gebruikersactie op de Boekgeheugen-pagina.
+- Het bestandspad blijft zichtbaar zodat duidelijk is dat het geheugen gewone Markdown is en buiten QuietWriter bewerkt kan worden.
+- Same-book reloads behouden lokaal gewijzigde geheugenrubrieken en verversen alleen onaangeraakte rubrieken vanaf schijf. Een direct conflict op `memory.md` krijgt een expliciete keuze en herstelversie.
+- In AI-context volgt Boekgeheugen na Schrijverspersona en Boekprofiel. De actuele manuscripttekst blijft autoritatief wanneer die aantoonbaar botst met een oudere geheugenregel.
+### AI-context en geheugenvoorstellen
+- Een AI-geheugenvoorstel is pas afgehandeld nadat QuietWriter de gebruiker zichtbare feedback heeft gegeven. Bij succes verdwijnt de voorstelkaart en meldt de statusbalk dat de regel in Boekgeheugen is opgeslagen; bij falen blijft de kaart staan met een concrete foutmelding.
+- **Context bekijken** moet niet alleen contextlabels tonen maar ook de letterlijk geselecteerde Planning-context. De gebruiker moet kunnen controleren welke personages, scènes en notities naar het model worden gestuurd.
+- Gerichte Planning-context is opt-in per boek en per selectie. Het model krijgt expliciet te horen dat deze selectie bewust voor de huidige vraag is gekozen; niet-geselecteerde Planning-data wordt niet stil toegevoegd.
+
+### AI-geheugenacties
+
+- Een expliciete **Onthouden**-actie schrijft de reeds door de gebruiker goedgekeurde geheugenstate. De opslagroute mag daarbij niet opnieuw een mogelijk stale zichtbaar Boekgeheugen-tekstveld over de programmatic wijziging heen kopiëren.
+- Geslaagde opslag verwijdert de afgehandelde voorstelkaart en geeft zichtbare succesfeedback; mislukte opslag laat de kaart staan met concrete foutfeedback.

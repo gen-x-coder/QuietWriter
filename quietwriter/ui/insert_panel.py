@@ -14,8 +14,8 @@ class InsertPanel(QWidget):
     """Right-side insertion workflow for manuscript block elements."""
 
     sceneBreakRequested = Signal()
-    imageInsertRequested = Signal(str, str, str)
-    imageEditRequested = Signal(str, str, str, bool)
+    imageInsertRequested = Signal(str, str, str, str, str, bool)
+    imageEditRequested = Signal(str, str, str, str, str, bool, bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -100,8 +100,11 @@ class InsertPanel(QWidget):
         self.image_page.reset()
         self.stack.setCurrentWidget(self.image_page)
 
-    def show_image_edit_page(self, source_path, alt: str, caption: str, display_name: str = ''):
-        self.image_page.set_edit_mode(source_path, alt, caption, display_name)
+    def show_image_edit_page(self, source_path, alt: str, caption: str, display_name: str = '', *,
+                             width: str = 'full', align: str = 'center', wrap: bool = False):
+        self.image_page.set_edit_mode(
+            source_path, alt, caption, display_name, width=width, align=align, wrap=wrap
+        )
         self.stack.setCurrentWidget(self.image_page)
 
     def show_menu_page(self):

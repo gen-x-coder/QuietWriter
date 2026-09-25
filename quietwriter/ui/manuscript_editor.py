@@ -183,8 +183,16 @@ class ManuscriptEditor(QTextEdit):
                 top = self._block_viewport_top(block) + 6
                 reserved = max(self.IMAGE_BLOCK_HEIGHT, round(doc_rect.height()))
                 height = max(80, min(self.IMAGE_BLOCK_HEIGHT - 12, reserved - 12))
-                left = 8
-                width = max(260, self.viewport().width() - 16)
+                available = max(260, self.viewport().width() - 16)
+                ratio = card.layout_width_ratio()
+                width = min(available, max(300, round(available * ratio)))
+                align = card.layout_alignment()
+                if align == 'right':
+                    left = 8 + (available - width)
+                elif align == 'center':
+                    left = 8 + max(0, (available - width) // 2)
+                else:
+                    left = 8
                 geometry = QRect(left, top, width, height)
                 card.setGeometry(geometry)
                 card.setVisible(geometry.bottom() >= viewport.top() and geometry.top() <= viewport.bottom())

@@ -29,7 +29,7 @@ De bestaande productroadmap blijft actief. De volledige externe code-review vorm
 - **0.21.10:** AI-modelophalen geeft zichtbare voortgang/succesfeedback en de modelkeuze is selection-only. De cleanup verwijdert dode exportcode, voorkomt dubbele woordtelling en `QSettings`-constructie in paint-hotpaths, ruimt veilige lintbevindingen op en breidt AI/export/performance-regressiedekking uit. Het externe code-review herstelprogramma is hiermee afgerond.
 
 **Status reviewreeks**
-- **Afgerond in 0.21.10.** Nieuwe featurebouw volgt weer de bestaande productroadmap hieronder. De eerstvolgende productstap is portable Markdown-export met companion-assets voor afbeeldingen.
+- **Afgerond in 0.21.10.** Nieuwe featurebouw volgt weer de bestaande productroadmap hieronder; de actuele prioriteit staat bij Iteratie 21.
 
 ## Code-review ronde 3 — hogere prioriteit vanaf 0.22.1
 
@@ -54,7 +54,7 @@ De volledige 0.22.6-codebase is opnieuw extern doorgelicht. Alle reproducties ui
 - **0.22.7 — Pending-state en media-boundary hardening:** pre-0.20 globale omslagen met een later automatisch toegevoegd leeg `cover_file` blijven herkenbaar zonder nieuwe same-slug-boeken te besmetten; same-book Planning-adopt bewaart dirty notities en nieuwe personagedrafts buiten het conflictbestand; Boekdetails bewaart lokale velden en mergeert externe wijzigingen in onaangeraakte velden; en Zoeken/Vervangen weigert iedere treffer die beheerde image-syntax raakt, ook bij zoektermen met randspaties. Hiermee zijn alle vier bevindingen uit code-review ronde 4 aangepakt.
 
 **Status reviewreeks**
-- **Afgerond in 0.22.7.** Ronde 4 bevatte vier bevindingen; alle vier zijn verwerkt. Na handmatige verificatie kan de productroadmap weer verder met portable Markdown-media, of kan eerst nog één externe eindcontrole worden gedaan.
+- **Afgerond in 0.22.7.** Ronde 4 bevatte vier bevindingen; alle vier zijn verwerkt. De productroadmap is daarna herprioriteerd naar Iteratie 21: AI-profiel en boekgeheugen.
 
 **Werkwijze per build**
 - 🔴 bevestigde bevinding: eerst reproductie/regressietest, daarna gerichte fix.
@@ -223,16 +223,27 @@ De AI-laag krijgt voorrang boven de eerder geplande portable Markdown-media. De 
 - AI blijft het complete Markdownbestand ongewijzigd als persona-context gebruiken.
 
 **Volgende stappen**
-- **0.23.1 — Boekprofiel:** per boek vastleggen hoe dit project afwijkt van de algemene schrijverspersona (genre, doelgroep, perspectief, sfeer, thema's, tempo en vrije boekinstructies).
-- **0.23.2 — Boekgeheugen:** transparant `ai/memory.md` per boek met canon/geleerde stijl, besluiten, terugkerende voorkeuren en open aandachtspunten; volledig zichtbaar en bewerkbaar.
-- **0.23.3 — Geheugenvoorstellen:** AI kan expliciet voorstellen iets te onthouden; de gebruiker accepteert, bewerkt of negeert. Geen stille automatische waarheid.
-- **0.23.4 — Planningcontext:** personages en outline gericht als AI-context kunnen toevoegen zonder die data naar het geheugen te dupliceren.
-- Daarna: AI-snelacties (Feedback, Herschrijf selectie, Persona-check) en vervolgens portable Markdown-media hervatten.
+- **0.23.1 — Boekprofiel — afgerond:** per boek een transparant `ai/boekprofiel.md` met genre/doelgroep, premisse, perspectief/tijd, sfeer, thema’s, setting, tempo/spanningsboog, intensiteit, persona-afwijkingen en redactionele aandachtspunten. De laag is revision-bewaakt, gaat mee in History/herstel en wordt door AI na de globale persona als projectspecifiek kader gebruikt.
+- **0.23.2 — Boekgeheugen — afgerond:** transparant `ai/memory.md` per boek met Canon & feiten, Stijl van dit boek, Besluiten, Terugkerende voorkeuren en Open aandachtspunten. Het bestand is volledig zichtbaar/bewerkbaar, revision-bewaakt en wordt als aparte AI-contextlaag meegestuurd; AI schrijft er in deze release nooit zelfstandig in.
+- **0.23.3 — Geheugenvoorstellen — afgerond:** AI controleert relevant Boekgeheugen actiever tegen manuscriptcontext en kan maximaal twee duurzame geheugenregels voorstellen. Onthouden, Bewerken of Negeren blijft altijd een expliciete gebruikerskeuze; AI schrijft nooit autonoom naar `memory.md`.
+- **0.23.4 — Planningcontext — afgerond:** specifieke personages, scènes en optioneel Planning-notities kunnen gericht als AI-context worden geselecteerd zonder Planning-data naar Boekgeheugen te dupliceren. Manuscript, Planning en Boekgeheugen hebben expliciet verschillende rollen.
+- **0.23.5 — AI-context/geheugenactie hardening — afgerond:** geheugenvoorstellen geven deterministische opslagfeedback en binden eerst aan het actieve boek; Planning-context is letterlijk inspecteerbaar in Context bekijken en wordt als expliciet geselecteerde context sterker in de systeemprompt gepositioneerd.
+- **0.23.6 — Onthouden hotfix — afgerond:** goedgekeurde geheugenvoorstellen worden als reeds samengestelde geheugenstate opgeslagen en kunnen niet meer vlak vóór de write door de stale Boekgeheugen-editor worden teruggedraaid.
+- **0.23.7 — Geheugenbevestiging — afgerond:** geslaagde Onthouden-acties geven een subtiele, blijvende QuietWriter-bevestiging in de AI-chat; deze lokale notices worden niet terug naar het model gestuurd.
+- **0.23.8 — AI-snelacties — afgerond:** vier bewerkbare prompttemplates in het AI-paneel: Feedback, Herschrijf selectie, Persona-check en Feitencheck. Snelacties versturen nooit automatisch; Herschrijf selectie is alleen actief bij echte manuscriptselectie.
+- **0.23.9 — Compacte AI-zijbalk en thinking-regie — afgerond:** de chat krijgt weer de meeste ruimte; Context en Snelacties zijn inklapbare hulpmiddelen onder de composer, Huidig hoofdstuk is impliciet de standaardcontext, Context bekijken gebruikt een aparte inspectiedialoog en AI-instellingen kunnen provider-thinking expliciet uitschakelen.
+- **0.23.10 — Thinking-capabilities zichtbaar — afgerond:** modeldetectie leest provider-metadata en markeert alleen modellen waarbij thinking aantoonbaar uitschakelbaar is met 🧠; model-id en presentatielabel blijven gescheiden en de thinking-instelling volgt bekende capability-state.
+- **0.23.11 — Ollama thinking-capability fallback — afgerond:** `/api/show.capabilities` wordt gebruikt wanneer gedetailleerde thinking-controlmetadata ontbreekt; 🧠 staat voor thinking/reasoning-support en de UI onderscheidt bekende uitschakelbaarheid van een capability-only `think:false`-verzoek.
+- **0.24.0 — Afbeeldingslayout — afgerond:** relatieve breedte, links/midden/rechts en eenvoudige tekstomloop zijn als leesbare Markdown-metadata toegevoegd; de editor geeft de intentie rustig weer en EPUB rendert de layout met relatieve CSS/float zonder een nieuwe custom-renderlaag.
+- **Volgende:** PDF-spike op basis van de bestaande PySide6/Qt-stack: eerst kwaliteit en haalbaarheid aantonen vóór een volledige PDF-exporter wordt gebouwd.
 
-**Productstappen na Iteratie 21**
-- Portable Markdown-export met `<slug>-assets/` companionmap en herschreven relatieve links hervatten.
-- Daarna: editor-image UX verder verfijnen op basis van praktijkgebruik; geen nieuwe renderinglaag tenzij daar een concrete behoefte uit volgt.
+**Productstappen na 0.24.0**
+- **PDF-spike:** proefexport met paginagrootte, marges, fonts, hoofdstukstarts, paginanummers, afbeeldingen, onderschriften en eenvoudige tekstomloop. Alleen doorzetten als de Qt-route kwalitatief voldoende is.
+- **PDF-uitwerking:** papierformaat, marges, typografie en publicatie-instellingen afronden wanneer de spike slaagt.
+- **EPUB-reader-validatie:** Calibre als eerste vaste referentie; daarna gericht testen in andere gangbare readers en alleen concrete compatibiliteitsproblemen oplossen.
+- **Editor-image polish:** alleen verdere verfijning wanneer praktijkgebruik daar aanleiding toe geeft; geen complexe DTP-/custom-renderlaag.
 - Later: media-inspectie/ongebruikte-assets opruimen met historie-awareness en eventueel expliciete e-bookoptimalisatie voor zeer grote afbeeldingen.
+- Markdown-export blijft technisch beschikbaar maar is geen actieve productprioriteit; portable companion-assets worden pas heroverwogen bij concrete behoefte.
 - OpenRouter uitgebreider blijven testen binnen de gewone schrijfchat.
 
 ### Release en robuustheid

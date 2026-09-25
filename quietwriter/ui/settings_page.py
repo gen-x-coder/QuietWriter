@@ -30,8 +30,18 @@ class SettingsPage(QWidget):
         self.original_editor_font = self.original_typography.family
         self.original_editor_size = self.original_typography.point_size
         self.original_manuscript_style = ManuscriptStyle.from_settings(settings)
-        self.available_models = list(models or [])
+        supplied_models = list(models or [])
+        supplied_infos = {
+            str(item.get('name')): dict(item)
+            for item in supplied_models if isinstance(item, dict) and item.get('name')
+        }
+        self.available_models = [
+            str(item.get('name')) if isinstance(item, dict) else str(item)
+            for item in supplied_models
+            if (item.get('name') if isinstance(item, dict) else item)
+        ]
         self._ai_models_by_provider = {'ollama': list(self.available_models), 'openrouter': []}
+        self._ai_model_info_by_provider = {'ollama': supplied_infos, 'openrouter': {}}
         self._ai_model_drafts = {
             'ollama': str(settings.value('ollama_model', '') or ''),
             'openrouter': str(settings.value('openrouter_model', '') or ''),
@@ -189,10 +199,21 @@ class SettingsPage(QWidget):
         self.ai_model_status = QLabel(''); self.ai_model_status.setObjectName('settingsFieldHelp'); self.ai_model_status.hide()
         mv.addWidget(modelrow); mv.addWidget(self.ai_model_status)
         self._add_settings_field(ail, tr('settings.ai.model', 'Schrijf- en analysemodel'), modelbox,
-            tr('settings.ai.model_help', 'QuietWriter stuurt alleen de context die je in de AI-zijbalk kiest, samen met je schrijverspersona.'))
-        self._ai_controls = (self.ai_provider, self.ollama, self.openrouter_key, self.model, self.ai_refresh_button)
+            tr('settings.ai.model_help', 'QuietWriter stuurt alleen de context die je in de AI-zijbalk kiest, samen met je schrijverspersona.\n🧠 = bij dit model kan thinking worden uitgeschakeld. Zonder thinking zijn antwoorden vaak sneller en directer; bij creatief schrijven kan dat prettiger werken. Het effect verschilt per model.'))
+
+        self._add_settings_section(ail, tr('settings.section.ai_behavior', 'Gedrag'))
+        self.ai_disable_thinking = QCheckBox(tr('settings.ai.disable_thinking', 'Thinking uitschakelen'))
+        self.ai_disable_thinking.setChecked(settings.value('ai_disable_thinking', False, bool))
+        self._add_settings_field(ail, tr('settings.ai.disable_thinking', 'Thinking uitschakelen'), self.ai_disable_thinking,
+            tr('settings.ai.disable_thinking_help', 'Vraagt de gekozen provider om reasoning/thinking uit te schakelen wanneer het model dit ondersteunt. Laat dit uit om de standaardinstelling van het model te gebruiken.'))
+        self.ai_quick_actions_expanded = QCheckBox(tr('settings.ai.quick_actions_expanded', 'Snelacties standaard uitklappen'))
+        self.ai_quick_actions_expanded.setChecked(settings.value('ai_quick_actions_expanded', False, bool))
+        self._add_settings_field(ail, tr('settings.ai.quick_actions_expanded', 'Snelacties standaard uitklappen'), self.ai_quick_actions_expanded,
+            tr('settings.ai.quick_actions_expanded_help', 'Toont de vier AI-snelacties direct wanneer het AI-paneel opent. Staat dit uit, dan blijven ze bereikbaar via de knop Snelacties zonder permanente ruimte in te nemen.'))
+        self._ai_controls = (self.ai_provider, self.ollama, self.openrouter_key, self.model, self.ai_refresh_button, self.ai_disable_thinking, self.ai_quick_actions_expanded)
         self.ai_enabled.toggled.connect(self._update_ai_controls)
         self.ai_provider.currentIndexChanged.connect(self._ai_provider_changed)
+        self.model.currentIndexChanged.connect(self._update_thinking_control)
         self._update_ai_controls()
         ail.addStretch(1)
         self._add_settings_category(nav_lay, tr('settings.ai', 'AI'), ai)
@@ -443,7 +464,9 @@ class SettingsPage(QWidget):
             self.ai_provider.currentData() or 'ollama',
             self.ollama.text(),
             self.openrouter_key.text(),
-            self.model.currentText(),
+            self._selected_ai_model(),
+            bool(self.ai_disable_thinking.isChecked()),
+            bool(self.ai_quick_actions_expanded.isChecked()),
             bool(self.spell_enabled.isChecked()),
             self.spell_language.currentData() or '',
         )
@@ -455,6 +478,7 @@ class SettingsPage(QWidget):
             self.manuscript_indent, self.manuscript_paragraph_spacing,
             self.smart_quotes, self.root, self.cover_template,
             self.ai_enabled, self.ai_provider, self.ollama, self.openrouter_key, self.model,
+            self.ai_disable_thinking, self.ai_quick_actions_expanded,
             self.spell_enabled, self.spell_language,
         )
         for widget in widgets:
@@ -581,10 +605,14 @@ class SettingsPage(QWidget):
     def open_dictionary_download(self):
         QDesktopServices.openUrl(QUrl(self.DICTIONARY_DOWNLOAD_URL))
 
+    def _selected_ai_model(self) -> str:
+        data = self.model.currentData()
+        return str(data if data is not None else self.model.currentText()).strip()
+
     def _remember_current_ai_model(self, provider_name: str | None = None):
         provider_name = provider_name or self._last_ai_provider
         if provider_name in self._ai_model_drafts:
-            self._ai_model_drafts[provider_name] = self.model.currentText().strip()
+            self._ai_model_drafts[provider_name] = self._selected_ai_model()
 
     def _populate_models(self, provider_name: str | None = None):
         # Use the live form selection, never the already-persisted ai_provider.
@@ -593,16 +621,55 @@ class SettingsPage(QWidget):
         provider_name = str(provider_name or self.ai_provider.currentData() or 'ollama')
         current = self._ai_model_drafts.get(provider_name, '')
         models = list(self._ai_models_by_provider.get(provider_name, []))
+        info_by_name = self._ai_model_info_by_provider.get(provider_name, {})
         self.model.blockSignals(True)
         self.model.clear()
-        self.model.addItems(models)
+        for name in models:
+            info = info_by_name.get(name, {})
+            supported = info.get('thinking_supported') is True
+            can_disable = info.get('thinking_can_disable')
+            label = f'🧠 {name}' if supported else name
+            self.model.addItem(label, name)
+            if supported:
+                if can_disable is True:
+                    tooltip = tr('settings.ai.thinking_model_tip', 'Dit model ondersteunt thinking en meldt expliciet dat thinking kan worden uitgeschakeld.')
+                elif can_disable is False:
+                    tooltip = tr('settings.ai.thinking_fixed_tip', 'Dit model ondersteunt thinking, maar de provider meldt geen uitgeschakelde modus voor deze variant.')
+                else:
+                    tooltip = tr('settings.ai.thinking_unknown_tip', 'Dit model ondersteunt thinking. QuietWriter kan thinking uitschakelen aanvragen, maar de provider meldt niet of deze modelvariant dat gegarandeerd ondersteunt.')
+                self.model.setItemData(self.model.count() - 1, tooltip, Qt.ToolTipRole)
         if current:
-            if self.model.findText(current) < 0:
-                self.model.addItem(current)
-            self.model.setCurrentText(current)
+            index = self.model.findData(current)
+            if index < 0:
+                self.model.addItem(current, current)
+                index = self.model.count() - 1
+            self.model.setCurrentIndex(index)
         elif self.model.count():
             self.model.setCurrentIndex(0)
         self.model.blockSignals(False)
+        self._update_thinking_control()
+
+    def _selected_model_info(self) -> dict | None:
+        provider_name = str(self.ai_provider.currentData() or 'ollama')
+        model_name = self._selected_ai_model()
+        return self._ai_model_info_by_provider.get(provider_name, {}).get(model_name)
+
+    def _update_thinking_control(self, *_):
+        if not hasattr(self, 'ai_disable_thinking'):
+            return
+        enabled = bool(self.ai_enabled.isChecked())
+        info = self._selected_model_info()
+        if info is not None:
+            supported = info.get('thinking_supported')
+            can_disable = info.get('thinking_can_disable')
+            if supported is True:
+                # With detailed metadata False means definitively unavailable.
+                # Capability-only metadata is unknown (None): allow the user to
+                # request think=false and let Ollama/model decide.
+                enabled = enabled and can_disable is not False
+            elif supported is False:
+                enabled = False
+        self.ai_disable_thinking.setEnabled(enabled)
 
     def _ai_provider_changed(self, *_):
         new_provider = str(self.ai_provider.currentData() or 'ollama')
@@ -620,6 +687,7 @@ class SettingsPage(QWidget):
         enabled = bool(self.ai_enabled.isChecked())
         for control in self._ai_controls:
             control.setEnabled(enabled)
+        self._update_thinking_control()
 
     def refresh_models(self):
         # Model discovery must not silently persist unsaved form values. Settings
@@ -644,8 +712,9 @@ class SettingsPage(QWidget):
             provider = ProviderFactory.from_settings(FormSettings())
             infos = provider.list_models()
             models = [m['name'] for m in infos]
-            previous = self.model.currentText().strip()
+            previous = self._selected_ai_model()
             self._ai_models_by_provider[provider_name] = models
+            self._ai_model_info_by_provider[provider_name] = {m['name']: dict(m) for m in infos}
             if previous in models:
                 self._ai_model_drafts[provider_name] = previous
             elif models:
@@ -724,6 +793,8 @@ class SettingsPage(QWidget):
         self.settings.setValue('openrouter_api_key', self.openrouter_key.text())
         self.settings.setValue('ollama_model', self._ai_model_drafts.get('ollama', ''))
         self.settings.setValue('openrouter_model', self._ai_model_drafts.get('openrouter', ''))
+        self.settings.setValue('ai_disable_thinking', self.ai_disable_thinking.isChecked())
+        self.settings.setValue('ai_quick_actions_expanded', self.ai_quick_actions_expanded.isChecked())
         self.settings.setValue('cover_header_template', self.cover_template.text().strip() or '/{slug}.jpg')
         self.settings.setValue('spell_enabled', self.spell_enabled.isChecked())
         self.settings.setValue('spell_language', self.spell_language.currentData() or '')
@@ -778,6 +849,8 @@ class SettingsPage(QWidget):
         self._last_ai_provider = provider
         self.ollama.setText(self.settings.value('ollama_url', 'http://127.0.0.1:11434'))
         self.openrouter_key.setText(self.settings.value('openrouter_api_key', ''))
+        self.ai_disable_thinking.setChecked(self.settings.value('ai_disable_thinking', False, bool))
+        self.ai_quick_actions_expanded.setChecked(self.settings.value('ai_quick_actions_expanded', False, bool))
         self._populate_models(provider)
         self._update_ai_controls()
         self.spell_enabled.setChecked(self.settings.value('spell_enabled', True, bool))

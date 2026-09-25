@@ -38,7 +38,7 @@ def test_structured_persona_roundtrips_and_preserves_unknown_sections():
 
 def test_three_example_personas_use_same_markdown_contract():
     assert len(EXAMPLE_PERSONAS) == 3
-    assert {x['name'] for x in EXAMPLE_PERSONAS.values()} == {'Jane Austen', 'Arthur Conan Doyle', 'Virginia Woolf'}
+    assert {x['name'] for x in EXAMPLE_PERSONAS.values()} == {'Chantal van Gastel', 'Saskia Noort', 'Carry Slee'}
     for example in EXAMPLE_PERSONAS.values():
         values = example['values']
         assert set(values) == {section.key for section in SECTIONS}

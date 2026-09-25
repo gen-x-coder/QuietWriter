@@ -80,12 +80,33 @@ class OpenRouterProvider(AIProvider):
             return
         raise RuntimeError(f'{prefix}: {cls._error_detail(r)}')
 
+    @staticmethod
+    def _supports_reasoning(row: dict) -> bool:
+        supported = row.get('supported_parameters') or []
+        if isinstance(supported, dict):
+            supported = supported.keys()
+        names = {str(value) for value in supported}
+        return 'reasoning' in names
+
     def list_models(self) -> list[dict]:
         if not self.api_key: return []
         r = requests.get(f'{self.base_url}/models', headers=self.headers, timeout=8)
         self._raise_detailed(r, 'OpenRouter modellen ophalen mislukt')
         rows = r.json().get('data', [])
-        return [{'name': x.get('id',''), 'size': 0} for x in rows if x.get('id')]
+        return [
+            {
+                'name': x.get('id', ''),
+                'size': 0,
+                # OpenRouter exposes supported_parameters in model metadata.
+                # `reasoning` means QuietWriter can send reasoning.enabled=false;
+                # OpenRouter will route to an endpoint that accepts that option.
+                'thinking_supported': self._supports_reasoning(x),
+                'thinking_can_disable': self._supports_reasoning(x),
+                'thinking_values': [],
+                'thinking_default': None,
+            }
+            for x in rows if x.get('id')
+        ]
 
     def stream_chat(self, model: str, messages: list[dict], **options):
         payload = {'model': model, 'messages': messages, 'stream': True}

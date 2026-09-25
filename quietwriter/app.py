@@ -59,11 +59,11 @@ def run():
     splash.set_status(tr('splash.ollama', 'Ollama controleren…'))
     client=OllamaClient(settings.value('ollama_url','http://127.0.0.1:11434'))
     try:
-        infos=client.model_info(timeout=1.8)
-        models=[m['name'] for m in infos]
+        models=client.model_info(timeout=1.8)
+        model_names=[m['name'] for m in models]
         splash.set_status(tr('splash.ollama_found', 'Ollama gevonden · {count} modellen', count=len(models)))
-        if models and not settings.value('ollama_model',''):
-            settings.setValue('ollama_model', models[0])
+        if model_names and not settings.value('ollama_model',''):
+            settings.setValue('ollama_model', model_names[0])
     except Exception:
         models=[]
         splash.set_status(tr('splash.ollama_unavailable', 'Ollama niet bereikbaar · editor blijft beschikbaar'))

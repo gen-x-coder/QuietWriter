@@ -117,8 +117,16 @@ def _markdown_to_xhtml(
             href = _image_href(image.path, image_hrefs)
             if href:
                 caption = f'<figcaption>{html.escape(image.caption)}</figcaption>' if image.caption else ''
+                classes = [
+                    'manuscript-image',
+                    f'image-width-{image.width}',
+                    f'image-align-{image.align}',
+                ]
+                if image.wrap:
+                    classes.extend(['image-wrap', f'image-wrap-{image.align}'])
+                class_attr = ' '.join(classes)
                 blocks.append(
-                    '<figure class="manuscript-image">'
+                    f'<figure class="{class_attr}">'
                     f'<img src="{html.escape(href, quote=True)}" alt="{html.escape(image.alt, quote=True)}"/>'
                     f'{caption}</figure>'
                 )

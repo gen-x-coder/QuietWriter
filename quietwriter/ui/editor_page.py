@@ -125,6 +125,7 @@ class EditorPage(QWidget):
 
         self.right = CurrentPageStack(); self.right.setObjectName('panel'); self.right.setMinimumWidth(300)
         self.search = SearchPanel(); self.ai = AIPanel(main); self.spell = SpellPanel(self); self.insert = InsertPanel(); self.history = HistoryPanel(self)
+        self.editor.selectionChanged.connect(self.ai.refresh_quick_actions)
         self.right.addWidget(self.search); self.right.addWidget(self.ai); self.right.addWidget(self.spell); self.right.addWidget(self.insert); self.right.addWidget(self.history)
         # Escape closes only the temporary right-side editor tool and returns
         # focus to the matching rail button.  The shortcut is scoped to the
@@ -1365,13 +1366,17 @@ class EditorPage(QWidget):
             pass
         self._editing_image_block = block_number
         self._editing_image_reference_path = ref.path
-        self.insert.show_image_edit_page(asset_path, ref.alt, ref.caption, display_name)
+        self.insert.show_image_edit_page(
+            asset_path, ref.alt, ref.caption, display_name,
+            width=ref.width, align=ref.align, wrap=ref.wrap,
+        )
         self.right.setCurrentWidget(self.insert)
         self._show_right_panel()
         self.insert.image_page.alt_edit.setFocus()
         self.main.sync_tool_buttons()
 
-    def _save_image_edit_from_panel(self, source_path: str, alt_text: str, caption: str, replace_image: bool):
+    def _save_image_edit_from_panel(self, source_path: str, alt_text: str, caption: str,
+                                    width: str, align: str, wrap: bool, replace_image: bool):
         if not self.book or not self.chapter or self.preview_live_book:
             return
         block, old_ref = self._find_editing_image_block()
@@ -1401,7 +1406,9 @@ class EditorPage(QWidget):
                 )
                 return
 
-        markdown = build_image_markdown(new_reference, alt_text, caption)
+        markdown = build_image_markdown(
+            new_reference, alt_text, caption, width=width, align=align, wrap=wrap
+        )
         cursor = QTextCursor(block)
         cursor.beginEditBlock()
         cursor.setPosition(block.position())
@@ -1457,7 +1464,8 @@ class EditorPage(QWidget):
         self.editor.setFocus()
         self.main.status.showMessage(tr('image_block.deleted', 'Afbeelding uit het manuscript verwijderd'), 2500)
 
-    def _insert_image_from_panel(self, source_path: str, alt_text: str, caption: str):
+    def _insert_image_from_panel(self, source_path: str, alt_text: str, caption: str,
+                                 width: str, align: str, wrap: bool):
         if not self.book or not self.chapter or self.preview_live_book:
             return
         try:
@@ -1481,7 +1489,9 @@ class EditorPage(QWidget):
             return
 
         reference = self.media_store.reference_for_chapter(self.chapter, asset)
-        block = build_image_markdown(reference, alt_text, caption)
+        block = build_image_markdown(
+            reference, alt_text, caption, width=width, align=align, wrap=wrap
+        )
         cursor = self.editor.textCursor()
         text = self.editor.toPlainText()
         new_text, new_pos = insert_image_block(text, cursor.position(), block)
@@ -1961,6 +1971,7 @@ class EditorPage(QWidget):
     def show_ai(self):
         if not self.main.settings.value('ai_enabled', True, bool):
             return
+        self.ai.refresh_quick_actions()
         self._toggle_right_widget(self.ai, self.ai.input)
 
     def show_spell(self):

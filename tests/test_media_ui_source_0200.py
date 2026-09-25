@@ -9,7 +9,7 @@ class MediaUiSource0200Tests(unittest.TestCase):
         for relative in ('quietwriter/media/models.py', 'quietwriter/media/store.py', 'quietwriter/media/markup.py', 'quietwriter/ui/image_insert_widget.py'):
             self.assertTrue((ROOT / relative).is_file(), relative)
         insert = (ROOT / 'quietwriter/ui/insert_panel.py').read_text(encoding='utf-8')
-        self.assertIn('imageInsertRequested = Signal(str, str, str)', insert)
+        self.assertIn('imageInsertRequested = Signal(str, str, str, str, str, bool)', insert)
         self.assertIn('ImageInsertWidget', insert)
         editor = (ROOT / 'quietwriter/ui/editor_page.py').read_text(encoding='utf-8')
         self.assertIn('self.media_store = MediaStore(main.library)', editor)
@@ -17,7 +17,8 @@ class MediaUiSource0200Tests(unittest.TestCase):
 
     def test_editor_does_not_embed_binary_image_data_in_chapter_source(self):
         editor = (ROOT / 'quietwriter/ui/editor_page.py').read_text(encoding='utf-8')
-        self.assertIn('build_image_markdown(reference, alt_text, caption)', editor)
+        self.assertIn('build_image_markdown(', editor)
+        self.assertIn('width=width, align=align, wrap=wrap', editor)
         self.assertNotIn('data:image/', editor)
         self.assertNotIn('toBase64', editor)
 
