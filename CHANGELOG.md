@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.25.0 — PDF-export MVP
+
+- De gereserveerde PDF-kaart op **Exporteren** is geactiveerd. QuietWriter maakt nu rechtstreeks met de bestaande PySide6/Qt-stack een vaste, gepagineerde PDF; er is geen nieuwe PDF-library of Windows-component toegevoegd.
+- De renderer gebruikt dezelfde bewezen route als de afzonderlijke PDF-spikes: `QTextDocument` voor rijke tekst/paginering en `QPdfWriter` + `QPainter` voor eigen marges, lopende kop en paginanummers. Uitvoer wordt eerst naar een tijdelijk bestand geschreven en daarna atomisch naar de gekozen exportmap verplaatst.
+- PDF heeft een kleine, eigen instellingenset: **Klassiek/Modern/Literair**, **A5/A4**, **Compact/Standaard/Ruim** voor marges, optionele paginanummers, optionele rustige lopende kop en sectietitels als eigen pagina. Deze voorkeuren worden per boek in `export/settings.json` bewaard.
+- De bestaande publicatiestructuur wordt meegenomen: titelpagina, copyright, epigraaf, vrije voor-/achterwerkonderdelen, eenvoudige inhoudslijst, secties en hoofdstukken. Hoofdstukken en publicatieonderdelen starten als vaste pagina-eenheden; een actieve titelpagina blijft vrij van running header/paginanummer.
+- Manuscriptopmaak en inline afbeeldingen worden rechtstreeks uit de immutable `ExportDocument`-snapshot gerenderd. Klein/Middel/Groot/Volledig, links/midden/rechts en korte links/rechts tekstomloop worden in PDF vertaald naar dezelfde intentie als EPUB.
+- De tweede losse PDF-spike toonde een Qt-randgeval bij **tekstomloop + lang onderschrift**. Productcode probeert dit niet met fragiele layouttrucs te repareren: lange onderschriften vallen in PDF automatisch terug op een normaal links/rechts afbeeldingsblok zonder omloop. Preflight meldt hoeveel afbeeldingen zo veilig worden teruggezet. EPUB behoudt zijn eigen floatgedrag.
+- Grote afbeeldingen/tabellen gebruiken `page-break-inside: avoid`, zodat Qt ze bij onvoldoende resterende ruimte als geheel naar de volgende pagina kan verplaatsen in plaats van ze af te snijden.
+- Nieuwe regressietests dekken PDF-instellingen, PDF als echte exportkeuze, pure HTML-opbouw, veilige onderschriftfallback en de Qt-loze importeerbaarheid van de exportlaag.
+- Pakketversie naar 0.25.0 verhoogd.
+
 ## 0.24.0 — afbeeldingslayout en eenvoudige tekstomloop
 
 - Afbeeldingen hebben nu drie eenvoudige presentatie-eigenschappen naast alt-tekst en onderschrift: **Breedte** (Klein/Middel/Groot/Volledige breedte), **Plaatsing** (Links/Midden/Rechts) en optionele **Tekstomloop** voor links/rechts geplaatste afbeeldingen.

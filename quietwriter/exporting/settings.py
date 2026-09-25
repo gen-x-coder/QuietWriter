@@ -19,6 +19,14 @@ def default_export_settings() -> dict:
             'cover_mode': 'artwork_only',
             'show_section_titles': True,
         },
+        'pdf': {
+            'template': 'classic',
+            'paper_size': 'A5',
+            'margin_preset': 'standard',
+            'page_numbers': True,
+            'running_header': True,
+            'show_section_titles': True,
+        },
         'markdown': {},
     }
 
@@ -39,15 +47,19 @@ class ExportSettingsStore:
         except (OSError, json.JSONDecodeError):
             return settings
         if isinstance(current, dict):
-            if current.get('format') in {'epub', 'markdown'}:
+            if current.get('format') in {'epub', 'pdf', 'markdown'}:
                 settings['format'] = current['format']
             if isinstance(current.get('epub'), dict):
                 settings['epub'].update(current['epub'])
+            if isinstance(current.get('pdf'), dict):
+                settings['pdf'].update(current['pdf'])
         return settings
 
     def save(self, book, settings: dict):
         payload = copy.deepcopy(default_export_settings())
-        payload['format'] = settings.get('format', 'epub') if settings.get('format') in {'epub', 'markdown'} else 'epub'
+        payload['format'] = settings.get('format', 'epub') if settings.get('format') in {'epub', 'pdf', 'markdown'} else 'epub'
         if isinstance(settings.get('epub'), dict):
             payload['epub'].update(settings['epub'])
+        if isinstance(settings.get('pdf'), dict):
+            payload['pdf'].update(settings['pdf'])
         _safe_atomic_write_text(self.path(book), json.dumps(payload, ensure_ascii=False, indent=2))

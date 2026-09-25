@@ -235,12 +235,12 @@ De AI-laag krijgt voorrang boven de eerder geplande portable Markdown-media. De 
 - **0.23.10 — Thinking-capabilities zichtbaar — afgerond:** modeldetectie leest provider-metadata en markeert alleen modellen waarbij thinking aantoonbaar uitschakelbaar is met 🧠; model-id en presentatielabel blijven gescheiden en de thinking-instelling volgt bekende capability-state.
 - **0.23.11 — Ollama thinking-capability fallback — afgerond:** `/api/show.capabilities` wordt gebruikt wanneer gedetailleerde thinking-controlmetadata ontbreekt; 🧠 staat voor thinking/reasoning-support en de UI onderscheidt bekende uitschakelbaarheid van een capability-only `think:false`-verzoek.
 - **0.24.0 — Afbeeldingslayout — afgerond:** relatieve breedte, links/midden/rechts en eenvoudige tekstomloop zijn als leesbare Markdown-metadata toegevoegd; de editor geeft de intentie rustig weer en EPUB rendert de layout met relatieve CSS/float zonder een nieuwe custom-renderlaag.
-- **Volgende:** PDF-spike op basis van de bestaande PySide6/Qt-stack: eerst kwaliteit en haalbaarheid aantonen vóór een volledige PDF-exporter wordt gebouwd.
+- **0.25.0 — PDF-export MVP — afgerond:** de twee afzonderlijke Qt-spikes hebben vaste A5-paginering, running headers/paginanummers, hoofdstukstarts, afbeeldingslayout en paginagrensgedrag voldoende aangetoond. PDF is nu een echte exportkeuze met A5/A4, margepresets, templates en een veilige no-wrap fallback voor lange onderschriften.
+- **Volgende:** EPUB-reader-validatie, met Calibre als eerste vaste referentie; daarna alleen concrete compatibiliteitsproblemen oplossen.
 
-**Productstappen na 0.24.0**
-- **PDF-spike:** proefexport met paginagrootte, marges, fonts, hoofdstukstarts, paginanummers, afbeeldingen, onderschriften en eenvoudige tekstomloop. Alleen doorzetten als de Qt-route kwalitatief voldoende is.
-- **PDF-uitwerking:** papierformaat, marges, typografie en publicatie-instellingen afronden wanneer de spike slaagt.
-- **EPUB-reader-validatie:** Calibre als eerste vaste referentie; daarna gericht testen in andere gangbare readers en alleen concrete compatibiliteitsproblemen oplossen.
+**Productstappen na 0.25.0**
+- **PDF-export MVP — afgerond:** Qt-route bewezen en geïntegreerd met A5/A4, margepresets, templates, headers/footers, publicatiestructuur en afbeeldingen. Verdere printfijninstellingen alleen op basis van praktijkgebruik.
+- **EPUB-reader-validatie — volgende:** Calibre als eerste vaste referentie; daarna gericht testen in andere gangbare readers en alleen concrete compatibiliteitsproblemen oplossen.
 - **Editor-image polish:** alleen verdere verfijning wanneer praktijkgebruik daar aanleiding toe geeft; geen complexe DTP-/custom-renderlaag.
 - Later: media-inspectie/ongebruikte-assets opruimen met historie-awareness en eventueel expliciete e-bookoptimalisatie voor zeer grote afbeeldingen.
 - Markdown-export blijft technisch beschikbaar maar is geen actieve productprioriteit; portable companion-assets worden pas heroverwogen bij concrete behoefte.

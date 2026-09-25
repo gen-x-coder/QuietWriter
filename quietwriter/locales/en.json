@@ -436,7 +436,7 @@
   "export.subtitle": "Create a publication file for “{title}”.",
   "export.format": "Format",
   "export.epub.short": "For e-readers and e-book apps",
-  "export.pdf.short": "Fixed page layout · later",
+  "export.pdf.short": "Fixed page layout for reading and print",
   "export.markdown.short": "Fixed publishing format",
   "export.preflight.title": "Export check",
   "export.content.title": "Content",
@@ -651,5 +651,16 @@
   "ai.planning_context.empty": "Nothing in Planning yet",
   "settings.ai.thinking_model_tip": "This model supports thinking and explicitly reports that thinking can be disabled.",
   "settings.ai.thinking_fixed_tip": "This model supports thinking, but the provider reports no disabled mode for this variant.",
-  "settings.ai.thinking_unknown_tip": "This model supports thinking. QuietWriter can request thinking to be disabled, but the provider does not report whether this model variant is guaranteed to support that control."
+  "settings.ai.thinking_unknown_tip": "This model supports thinking. QuietWriter can request thinking to be disabled, but the provider does not report whether this model variant is guaranteed to support that control.",
+  "export.pdf.appearance": "PDF layout",
+  "export.pdf.paper": "Book size",
+  "export.pdf.margins": "Margins",
+  "export.pdf.margin.compact": "Compact",
+  "export.pdf.margin.standard": "Standard",
+  "export.pdf.margin.wide": "Wide",
+  "export.pdf.page_numbers": "Include page numbers",
+  "export.pdf.running_header": "Book title as a subtle running header",
+  "export.pdf.help": "PDF uses fixed page layout. An image with text wrap and a long caption safely falls back to a normal left/right image block.",
+  "export.action.pdf": "Export PDF",
+  "export.check.pdf_wrap_fallback": "{value} image(s) with a long caption will be placed without text wrap in PDF."
 }
