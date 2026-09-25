@@ -9,9 +9,22 @@ from pathlib import Path
 # QuietWriter creates deliberately conservative block-image Markdown. Asset
 # filenames are UUID based and never contain whitespace, which lets the parser
 # stay small and deterministic rather than becoming a second Markdown engine.
+#
+# Layout is optional presentation metadata in a normal HTML comment, so the
+# manuscript remains readable Markdown outside QuietWriter:
+#   ![Alt](../assets/images/x.png "Caption") <!-- qw:image width=medium align=left wrap=true -->
+# Existing image lines without the comment retain their historical behaviour.
 _IMAGE_RE = re.compile(
     r'!\[(?P<alt>[^\]]*)\]\((?P<path>[^\s\)]+)(?:\s+"(?P<caption>[^"]*)")?\)'
+    r'(?P<layout>[ \t]*<!--[ \t]*qw:image[ \t]+(?P<layout_attrs>[^\r\n>]*)-->)?'
 )
+_LAYOUT_ATTR_RE = re.compile(r'\b(?P<key>width|align|wrap)\s*=\s*(?P<value>[A-Za-z]+)\b')
+
+IMAGE_WIDTHS = ('small', 'medium', 'large', 'full')
+IMAGE_ALIGNS = ('left', 'center', 'right')
+DEFAULT_IMAGE_WIDTH = 'full'
+DEFAULT_IMAGE_ALIGN = 'center'
+DEFAULT_IMAGE_WRAP = False
 
 
 @dataclass(frozen=True)
@@ -23,6 +36,9 @@ class ImageReference:
     end: int
     path_start: int
     path_end: int
+    width: str = DEFAULT_IMAGE_WIDTH
+    align: str = DEFAULT_IMAGE_ALIGN
+    wrap: bool = DEFAULT_IMAGE_WRAP
 
 
 def _unescape(value: str) -> str:
@@ -37,17 +53,53 @@ def _escape_caption(value: str) -> str:
     return str(value or '').replace('\\', '\\\\').replace('"', '\\"')
 
 
+def normalize_image_layout(width: str = DEFAULT_IMAGE_WIDTH, align: str = DEFAULT_IMAGE_ALIGN,
+                           wrap: bool = DEFAULT_IMAGE_WRAP) -> tuple[str, str, bool]:
+    width = str(width or '').strip().lower()
+    align = str(align or '').strip().lower()
+    if width not in IMAGE_WIDTHS:
+        width = DEFAULT_IMAGE_WIDTH
+    if align not in IMAGE_ALIGNS:
+        align = DEFAULT_IMAGE_ALIGN
+    wrap = bool(wrap)
+    # Full width fills the available measure, so alignment no longer has a
+    # visual meaning. Normalise it to centre and never combine it with wrap.
+    if width == 'full':
+        align = DEFAULT_IMAGE_ALIGN
+        wrap = False
+    elif align == 'center':
+        wrap = False
+    return width, align, wrap
+
+
+def _layout_from_match(match: re.Match) -> tuple[str, str, bool]:
+    attrs = {}
+    raw = match.group('layout_attrs') or ''
+    for item in _LAYOUT_ATTR_RE.finditer(raw):
+        attrs[item.group('key').lower()] = item.group('value').lower()
+    wrap_value = attrs.get('wrap', 'false')
+    wrap = wrap_value in {'1', 'true', 'yes', 'on'}
+    return normalize_image_layout(
+        attrs.get('width', DEFAULT_IMAGE_WIDTH),
+        attrs.get('align', DEFAULT_IMAGE_ALIGN),
+        wrap,
+    )
+
+
+def _reference_from_match(match: re.Match, *, offset: int = 0) -> ImageReference:
+    width, align, wrap = _layout_from_match(match)
+    return ImageReference(
+        alt=_unescape(match.group('alt') or ''),
+        path=(match.group('path') or '').replace('\\', '/'),
+        caption=_unescape(match.group('caption') or ''),
+        start=offset + match.start(), end=offset + match.end(),
+        path_start=offset + match.start('path'), path_end=offset + match.end('path'),
+        width=width, align=align, wrap=wrap,
+    )
+
+
 def find_image_references(text: str) -> tuple[ImageReference, ...]:
-    rows: list[ImageReference] = []
-    for match in _IMAGE_RE.finditer(text or ''):
-        rows.append(ImageReference(
-            alt=_unescape(match.group('alt') or ''),
-            path=(match.group('path') or '').replace('\\', '/'),
-            caption=_unescape(match.group('caption') or ''),
-            start=match.start(), end=match.end(),
-            path_start=match.start('path'), path_end=match.end('path'),
-        ))
-    return tuple(rows)
+    return tuple(_reference_from_match(match) for match in _IMAGE_RE.finditer(text or ''))
 
 
 def image_reference_for_line(line: str) -> ImageReference | None:
@@ -55,21 +107,23 @@ def image_reference_for_line(line: str) -> ImageReference | None:
     match = _IMAGE_RE.fullmatch(stripped)
     if not match:
         return None
-    return ImageReference(
-        alt=_unescape(match.group('alt') or ''),
-        path=(match.group('path') or '').replace('\\', '/'),
-        caption=_unescape(match.group('caption') or ''),
-        start=0, end=len(stripped),
-        path_start=match.start('path'), path_end=match.end('path'),
-    )
+    return _reference_from_match(match)
 
 
-def build_image_markdown(path: str, alt: str = '', caption: str = '') -> str:
+def build_image_markdown(path: str, alt: str = '', caption: str = '', *,
+                         width: str = DEFAULT_IMAGE_WIDTH,
+                         align: str = DEFAULT_IMAGE_ALIGN,
+                         wrap: bool = DEFAULT_IMAGE_WRAP) -> str:
     ref = str(path or '').replace('\\', '/')
     base = f'![{_escape_alt(alt)}]({ref}'
     if str(caption or '').strip():
         base += f' "{_escape_caption(str(caption).strip())}"'
-    return base + ')'
+    base += ')'
+    width, align, wrap = normalize_image_layout(width, align, wrap)
+    if (width, align, wrap) != (DEFAULT_IMAGE_WIDTH, DEFAULT_IMAGE_ALIGN, DEFAULT_IMAGE_WRAP):
+        wrap_value = 'true' if wrap else 'false'
+        base += f' <!-- qw:image width={width} align={align} wrap={wrap_value} -->'
+    return base
 
 
 def insert_image_block(text: str, position: int, block: str) -> tuple[str, int]:
@@ -116,8 +170,8 @@ def mask_image_paths(text: str) -> str:
     """Mask image syntax/paths while preserving alt and caption source offsets.
 
     The returned string has exactly the same length as the source. Search and
-    spelling can therefore ignore UUID paths yet still select natural alt/caption
-    text using the original QTextDocument offsets.
+    spelling can therefore ignore UUID paths/layout metadata yet still select
+    natural alt/caption text using the original QTextDocument offsets.
     """
     source = text or ''
     chars = list(source)
@@ -135,10 +189,8 @@ def _protected_image_ranges(text: str) -> list[tuple[int, int]]:
     """Return source ranges that search/replace must never mutate.
 
     Alt text and captions are intentionally editable. Everything else in a
-    managed Markdown image reference (delimiters, path, quotes and separators)
-    is protected, including literal spaces. Using explicit source ranges avoids
-    the boundary bug where a masked syntax character happened to look like a
-    searchable space.
+    managed Markdown image reference (delimiters, path, layout comment, quotes
+    and separators) is protected, including literal spaces.
     """
     source = text or ''
     ranges: list[tuple[int, int]] = []
@@ -183,8 +235,8 @@ def replace_searchable_text(text: str, pattern: re.Pattern, replacement: str) ->
     ``mask_image_paths`` preserves source length, so matches found in the masked
     text map one-to-one to offsets in the original Markdown. Alt text and
     captions intentionally remain searchable/editable; only the managed image
-    syntax and asset path stay protected. Replacement text is literal, matching
-    the editor's existing replace semantics.
+    syntax, asset path and QuietWriter layout metadata stay protected.
+    Replacement text is literal, matching the editor's existing semantics.
     """
     source = text or ''
     matches = searchable_matches(source, pattern)

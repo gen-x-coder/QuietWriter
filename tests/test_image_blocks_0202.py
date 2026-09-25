@@ -40,7 +40,7 @@ def test_image_markdown_is_hidden_and_protected():
 
 def test_insert_widget_has_real_edit_mode():
     src = read('quietwriter/ui/image_insert_widget.py')
-    assert 'editRequested = Signal(str, str, str, bool)' in src
+    assert 'editRequested = Signal(str, str, str, str, str, bool, bool)' in src
     assert 'def set_edit_mode' in src
     assert "tr('insert.image.replace', 'Afbeelding vervangen…')" in src
     assert "tr('common.save', 'Opslaan')" in src

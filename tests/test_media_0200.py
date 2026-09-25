@@ -100,7 +100,7 @@ class Media0200Tests(unittest.TestCase):
                 image_name = f'EPUB/images/{Path(asset.file).name}'
                 self.assertIn(image_name, zf.namelist())
                 chapter_xml = zf.read('EPUB/text/chapter-001-001.xhtml').decode('utf-8')
-                self.assertIn('<figure class="manuscript-image">', chapter_xml)
+                self.assertIn('<figure class="manuscript-image image-width-full image-align-center">', chapter_xml)
                 self.assertIn('alt="Een punt"', chapter_xml)
                 self.assertIn('<figcaption>Testbeeld</figcaption>', chapter_xml)
                 self.assertIn(f'../images/{Path(asset.file).name}', chapter_xml)

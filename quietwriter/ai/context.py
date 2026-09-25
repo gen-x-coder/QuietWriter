@@ -33,7 +33,7 @@ class ContextBuilder:
             return ContextBundle('geen manuscript geopend', '', ['Schrijverspersona'])
 
         selected = ep.editor.textCursor().selectedText().replace('\u2029', '\n').strip()
-        pieces = ['Schrijverspersona']
+        pieces = ['Schrijverspersona', 'Boekprofiel', 'Boekgeheugen']
         if selected:
             pieces.append('Geselecteerde tekst')
             return ContextBundle('geselecteerde tekst', text_for_ai(selected), pieces)

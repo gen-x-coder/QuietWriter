@@ -5,8 +5,8 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QVBoxLayout, QWidget,
 )
 
 from ..i18n import tr
@@ -20,8 +20,8 @@ class ImageInsertWidget(QWidget):
     alt/caption only or explicitly replace the immutable underlying asset.
     """
 
-    insertRequested = Signal(str, str, str)
-    editRequested = Signal(str, str, str, bool)
+    insertRequested = Signal(str, str, str, str, str, bool)
+    editRequested = Signal(str, str, str, str, str, bool, bool)
     cancelRequested = Signal()
 
     def __init__(self, parent=None):
@@ -78,6 +78,31 @@ class ImageInsertWidget(QWidget):
             'Optioneel onderschrift onder de afbeelding'
         ))
 
+        width_label = QLabel(tr('insert.image.width', 'Breedte'))
+        self.width_combo = QComboBox()
+        self.width_combo.addItem(tr('insert.image.width.small', 'Klein'), 'small')
+        self.width_combo.addItem(tr('insert.image.width.medium', 'Middel'), 'medium')
+        self.width_combo.addItem(tr('insert.image.width.large', 'Groot'), 'large')
+        self.width_combo.addItem(tr('insert.image.width.full', 'Volledige breedte'), 'full')
+        self.width_combo.setToolTip(tr(
+            'insert.image.width.tip',
+            'Relatieve breedte; past zich aan het formaat van EPUB of latere PDF-uitvoer aan.'
+        ))
+
+        align_label = QLabel(tr('insert.image.align', 'Plaatsing'))
+        self.align_combo = QComboBox()
+        self.align_combo.addItem(tr('insert.image.align.left', 'Links'), 'left')
+        self.align_combo.addItem(tr('insert.image.align.center', 'Midden'), 'center')
+        self.align_combo.addItem(tr('insert.image.align.right', 'Rechts'), 'right')
+
+        self.wrap_check = QCheckBox(tr('insert.image.wrap', 'Tekst om afbeelding laten lopen'))
+        self.wrap_check.setToolTip(tr(
+            'insert.image.wrap.tip',
+            'Bij links of rechts kan tekst naast de afbeelding doorlopen. Readers mogen dit op smalle schermen vereenvoudigen.'
+        ))
+        self.width_combo.currentIndexChanged.connect(self._update_wrap_availability)
+        self.align_combo.currentIndexChanged.connect(self._update_wrap_availability)
+
         buttons = QHBoxLayout()
         self.cancel_button = QPushButton(tr('common.cancel', 'Annuleren'))
         self.cancel_button.setObjectName('secondaryButton')
@@ -100,12 +125,21 @@ class ImageInsertWidget(QWidget):
         root.addWidget(self.alt_edit)
         root.addWidget(caption_label)
         root.addWidget(self.caption_edit)
+        root.addSpacing(4)
+        root.addWidget(width_label)
+        root.addWidget(self.width_combo)
+        root.addWidget(align_label)
+        root.addWidget(self.align_combo)
+        root.addWidget(self.wrap_check)
         root.addStretch(1)
         root.addLayout(buttons)
 
         QWidget.setTabOrder(self.choose_button, self.alt_edit)
         QWidget.setTabOrder(self.alt_edit, self.caption_edit)
-        QWidget.setTabOrder(self.caption_edit, self.cancel_button)
+        QWidget.setTabOrder(self.caption_edit, self.width_combo)
+        QWidget.setTabOrder(self.width_combo, self.align_combo)
+        QWidget.setTabOrder(self.align_combo, self.wrap_check)
+        QWidget.setTabOrder(self.wrap_check, self.cancel_button)
         QWidget.setTabOrder(self.cancel_button, self.primary_button)
         self.reset()
 
@@ -120,6 +154,10 @@ class ImageInsertWidget(QWidget):
         self.file_label.clear()
         self.alt_edit.clear()
         self.caption_edit.clear()
+        self._set_combo_value(self.width_combo, 'large')
+        self._set_combo_value(self.align_combo, 'center')
+        self.wrap_check.setChecked(False)
+        self._update_wrap_availability()
         self.title.setText(tr('insert.image.title', 'Afbeelding'))
         self.description.setText(tr(
             'insert.image.description',
@@ -130,7 +168,8 @@ class ImageInsertWidget(QWidget):
         self.primary_button.setEnabled(False)
         self.choose_button.setFocus()
 
-    def set_edit_mode(self, source_path: Path | None, alt: str, caption: str, display_name: str = ''):
+    def set_edit_mode(self, source_path: Path | None, alt: str, caption: str, display_name: str = '', *,
+                      width: str = 'full', align: str = 'center', wrap: bool = False):
         self._mode = 'edit'
         self._replacement_selected = False
         self._display_name = display_name or (Path(source_path).name if source_path else '')
@@ -139,16 +178,58 @@ class ImageInsertWidget(QWidget):
         self.title.setText(tr('insert.image.edit_title', 'Afbeelding bewerken'))
         self.description.setText(tr(
             'insert.image.edit_description',
-            'Pas de beschrijving of het onderschrift aan, of vervang de afbeelding.'
+            'Pas beschrijving, onderschrift en plaatsing aan, of vervang de afbeelding.'
         ))
         self.choose_button.setText(tr('insert.image.replace', 'Afbeelding vervangen…'))
         self.primary_button.setText(tr('common.save', 'Opslaan'))
         self.alt_edit.setText(alt or '')
         self.caption_edit.setText(caption or '')
+        self._set_combo_value(self.width_combo, width)
+        self._set_combo_value(self.align_combo, align)
+        self.wrap_check.setChecked(bool(wrap))
+        self._update_wrap_availability()
+        if self.wrap_check.isEnabled():
+            self.wrap_check.setChecked(bool(wrap))
         self.primary_button.setEnabled(True)
         self._load_preview(self.source_path)
         self.file_label.setText(self._display_name)
         self.alt_edit.setFocus()
+
+    @staticmethod
+    def _set_combo_value(combo: QComboBox, value: str):
+        index = combo.findData(str(value or ''))
+        combo.setCurrentIndex(index if index >= 0 else 0)
+
+    def _layout_values(self) -> tuple[str, str, bool]:
+        width = str(self.width_combo.currentData() or 'large')
+        align = str(self.align_combo.currentData() or 'center')
+        wrap = bool(self.wrap_check.isChecked() and self.wrap_check.isEnabled())
+        return width, align, wrap
+
+    def _update_wrap_availability(self, *_args):
+        width = str(self.width_combo.currentData() or 'large')
+        if width == 'full':
+            if self.align_combo.currentData() != 'center':
+                self._set_combo_value(self.align_combo, 'center')
+            self.align_combo.setEnabled(False)
+        else:
+            self.align_combo.setEnabled(True)
+        align = str(self.align_combo.currentData() or 'center')
+        allowed = align in {'left', 'right'} and width != 'full'
+        if not allowed:
+            self.wrap_check.setChecked(False)
+        self.wrap_check.setEnabled(allowed)
+        if width == 'full':
+            reason = tr('insert.image.wrap.full_hint', 'Tekstomloop is niet beschikbaar bij volledige breedte.')
+        elif align == 'center':
+            reason = tr('insert.image.wrap.center_hint', 'Tekstomloop is niet beschikbaar bij gecentreerde afbeeldingen.')
+        else:
+            reason = tr(
+                'insert.image.wrap.tip',
+                'Bij links of rechts kan tekst naast de afbeelding doorlopen. Readers mogen dit op smalle schermen vereenvoudigen.'
+            )
+        self.wrap_check.setToolTip(reason)
+        self._refresh_preview()
 
     def choose_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -207,10 +288,20 @@ class ImageInsertWidget(QWidget):
         size = self.preview.size()
         if size.width() <= 0 or size.height() <= 0:
             return
+        width = str(self.width_combo.currentData() or 'large')
+        ratio = {'small': 0.30, 'medium': 0.50, 'large': 0.70, 'full': 1.0}.get(width, 0.70)
+        target_width = max(1, round((size.width() - 8) * ratio))
         scaled = self._preview_pixmap.scaled(
-            max(1, size.width() - 8), max(1, size.height() - 8),
+            target_width, max(1, size.height() - 8),
             Qt.KeepAspectRatio, Qt.SmoothTransformation,
         )
+        align = str(self.align_combo.currentData() or 'center')
+        qt_align = {
+            'left': Qt.AlignLeft,
+            'center': Qt.AlignHCenter,
+            'right': Qt.AlignRight,
+        }.get(align, Qt.AlignHCenter)
+        self.preview.setAlignment(qt_align | Qt.AlignVCenter)
         self.preview.setText('')
         self.preview.setPixmap(scaled)
 
@@ -221,11 +312,13 @@ class ImageInsertWidget(QWidget):
     def _emit_primary(self):
         alt = self.alt_edit.text().strip()
         caption = self.caption_edit.text().strip()
+        width, align, wrap = self._layout_values()
         if self._mode == 'edit':
             self.editRequested.emit(
-                str(self.source_path or ''), alt, caption, self._replacement_selected
+                str(self.source_path or ''), alt, caption, width, align, wrap,
+                self._replacement_selected
             )
             return
         if not self.source_path:
             return
-        self.insertRequested.emit(str(self.source_path), alt, caption)
+        self.insertRequested.emit(str(self.source_path), alt, caption, width, align, wrap)

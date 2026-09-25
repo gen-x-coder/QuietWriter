@@ -13,6 +13,8 @@ from pathlib import Path
 
 from .revisions import BookRevision, ExternalModificationError, capture_book_revision
 from .persona_profile import default_persona_markdown
+from .book_profile import default_book_profile_markdown
+from .book_memory import default_book_memory_markdown
 
 
 def _safe_atomic_write_text(path: Path, text: str, encoding: str = 'utf-8', replace_retries: int = 8):
@@ -607,7 +609,7 @@ class Library:
                 _safe_atomic_write_text(destination, text)
         # A conflict-local snapshot must remain a complete book snapshot. Keep
         # auxiliary book-owned data alongside the in-memory manuscript state.
-        for aux_name in ('planning', 'publication', 'assets'):
+        for aux_name in ('planning', 'publication', 'ai', 'assets'):
             source_aux = book.path / aux_name
             target_aux = target / aux_name
             if source_aux.exists():
@@ -746,6 +748,7 @@ class Library:
         self._write_manifest_unchecked(restored)
         self._sync_snapshot_auxiliary_dir(live_book, snapshot, 'planning')
         self._sync_snapshot_auxiliary_dir(live_book, snapshot, 'publication')
+        self._sync_snapshot_auxiliary_dir(live_book, snapshot, 'ai')
         # Media binaries are immutable. Restore the snapshot's manifest/cover and
         # referenced files, but never delete newer UUID assets automatically.
         self._sync_snapshot_auxiliary_dir(live_book, snapshot, 'assets', remove_extras=False)
@@ -1200,6 +1203,35 @@ class Library:
             except Exception:
                 rollback_cover_files()
                 raise
+
+
+    def book_profile_path(self, book: Book) -> Path:
+        return Path(book.path) / 'ai' / 'boekprofiel.md'
+
+    def read_book_profile(self, book: Book) -> str:
+        path = self.book_profile_path(book)
+        if not path.exists():
+            return default_book_profile_markdown()
+        return path.read_text(encoding='utf-8')
+
+    def save_book_profile(self, book: Book, text: str):
+        self.verify_book_unchanged(book)
+        _safe_atomic_write_text(self.book_profile_path(book), text)
+        self._refresh_if_tracked(book)
+
+    def book_memory_path(self, book: Book) -> Path:
+        return Path(book.path) / 'ai' / 'memory.md'
+
+    def read_book_memory(self, book: Book) -> str:
+        path = self.book_memory_path(book)
+        if not path.exists():
+            return default_book_memory_markdown()
+        return path.read_text(encoding='utf-8')
+
+    def save_book_memory(self, book: Book, text: str):
+        self.verify_book_unchanged(book)
+        _safe_atomic_write_text(self.book_memory_path(book), text)
+        self._refresh_if_tracked(book)
 
     def persona_path(self) -> Path:
         return self.persona_dir / 'schrijver.md'

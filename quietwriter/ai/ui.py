@@ -5,13 +5,19 @@ import time
 from PySide6.QtCore import QThread, Signal, Qt, QTimer
 from PySide6.QtGui import QTextCursor, QTextDocument, QIcon, QPalette, QColor
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
-    QTextEdit, QTextBrowser, QMessageBox
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox, QPushButton,
+    QTextEdit, QTextBrowser, QMessageBox, QFrame, QDialog, QDialogButtonBox
 )
 from .providers import ProviderFactory
 from .context import ContextBuilder
 from .conversations import ConversationStore
+from .memory_suggestions import extract_memory_suggestions, proposal_instruction
+from .planning_context import PlanningSelection, build_planning_context
+from .prompting import build_system_prompt
+from .quick_actions import QUICK_ACTIONS, QUICK_ACTION_BY_KEY
+from ..book_memory import SECTIONS
 from ..themes import THEMES
+from ..ui.planning_context_dialog import PlanningContextDialog
 
 
 class ProviderChatWorker(QThread):
@@ -88,6 +94,8 @@ class AIPanel(QWidget):
         self._book_id = None
         self._request_serial = 0
         self._active_request_id = None
+        self._planning_selection = PlanningSelection()
+        self._pending_memory_suggestions = []
         self.messages: list[dict] = []
         self.store = None
         self.theme_name = str(self.main.settings.value('theme','Helder') or 'Helder')
@@ -96,31 +104,69 @@ class AIPanel(QWidget):
         self.render_timer = QTimer(self); self.render_timer.setSingleShot(True); self.render_timer.setInterval(70); self.render_timer.timeout.connect(lambda: self._render_chat(streaming_placeholder=True))
         lay = QVBoxLayout(self); lay.setContentsMargins(14,14,14,14); lay.setSpacing(8)
 
+        # Keep the conversation visually dominant. Persistent controls live at
+        # the bottom near the composer; occasional context/quick-action tools
+        # expand only when requested.
         top = QHBoxLayout()
         lab = QLabel('AI-assistent'); lab.setObjectName('sectionTitle')
-        self.context = QComboBox(); self.context.addItems(['Huidig hoofdstuk', 'Huidige sectie', 'Hele boek'])
-        top.addWidget(lab); top.addStretch(); top.addWidget(self.context)
+        self.clear_button = QPushButton('Nieuw gesprek'); self.clear_button.setObjectName('suggestionButton'); self.clear_button.clicked.connect(self.clear_conversation)
+        top.addWidget(lab); top.addStretch(); top.addWidget(self.clear_button)
         lay.addLayout(top)
 
-
-        self.context_summary = QLabel('Schrijverspersona · Huidig hoofdstuk')
-        self.context_summary.setObjectName('muted'); self.context_summary.setWordWrap(True)
-        lay.addWidget(self.context_summary)
-
-        context_row = QHBoxLayout()
-        self.context_button = QPushButton('Context bekijken'); self.context_button.clicked.connect(self._toggle_context_details)
-        self.clear_button = QPushButton('Nieuw gesprek'); self.clear_button.clicked.connect(self.clear_conversation)
-        context_row.addWidget(self.context_button); context_row.addStretch(); context_row.addWidget(self.clear_button)
-        lay.addLayout(context_row)
-
-        self.context_details = QTextEdit(); self.context_details.setReadOnly(True); self.context_details.setMaximumHeight(120); self.context_details.hide()
-        lay.addWidget(self.context_details)
+        self.chat = QTextBrowser(); self.chat.setObjectName('aiChat'); self.chat.setOpenExternalLinks(True)
+        lay.addWidget(self.chat, 1)
 
         self.thinking_button = QPushButton('Denken…'); self.thinking_button.setObjectName('thinkingButton'); self.thinking_button.clicked.connect(self._toggle_thinking_details); self.thinking_button.hide()
         self.thinking_details = QTextEdit(); self.thinking_details.setReadOnly(True); self.thinking_details.setMaximumHeight(130); self.thinking_details.setObjectName('thinkingDetails'); self.thinking_details.hide()
         lay.addWidget(self.thinking_button, 0, Qt.AlignLeft); lay.addWidget(self.thinking_details)
 
-        self.chat = QTextBrowser(); self.chat.setObjectName('aiChat'); self.chat.setOpenExternalLinks(True)
+        self.memory_card = QFrame(); self.memory_card.setObjectName('panel'); self.memory_card.hide()
+        memory_lay = QVBoxLayout(self.memory_card); memory_lay.setContentsMargins(10,8,10,8); memory_lay.setSpacing(6)
+        self.memory_title = QLabel('Onthouden voor dit boek?'); self.memory_title.setObjectName('sectionTitle')
+        self.memory_text = QLabel(); self.memory_text.setWordWrap(True)
+        memory_actions = QHBoxLayout()
+        self.memory_accept = QPushButton('Onthouden'); self.memory_accept.setObjectName('primaryButton'); self.memory_accept.clicked.connect(self._remember_suggestion)
+        self.memory_edit = QPushButton('Bewerken'); self.memory_edit.clicked.connect(self._edit_suggestion)
+        self.memory_ignore = QPushButton('Negeren'); self.memory_ignore.clicked.connect(self._ignore_suggestion)
+        memory_actions.addWidget(self.memory_accept); memory_actions.addWidget(self.memory_edit); memory_actions.addWidget(self.memory_ignore); memory_actions.addStretch()
+        self.memory_feedback = QLabel(); self.memory_feedback.setObjectName('muted'); self.memory_feedback.setWordWrap(True); self.memory_feedback.hide()
+        memory_lay.addWidget(self.memory_title); memory_lay.addWidget(self.memory_text); memory_lay.addWidget(self.memory_feedback); memory_lay.addLayout(memory_actions)
+        lay.addWidget(self.memory_card)
+
+        # Collapsible context controls. Current chapter is the normal/default
+        # context, so it does not permanently consume header space.
+        self.context_panel = QFrame(); self.context_panel.setObjectName('panel'); self.context_panel.hide()
+        context_lay = QVBoxLayout(self.context_panel); context_lay.setContentsMargins(10,8,10,8); context_lay.setSpacing(6)
+        context_select_row = QHBoxLayout()
+        context_select_row.addWidget(QLabel('Manuscriptcontext'))
+        self.context = QComboBox(); self.context.addItems(['Huidig hoofdstuk', 'Huidige sectie', 'Hele boek']); self.context.currentTextChanged.connect(self._refresh_idle_context_summary)
+        context_select_row.addWidget(self.context, 1)
+        context_lay.addLayout(context_select_row)
+        context_actions = QHBoxLayout()
+        self.planning_context_button = QPushButton('Planning-context…'); self.planning_context_button.clicked.connect(self._choose_planning_context)
+        self.context_view_button = QPushButton('Context bekijken'); self.context_view_button.clicked.connect(self._show_context_dialog)
+        context_actions.addWidget(self.planning_context_button); context_actions.addWidget(self.context_view_button); context_actions.addStretch()
+        context_lay.addLayout(context_actions)
+        lay.addWidget(self.context_panel)
+
+        # Quick actions are useful, but should not permanently steal vertical
+        # writing/chat space. They can start expanded through AI settings.
+        self.quick_panel = QFrame(); self.quick_panel.setObjectName('panel')
+        quick_lay = QVBoxLayout(self.quick_panel); quick_lay.setContentsMargins(10,8,10,8); quick_lay.setSpacing(5)
+        quick_label = QLabel('Snelacties'); quick_label.setObjectName('microLabel')
+        quick_lay.addWidget(quick_label)
+        self.quick_action_buttons = {}
+        quick_grid = QGridLayout(); quick_grid.setContentsMargins(0,0,0,0); quick_grid.setHorizontalSpacing(6); quick_grid.setVerticalSpacing(4)
+        for index, action in enumerate(QUICK_ACTIONS):
+            button = QPushButton(action.label); button.setObjectName('suggestionButton')
+            button.setToolTip(action.tooltip); button.setAccessibleName(action.label)
+            button.clicked.connect(lambda _checked=False, key=action.key: self._apply_quick_action(key))
+            quick_grid.addWidget(button, index // 2, index % 2)
+            self.quick_action_buttons[action.key] = button
+        quick_lay.addLayout(quick_grid)
+        self.quick_panel.setVisible(bool(self.main.settings.value('ai_quick_actions_expanded', False, bool)))
+        lay.addWidget(self.quick_panel)
+
         self.input = QTextEdit(); self.input.setObjectName('aiInput'); self.input.setMaximumHeight(108); self.input.setPlaceholderText('Stel een vraag over je tekst…')
         self.action_button = QPushButton(); self.action_button.setObjectName('aiActionButton')
         self.action_button.setFixedSize(38, 38)
@@ -128,7 +174,14 @@ class AIPanel(QWidget):
         self._set_action_state(False)
         compose = QHBoxLayout(); compose.setContentsMargins(0,0,0,0); compose.setSpacing(8)
         compose.addWidget(self.input, 1); compose.addWidget(self.action_button, 0, Qt.AlignBottom)
-        lay.addWidget(self.chat, 1); lay.addLayout(compose)
+        lay.addLayout(compose)
+
+        tools = QHBoxLayout(); tools.setContentsMargins(0,0,0,0); tools.setSpacing(6)
+        self.context_toggle = QPushButton('Context'); self.context_toggle.setObjectName('suggestionButton'); self.context_toggle.setCheckable(True); self.context_toggle.clicked.connect(self._toggle_context_controls)
+        self.quick_toggle = QPushButton('Snelacties'); self.quick_toggle.setObjectName('suggestionButton'); self.quick_toggle.setCheckable(True); self.quick_toggle.setChecked(self.quick_panel.isVisible()); self.quick_toggle.clicked.connect(self._toggle_quick_actions)
+        tools.addWidget(self.context_toggle); tools.addWidget(self.quick_toggle); tools.addStretch()
+        lay.addLayout(tools)
+        self._refresh_idle_context_summary()
 
     def is_busy(self) -> bool:
         return bool(self.worker and self.worker.isRunning())
@@ -148,11 +201,43 @@ class AIPanel(QWidget):
         else:
             self.send()
 
+    def _has_manuscript_selection(self) -> bool:
+        editor_page = getattr(self.main, 'editor_page', None)
+        editor = getattr(editor_page, 'editor', None) if editor_page is not None else None
+        return bool(editor and editor.textCursor().hasSelection())
+
+    def refresh_quick_actions(self):
+        busy = self.is_busy()
+        has_selection = self._has_manuscript_selection()
+        for action in QUICK_ACTIONS:
+            button = self.quick_action_buttons.get(action.key)
+            if not button:
+                continue
+            enabled = not busy and (has_selection or not action.requires_selection)
+            button.setEnabled(enabled)
+            if action.requires_selection and not has_selection:
+                button.setToolTip('Selecteer eerst tekst in het manuscript.')
+            else:
+                button.setToolTip(action.tooltip)
+
+    def _apply_quick_action(self, key: str):
+        action = QUICK_ACTION_BY_KEY.get(key)
+        if not action or self.is_busy():
+            return
+        if action.requires_selection and not self._has_manuscript_selection():
+            self.refresh_quick_actions()
+            return
+        self.input.setPlainText(action.prompt)
+        cursor = self.input.textCursor(); cursor.movePosition(QTextCursor.End); self.input.setTextCursor(cursor)
+        self.input.setFocus()
+
     def _update_busy_buttons(self):
         busy=self.is_busy()
         self.action_button.setEnabled(True)
         self._set_action_state(busy)
         self.clear_button.setEnabled(not busy)
+        self.planning_context_button.setEnabled(not busy and bool(self.main.active_book()))
+        self.refresh_quick_actions()
 
     def set_book(self, book):
         new_book_id = getattr(book, 'id', None) if book is not None else None
@@ -170,6 +255,9 @@ class AIPanel(QWidget):
         # self.store/self.messages to another book.
         self._book_generation += 1
         self._book_id = new_book_id
+        self._planning_selection = PlanningSelection()
+        self._pending_memory_suggestions = []
+        self.memory_card.hide()
         self._active_request_id = None
         old_worker = self.worker
         if old_worker is not None and old_worker.isRunning():
@@ -188,10 +276,177 @@ class AIPanel(QWidget):
         self._active_user_index = None
         self.store = ConversationStore(book) if book else None
         self.messages = self.store.load() if self.store else []
-        self.context_summary.setText('Schrijverspersona · Huidig hoofdstuk')
-        self.context_details.clear()
+        self.context.setCurrentText('Huidig hoofdstuk')
+        self.context_panel.hide(); self.context_toggle.setChecked(False)
+        self._refresh_idle_context_summary()
         self._render_chat()
         self._update_busy_buttons()
+
+    def _choose_planning_context(self):
+        book = self.main.active_book()
+        if not book or self.is_busy():
+            return
+        dialog = PlanningContextDialog(self, self.main.library, book, self._planning_selection)
+        if dialog.exec() == QDialog.Accepted:
+            self._planning_selection = dialog.selection()
+            self._refresh_idle_context_summary()
+
+    def _planning_context(self):
+        return build_planning_context(self.main.library, self.main.active_book(), self._planning_selection)
+
+    def _refresh_idle_context_summary(self, *_args):
+        _text, labels = self._planning_context()
+        mode = self.context.currentText()
+        custom = mode != 'Huidig hoofdstuk' or bool(labels)
+        self.context_toggle.setText('Context · aangepast' if custom else 'Context')
+        details = [mode]
+        if labels:
+            details.append('Planning: ' + ', '.join(labels))
+        self.context_toggle.setToolTip(' · '.join(details))
+
+    def _toggle_context_controls(self, checked=False):
+        visible = bool(checked)
+        self.context_panel.setVisible(visible)
+        if visible and self.quick_panel.isVisible():
+            self.quick_panel.hide(); self.quick_toggle.setChecked(False)
+
+    def _toggle_quick_actions(self, checked=False):
+        visible = bool(checked)
+        self.quick_panel.setVisible(visible)
+        if visible and self.context_panel.isVisible():
+            self.context_panel.hide(); self.context_toggle.setChecked(False)
+
+    def apply_settings(self):
+        """Apply AI-panel presentation settings without rebuilding the panel."""
+        expanded = bool(self.main.settings.value('ai_quick_actions_expanded', False, bool))
+        self.quick_panel.setVisible(expanded)
+        self.quick_toggle.setChecked(expanded)
+        if expanded:
+            self.context_panel.hide(); self.context_toggle.setChecked(False)
+
+    def _show_context_dialog(self):
+        builder = ContextBuilder(self.main)
+        context = builder.build(self.context.currentText())
+        planning_text, planning_labels = self._planning_context()
+        lines = [
+            'Vaste context: Schrijverspersona · Boekprofiel · Boekgeheugen',
+            f'Manuscriptcontext: {context.label}',
+        ]
+        if planning_labels:
+            lines.extend(['', 'Geselecteerde Planning-context:', planning_text])
+        else:
+            lines.extend(['', 'Planning-context: niet geselecteerd'])
+        dialog = QDialog(self)
+        dialog.setWindowTitle('AI-context bekijken')
+        dialog.resize(620, 460)
+        lay = QVBoxLayout(dialog)
+        view = QTextEdit(); view.setReadOnly(True); view.setPlainText('\n'.join(lines))
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(dialog.reject)
+        lay.addWidget(view, 1); lay.addWidget(buttons)
+        dialog.exec()
+
+    def _show_memory_suggestion(self):
+        if not self._pending_memory_suggestions:
+            self.memory_card.hide()
+            return
+        suggestion = self._pending_memory_suggestions[0]
+        category = self._memory_section_title(suggestion.section_key)
+        count = len(self._pending_memory_suggestions)
+        suffix = f' · {count} voorstellen' if count > 1 else ''
+        self.memory_title.setText(f'Onthouden voor dit boek? · {category}{suffix}')
+        self.memory_text.setText(suggestion.text)
+        self.memory_feedback.clear(); self.memory_feedback.hide()
+        self.memory_card.show()
+
+    def _memory_section_title(self, section_key: str) -> str:
+        section = next((section for section in SECTIONS if section.key == section_key), None)
+        return section.title if section else section_key
+
+    def _append_chat_notice(self, text: str):
+        """Add a local QuietWriter confirmation to the visible chat.
+
+        Notice messages are persisted with the conversation so the confirmation
+        remains visible after reopening the book, but they are deliberately
+        excluded from provider context (only user/assistant roles are sent).
+        """
+        self.messages.append(ConversationStore.entry('notice', text))
+        if self.store:
+            self.store.save(self.messages)
+        self._render_chat()
+
+    def _persist_memory_suggestion(self, section_key: str, text: str) -> bool:
+        book = self.main.active_book()
+        if not book:
+            self.memory_feedback.setText('Niet opgeslagen: er is geen actief boek.')
+            self.memory_feedback.show()
+            return False
+        page = self.main.book_memory_page
+        try:
+            # The AI action must not silently depend on whether the Book memory
+            # page happened to be opened before. Rebind it to the active live
+            # book first; adopt_book preserves any same-book pending edits.
+            if page.book is None or page.book.id != book.id:
+                if page.adopt_book(book) is False:
+                    raise RuntimeError('Boekgeheugen kon niet aan het actieve boek worden gekoppeld.')
+            ok = page.add_suggestion(section_key, text)
+        except Exception as exc:
+            ok = False
+            self.memory_feedback.setText(f'Niet opgeslagen: {exc}')
+            self.memory_feedback.show()
+        if not ok:
+            if not self.memory_feedback.text():
+                self.memory_feedback.setText('Niet opgeslagen. Controleer Boekgeheugen of probeer opnieuw.')
+                self.memory_feedback.show()
+            return False
+        self.main.status.showMessage('Opgeslagen in Boekgeheugen.', 4000)
+        return True
+
+    def _remember_suggestion(self):
+        if not self._pending_memory_suggestions:
+            return
+        suggestion = self._pending_memory_suggestions[0]
+        if not self._persist_memory_suggestion(suggestion.section_key, suggestion.text):
+            return
+        self._append_chat_notice(
+            f'Opgeslagen in Boekgeheugen · {self._memory_section_title(suggestion.section_key)}'
+        )
+        self._pending_memory_suggestions.pop(0)
+        self._show_memory_suggestion()
+
+    def _ignore_suggestion(self):
+        if self._pending_memory_suggestions:
+            self._pending_memory_suggestions.pop(0)
+        self._show_memory_suggestion()
+
+    def _edit_suggestion(self):
+        if not self._pending_memory_suggestions:
+            return
+        suggestion = self._pending_memory_suggestions[0]
+        dialog = QDialog(self); dialog.setWindowTitle('Geheugenvoorstel bewerken'); dialog.resize(520, 330)
+        lay = QVBoxLayout(dialog)
+        category = QComboBox()
+        for section in SECTIONS:
+            category.addItem(section.title, section.key)
+        idx = category.findData(suggestion.section_key)
+        category.setCurrentIndex(max(0, idx))
+        edit = QTextEdit(); edit.setPlainText(suggestion.text); edit.setAcceptRichText(False)
+        lay.addWidget(QLabel('Categorie')); lay.addWidget(category); lay.addWidget(QLabel('Tekst')); lay.addWidget(edit, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Save).setText('Onthouden'); buttons.button(QDialogButtonBox.Cancel).setText('Annuleren')
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); lay.addWidget(buttons)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        text = edit.toPlainText().strip()
+        if not text:
+            return
+        section_key = str(category.currentData())
+        if self._persist_memory_suggestion(section_key, text):
+            self._append_chat_notice(
+                f'Opgeslagen in Boekgeheugen · {self._memory_section_title(section_key)}'
+            )
+            self._pending_memory_suggestions.pop(0)
+            self._show_memory_suggestion()
 
     def clear_conversation(self):
         if self.is_busy(): return
@@ -216,41 +471,52 @@ class AIPanel(QWidget):
 
         builder = ContextBuilder(self.main)
         manuscript_context = builder.build(self.context.currentText())
+        planning_text, planning_labels = self._planning_context()
+        if planning_labels:
+            manuscript_context.pieces.append('Planning: ' + ', '.join(planning_labels))
         self.input.clear()
-        self._continue_send(provider, model, prompt, manuscript_context)
+        self._continue_send(provider, model, prompt, manuscript_context, planning_text)
 
 
-    def _continue_send(self, provider, model: str, prompt: str, context):
+    def _continue_send(self, provider, model: str, prompt: str, context, planning_text: str = ''):
         self._active_context = context
-        self.context_summary.setText(' · '.join(context.pieces))
-        lines=[f'Context: {x}' for x in context.pieces]
-        self.context_details.setPlainText('\n'.join(lines))
+        self._refresh_idle_context_summary()
         persona=self.main.library.read_persona()
+        active_book = self.main.active_book()
+        book_profile = self.main.library.read_book_profile(active_book) if active_book else ''
+        book_memory = self.main.library.read_book_memory(active_book) if active_book else ''
         context_text=context.text
 
-        def build_system(ctx_text: str) -> str:
-            return (
-                'Je bent de schrijf- en redactieassistent van de gebruiker. Beantwoord precies de concrete opdracht. '
-                'Gebruik ALTIJD het schrijversprofiel als stijl- en beoordelingskader, maar genereer of herschrijf alleen tekst als daarom wordt gevraagd. '
-                'Pas nooit rechtstreeks manuscriptbestanden aan; geef wijzigingen alleen in je antwoord. '
-                'Als informatie ontbreekt, zeg dat expliciet.\n\n'
-                f'SCHRIJVERSPROFIEL:\n{persona}\n\nCONTEXT ({context.label}):\n{ctx_text}'
-            )
+        system_prompt = build_system_prompt(
+            persona=persona,
+            book_profile=book_profile,
+            book_memory=book_memory,
+            planning_text=planning_text,
+            context_label=context.label,
+            context_text=context_text,
+        )
 
         self.messages.append(ConversationStore.entry('user', prompt, {'pieces': context.pieces, 'scope': self.context.currentText()}))
         self._active_user_index=len(self.messages)-1
         self.current_assistant=''; self._final_started=False; self._thinking_text=''
-        self._render_chat(streaming_placeholder=True); self._start_thinking('Denken')
+        thinking_disabled = bool(self.main.settings.value('ai_disable_thinking', False, bool))
+        self._render_chat(streaming_placeholder=True); self._start_thinking('AI werkt' if thinking_disabled else 'Denken')
 
         # Eenvoudige, directe chatflow. Geen tokenberekeningen, geen automatische
         # contextvensters en geen provider-specifieke tuning. QuietWriter stuurt
-        # alleen persona + gekozen manuscriptcontext + een beperkte recente chat
+        # alleen persona + boekprofiel + boekgeheugen + optionele gerichte Planning-context + gekozen manuscriptcontext + een beperkte recente chat
         # naar het geselecteerde model. De provider/modelruntime bepaalt de context.
         recent=[{'role':m['role'],'content':m['content']} for m in self.messages[-6:] if m.get('role') in {'user','assistant'}]
-        messages=[{'role':'system','content':build_system(context_text)}] + recent
+        messages=[{'role':'system','content':system_prompt}] + recent
         self._request_serial += 1
         request_id = (self._book_generation, self._request_serial)
-        worker = ProviderChatWorker(provider,model,messages,options={})
+        provider_options = {}
+        if thinking_disabled:
+            if getattr(provider, 'name', '') == 'ollama':
+                provider_options['think'] = False
+            elif getattr(provider, 'name', '') == 'openrouter':
+                provider_options['reasoning'] = {'enabled': False}
+        worker = ProviderChatWorker(provider,model,messages,options=provider_options)
         self.worker = worker
         self._workers.add(worker)
         self._active_request_id = request_id
@@ -300,9 +566,6 @@ class AIPanel(QWidget):
     def _toggle_thinking_details(self):
         if self._thinking_text.strip(): self.thinking_details.setVisible(not self.thinking_details.isVisible())
 
-    def _toggle_context_details(self):
-        self.context_details.setVisible(not self.context_details.isVisible())
-
     def _request_is_current(self, worker, request_id) -> bool:
         return bool(
             worker is self.worker
@@ -334,8 +597,13 @@ class AIPanel(QWidget):
         self._finish_thinking()
         if self.current_assistant.strip():
             context = self._active_context
-            self.messages.append(ConversationStore.entry('assistant', self.current_assistant, {'pieces': context.pieces if context else []}))
+            visible, suggestions = extract_memory_suggestions(self.current_assistant)
+            if visible:
+                self.messages.append(ConversationStore.entry('assistant', visible, {'pieces': context.pieces if context else []}))
             if self.store: self.store.save(self.messages)
+            if suggestions:
+                self._pending_memory_suggestions.extend(suggestions)
+                self._show_memory_suggestion()
         self._active_user_index=None
         self.render_timer.stop(); self.current_assistant = ''; self._render_chat()
 
@@ -357,7 +625,7 @@ class AIPanel(QWidget):
             if self.messages[self._active_user_index].get('role') == 'user':
                 self.messages.pop()
         self._active_user_index=None
-        self.context_summary.setText('AI gestopt.')
+        self._refresh_idle_context_summary()
         self._render_chat()
 
     def _chat_thread_finished(self, worker, request_id):
@@ -399,6 +667,12 @@ class AIPanel(QWidget):
                     f'<div align="right"><table width="86%" cellspacing="0" cellpadding="10" bgcolor="{user_bg}">'
                     f'<tr><td style="color:{text};"><span style="color:{muted}; font-size:10px; font-weight:600;">JIJ</span><br>{body}</td></tr></table></div><br>'
                 )
+            elif role == 'notice':
+                body = html.escape(content).replace('\n','<br>')
+                blocks.append(
+                    f'<div align="left" style="margin:2px 8px 8px 8px; color:{muted}; font-size:11px;">'
+                    f'<b>QuietWriter</b> · {body}</div>'
+                )
             else:
                 body = markdown_to_html(content)
                 blocks.append(
@@ -406,11 +680,16 @@ class AIPanel(QWidget):
                     f'<tr><td style="color:{text};"><span style="color:{muted}; font-size:10px; font-weight:600;">QUIETWRITER</span><br><div style="color:{text};">{body}</div></td></tr></table></div><br>'
                 )
         if streaming_placeholder and self.current_assistant:
-            body = markdown_to_html(self.current_assistant)
-            blocks.append(
-                f'<div align="left"><table width="96%" cellspacing="0" cellpadding="10" bgcolor="{ai_bg}">'
-                f'<tr><td style="color:{text};"><span style="color:{muted}; font-size:10px; font-weight:600;">QUIETWRITER</span><br><div style="color:{text};">{body}</div></td></tr></table></div><br>'
-            )
+            stream_text = self.current_assistant
+            marker_at = stream_text.find('[[QW_MEMORY|')
+            if marker_at >= 0:
+                stream_text = stream_text[:marker_at].rstrip()
+            if stream_text:
+                body = markdown_to_html(stream_text)
+                blocks.append(
+                    f'<div align="left"><table width="96%" cellspacing="0" cellpadding="10" bgcolor="{ai_bg}">'
+                    f'<tr><td style="color:{text};"><span style="color:{muted}; font-size:10px; font-weight:600;">QUIETWRITER</span><br><div style="color:{text};">{body}</div></td></tr></table></div><br>'
+                )
         self.chat.setHtml(f'<html><body style="margin:4px; background:{theme["panel"]}; color:{text};">' + ''.join(blocks) + '</body></html>')
         cur=self.chat.textCursor(); cur.movePosition(QTextCursor.End); self.chat.setTextCursor(cur)
 

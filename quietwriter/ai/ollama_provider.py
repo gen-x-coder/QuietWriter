@@ -61,18 +61,79 @@ class OllamaProvider(AIProvider):
             return
         raise RuntimeError(f'{prefix}: {cls._error_detail(r)}')
 
-    def list_models(self, timeout: float = 2.5) -> list[dict]:
+    @staticmethod
+    def _thinking_capability(show_data: dict) -> dict:
+        """Normalize Ollama /api/show thinking metadata for the UI.
+
+        A brain marker means QuietWriter can explicitly request think=false.
+        `values: [false]` is Ollama's documented "no thinking support" case,
+        so it deliberately does not receive the marker.
+        """
+        if not isinstance(show_data, dict):
+            show_data = {}
+        thinking = show_data.get('thinking')
+        if isinstance(thinking, dict):
+            values = list(thinking.get('values') or [])
+            has_thinking_mode = any(value is not False for value in values)
+            return {
+                'thinking_supported': bool(has_thinking_mode),
+                'thinking_can_disable': bool(has_thinking_mode and any(value is False for value in values)),
+                'thinking_control_known': True,
+                'thinking_values': values,
+                'thinking_default': thinking.get('default'),
+            }
+
+        # Older/current Ollama builds and some model manifests expose only the
+        # generic capability list (the same information printed by
+        # `ollama show`).  That is enough to know the model can think, but not
+        # enough to prove that this exact model variant honours think=false.
+        capabilities = show_data.get('capabilities') or []
+        has_capability = any(str(value).strip().lower() == 'thinking' for value in capabilities)
+        if has_capability:
+            return {
+                'thinking_supported': True,
+                'thinking_can_disable': None,
+                'thinking_control_known': False,
+                'thinking_values': [],
+                'thinking_default': None,
+            }
+        return {
+            'thinking_supported': None,
+            'thinking_can_disable': None,
+            'thinking_control_known': False,
+            'thinking_values': [],
+            'thinking_default': None,
+        }
+
+    def _show_model(self, model: str, timeout: float) -> dict:
+        r = requests.post(f'{self.base_url}/api/show', json={'model': model}, timeout=timeout)
+        self._raise_detailed(r, f'Ollama modelinformatie ophalen mislukt voor {model}')
+        data = r.json()
+        return data if isinstance(data, dict) else {}
+
+    def list_models(self, timeout: float = 2.5, include_capabilities: bool = True) -> list[dict]:
         r = requests.get(f'{self.base_url}/api/tags', timeout=timeout)
         self._raise_detailed(r, 'Ollama modellen ophalen mislukt')
-        return [
-            {'name': m.get('name', ''), 'size': int(m.get('size', 0) or 0)}
-            for m in r.json().get('models', []) if m.get('name')
-        ]
+        models = []
+        for row in r.json().get('models', []):
+            name = row.get('name', '')
+            if not name:
+                continue
+            info = {'name': name, 'size': int(row.get('size', 0) or 0)}
+            if include_capabilities:
+                try:
+                    info.update(self._thinking_capability(self._show_model(name, timeout)))
+                except Exception:
+                    # Capability discovery is informative. A single model with
+                    # incomplete/older metadata must not make model refresh fail.
+                    info.update(self._thinking_capability({}))
+            models.append(info)
+        return models
 
 
     def is_available(self) -> bool:
         try:
-            self.list_models(); return True
+            self.list_models(include_capabilities=False); return True
         except Exception:
             return False
 
@@ -113,6 +174,12 @@ class OllamaProvider(AIProvider):
 
     def stream_chat(self, model: str, messages: list[dict], **options):
         payload = {'model': model, 'messages': messages, 'stream': True}
+        # Ollama's native /api/chat expects `think` at the top level, not
+        # inside the generic model `options` object. Omitting it keeps the
+        # model's own default; False explicitly requests non-thinking mode.
+        think = options.pop('think', None)
+        if think is not None:
+            payload['think'] = bool(think)
         if options:
             payload['options'] = {k: v for k, v in options.items() if v is not None}
         state = {'buffer': '', 'thinking': False}

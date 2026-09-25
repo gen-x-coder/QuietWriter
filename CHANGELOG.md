@@ -1,5 +1,125 @@
 # Changelog
 
+## 0.24.0 — afbeeldingslayout en eenvoudige tekstomloop
+
+- Afbeeldingen hebben nu drie eenvoudige presentatie-eigenschappen naast alt-tekst en onderschrift: **Breedte** (Klein/Middel/Groot/Volledige breedte), **Plaatsing** (Links/Midden/Rechts) en optionele **Tekstomloop** voor links/rechts geplaatste afbeeldingen.
+- Nieuwe afbeeldingen starten rustig als **Groot + Midden + geen omloop**. Bestaande manuscripten zonder layoutmetadata behouden hun historische gedrag: **Volledige breedte + Midden + geen omloop**.
+- Layout blijft gewone, leesbare Markdown. QuietWriter bewaart alleen een optionele HTML-comment achter het afbeeldingsblok, bijvoorbeeld `<!-- qw:image width=medium align=left wrap=true -->`; andere Markdownlezers mogen die metadata veilig negeren.
+- Volledige breedte normaliseert naar Midden en schakelt tekstomloop uit. Gecentreerde afbeeldingen kunnen eveneens geen tekstomloop krijgen; de UI voorkomt daardoor combinaties zonder zinvolle presentatie.
+- Het afbeeldingspaneel toont de gekozen relatieve breedte en plaatsing direct in de preview. De manuscripteditor positioneert de beschermde afbeeldingskaart overeenkomstig links/midden/rechts en toont een compacte layoutregel; echte live tekstomloop in de editor wordt bewust niet gesimuleerd met een fragiele custom-renderlaag.
+- EPUB-export vertaalt de intentie naar semantische CSS-klassen: 30/50/70/100% relatieve breedte, links/midden/rechts en `float`-gebaseerde omloop. Als een reader floats vereenvoudigt blijft de afbeelding als normaal blok leesbaar.
+- Zoek/vervang en spelling beschermen ook de QuietWriter-layoutcomment; alt-tekst en onderschrift blijven wel gewone doorzoekbare tekst.
+- Markdown-media-export is uit de actieve productplanning gehaald. De volgende productstap is een **PDF-spike**, gevolgd door PDF-uitwerking als de Qt-route kwalitatief voldoet en daarna bredere EPUB-reader-validatie (Calibre als eerste referentie).
+- Nieuwe regressietests dekken legacy-defaults, layout-roundtrip, normalisatie, beschermde metadata, EPUB-klassen/CSS en de volledige insert/edit-pipeline.
+- Pakketversie naar 0.24.0 verhoogd.
+
+## 0.23.11 — Ollama thinking-capability fallback
+
+- Ollama-modeldetectie gebruikt naast het gedetailleerde `thinking`-object nu ook de algemene `capabilities`-lijst uit `/api/show`. Modellen die zoals `ollama show` alleen `Capabilities: thinking` rapporteren krijgen daardoor correct de 🧠-markering.
+- De 🧠-betekenis is aangescherpt naar **thinking/reasoning ondersteund**. Als gedetailleerde metadata expliciet meldt dat `false` niet beschikbaar is, blijft **Thinking uitschakelen** disabled; bij capability-only metadata mag QuietWriter `think:false` aanvragen zonder te claimen dat iedere modelvariant dit gegarandeerd honoreert.
+- Tooltips en AI-helptekst maken het onderscheid tussen bekende toggle-ondersteuning en capability-only detectie zichtbaar.
+- Nieuwe regressietests dekken de `/api/show`-vorm die overeenkomt met `ollama show qwen3:4b` en `deepseek-r1:8b`.
+- Pakketversie naar 0.23.11 verhoogd.
+
+## 0.23.10 — zichtbare thinking-capabilities per model
+
+- De modelkeuze in Instellingen → AI toont voortaan **🧠** vóór modellen waarvoor de gekozen provider expliciet meldt dat thinking/reasoning kan worden uitgeschakeld. Het icoon is alleen presentatie; het echte model-id blijft ongewijzigd bij opslaan en aanvragen.
+- Ollama-capabilities worden tijdens modeldetectie via `/api/show` gelezen. Alleen modellen waarvan `thinking.values` zowel een thinking-modus als `false` bevat krijgen het icoon. `values: [false]` wordt terecht als geen thinking gezien; modellen met alleen niveaus zoals `low/medium/high` worden niet ten onrechte als uitschakelbaar gemarkeerd.
+- OpenRouter gebruikt `supported_parameters` uit de modellen-API; modellen met de genormaliseerde parameter `reasoning` krijgen de thinking-markering.
+- De instelling **Thinking uitschakelen** wordt disabled wanneer QuietWriter voor het geselecteerde, opgehaalde model expliciet weet dat uitschakelen niet wordt ondersteund. Bij onbekende metadata blijft de instelling beschikbaar in plaats van ondersteuning te verzinnen.
+- De AI-instellingen leggen de markering uit: zonder thinking zijn antwoorden vaak sneller en directer en dat kan prettig zijn bij creatief schrijven; het effect op stijl en kwaliteit verschilt per model.
+- Capability-ophalen is best-effort: ontbrekende of oudere Ollama-metadata bij één model mag de volledige modellenlijst niet blokkeren.
+- Nieuwe regressietests bewaken Ollama `thinking.values`, OpenRouter `supported_parameters`, het gescheiden displaylabel/model-id en de dynamische thinking-control.
+- Pakketversie naar 0.23.10 verhoogd.
+
+## 0.23.9 — compacte AI-zijbalk en thinking-regie
+
+- Het AI-paneel is opnieuw geordend rond de chat: alleen **AI-assistent** en **Nieuw gesprek** blijven permanent bovenaan; manuscriptcontext, Planning-context en snelacties staan compact onder de chat/composer en klappen alleen open wanneer ze nodig zijn.
+- **Huidig hoofdstuk** blijft de standaardcontext maar neemt niet langer permanent ruimte in. De compacte knop **Context** toont alleen **Context · aangepast** wanneer een andere manuscriptcontext of Planning-selectie actief is.
+- **Context bekijken** opent voortaan een aparte inspectiedialoog in plaats van een blijvend tekstvak in de smalle AI-zijbalk. De geselecteerde Planning-inhoud blijft daarin letterlijk controleerbaar.
+- **Snelacties** zijn inklapbaar. In Instellingen → AI kan **Snelacties standaard uitklappen** worden gekozen; standaard blijft de zijbalk compact.
+- Nieuwe AI-instelling **Thinking uitschakelen**. Bij Ollama stuurt QuietWriter `think: false` als top-level `/api/chat`-parameter; bij OpenRouter wordt `reasoning.enabled=false` meegestuurd. Als de instelling uit staat gebruikt QuietWriter de standaard van provider/model. Met thinking uit gebruikt de tijdelijke status **AI werkt…** in plaats van **Denken…**.
+- Ollama behandelt `think` niet meer als generieke modeloptie: de parameter staat bewust op requestniveau zodat ondersteunde thinking-modellen hem daadwerkelijk kunnen respecteren.
+- Nieuwe regressietests bewaken de providerpayloads, compacte AI-layout en opslag van beide nieuwe AI-voorkeuren.
+- Pakketversie naar 0.23.9 verhoogd.
+
+## 0.23.8 — AI-snelacties
+
+- Het AI-paneel heeft vier compacte **Snelacties**: **Feedback**, **Herschrijf selectie**, **Persona-check** en **Feitencheck**. De vierde actie is toegevoegd op basis van praktijkgebruik met Boekgeheugen en continuïteitscontrole.
+- Snelacties zijn bewust alleen bewerkbare prompttemplates. Een klik vult het gewone AI-invoerveld en verstuurt niets automatisch; de gebruiker kan de opdracht altijd nog aanpassen voordat Qwen/Ollama/OpenRouter wordt aangeroepen.
+- **Herschrijf selectie** is alleen beschikbaar wanneer daadwerkelijk manuscripttekst geselecteerd is. De prompt vraagt expliciet betekenis, feiten, perspectief en bedoeling te behouden en respecteert de bestaande persona-, boekprofiel-, geheugen- en Planning-context.
+- **Feedback** en **Feitencheck** verwijzen expliciet naar de bestaande contextlagen; **Persona-check** controleert stijl en stem zonder automatisch te herschrijven.
+- Alle snelacties worden tijdens een lopende AI-opdracht tijdelijk uitgeschakeld en gebruiken dezelfde rustige `suggestionButton`-interactiestijl als andere compacte keuzes.
+- Nieuwe regressietests bewaken de vier prompttemplates, selection-only gedrag en dat een snelactie nooit rechtstreeks `send()` aanroept.
+- Pakketversie naar 0.23.8 verhoogd.
+
+## 0.23.7 — zichtbare geheugenbevestiging in AI-chat
+
+- Na **Onthouden** verschijnt direct een subtiele lokale QuietWriter-regel in de AI-chat, bijvoorbeeld **Opgeslagen in Boekgeheugen · Canon & feiten**. De gebruiker hoeft de statusbalk daardoor niet te zien om te weten dat de actie geslaagd is.
+- Dezelfde bevestiging verschijnt na **Bewerken → Onthouden**. De geheugenkaart verdwijnt daarna zoals voorheen wanneer het voorstel is afgehandeld.
+- Bevestigingsregels worden als lokaal `notice`-bericht in de conversatie bewaard zodat ze na heropenen zichtbaar blijven, maar worden nooit als user/assistant-history terug naar het AI-model gestuurd.
+- Foutgedrag blijft ongewijzigd: bij een mislukte opslag blijft de voorstelkaart staan met de concrete foutmelding.
+- Regressietests bewaken zichtbare chatfeedback, beide onthoudroutes en uitsluiting van notices uit providercontext.
+- Pakketversie naar 0.23.7 verhoogd.
+
+## 0.23.6 — Onthouden hotfix
+
+- **Onthouden** overschrijft een zojuist toegevoegd AI-geheugenvoorstel niet langer vlak vóór de schijfwrite met de nog zichtbare, oudere tekst uit de Boekgeheugen-editor.
+- Formulieropslag en programmatic geheugenopslag zijn gescheiden: gewone **Opslaan** synchroniseert eerst het actieve tekstveld; een goedgekeurd AI-voorstel persisteert juist de reeds samengestelde `self.memory`-state zonder die opnieuw uit de widget te lezen.
+- De bestaande succes-/foutfeedback uit 0.23.5 blijft behouden. Na een geslaagde opslag verdwijnt de voorstelkaart en staat de regel direct in `ai/memory.md`.
+- Regressietest toegevoegd voor exact de 0.23.5-volgorde waarin `_store_editor()` de zojuist geappende regel weer verwijderde.
+- Pakketversie naar 0.23.6 verhoogd.
+
+## 0.23.5 — AI-context en geheugenactie hardening
+
+- **Onthouden** is niet langer een stille UI-actie: vóór opslag wordt Boekgeheugen expliciet aan het actieve live boek gekoppeld. Een geslaagde actie geeft **Opgeslagen in Boekgeheugen** in de statusbalk; een mislukte actie laat de voorstelkaart staan en toont daar de fout in plaats van zonder feedback niets te doen.
+- **Bewerken → Onthouden** gebruikt dezelfde persistente route en dezelfde feedback als direct Onthouden. Een conflict waarbij de schijfversie wordt gekozen blijft het voorstel zichtbaar houden.
+- Het toevoegen van geheugenregels is als UI-onafhankelijke Markdown-operatie afgedekt: de regel komt als gewone bullet in de gekozen rubriek en exacte duplicaten worden niet opnieuw toegevoegd.
+- De AI-systeemprompt is uit de Qt-widget gehaald naar een aparte testbare promptbuilder. Regressietests controleren nu de daadwerkelijke promptinhoud in plaats van alleen UI-bronregels.
+- **Planning-context** wordt in de prompt direct na de gekozen manuscriptcontext geplaatst en krijgt een expliciete instructie dat de gebruiker deze informatie voor de huidige vraag bewust heeft geselecteerd en dat AI die actief moet gebruiken wanneer relevant.
+- **Context bekijken** toont voortaan de letterlijke geselecteerde Planning-inhoud (personages, scènes en notities), zodat zichtbaar te controleren is wat werkelijk naar het model gaat.
+- Nieuwe regressietests dekken geheugenappend/deduplicatie, actieve-book binding, succes/foutfeedback en de exacte Planning-inhoud van de uiteindelijke systeemprompt.
+- Pakketversie naar 0.23.5 verhoogd.
+
+## 0.23.4 — Gerichte Planning-context voor AI
+
+- Het AI-paneel heeft een nieuwe **Planning-context…**-keuze. Per geopend boek kan de gebruiker specifieke personages, specifieke scènes en optioneel de vrije Planning-notities aanvinken.
+- Alleen expliciet geselecteerde Planning-data wordt meegestuurd. QuietWriter voegt geen volledige Planning-database automatisch aan iedere vraag toe; kleine lokale modellen houden zo een compacte, doelgerichte context.
+- Geselecteerde personages worden met hun relevante profielvelden en relaties aangeleverd; geselecteerde scènes bevatten synopsis, hoofdstuk, betrokken personages, locatie, doel, conflict, uitkomst, status en notities.
+- De AI-instructie onderscheidt drie bronnen expliciet: manuscript = wat daadwerkelijk in het verhaal staat, Planning = wat bedoeld/gepland is, Boekgeheugen = blijvende afspraken/kennis. Verschillen moeten benoemd worden en mogen niet stil worden samengevoegd.
+- De Planning-selectie blijft tijdens het geopende boek actief, maar wordt bij een echte boekwissel leeggemaakt. Er wordt niets extra op schijf opgeslagen.
+- Pakketversie naar 0.23.4 verhoogd.
+
+## 0.23.3 — Actief Boekgeheugen en geheugenvoorstellen
+
+- De AI-systeeminstructie gebruikt Boekgeheugen actiever: bij analyse, feedback, feitencontrole en herschrijven moet het model relevante geheugenfeiten en besluiten vergelijken met de actuele manuscriptcontext en duidelijke tegenstrijdigheden uit zichzelf signaleren.
+- Actuele manuscripttekst blijft autoritatief wanneer het verhaal aantoonbaar is veranderd; een oudere geheugenregel wordt dan niet stil als waarheid afgedwongen.
+- AI kan maximaal twee duurzame geheugenvoorstellen aan een antwoord koppelen via een klein modelvriendelijk intern markerformaat. Het markerblok wordt nooit als gewone chattekst opgeslagen of getoond.
+- Geheugenvoorstellen verschijnen als een zichtbare kaart met **Onthouden · Bewerken · Negeren**. Alleen een expliciete gebruikersactie schrijft naar `ai/memory.md`; AI heeft nog steeds geen autonome schrijfrechten op het geheugen.
+- **Bewerken** laat zowel categorie als tekst aanpassen voor opslag. Exact dubbele geheugenregels worden niet nogmaals toegevoegd.
+- De interne voorstelmarker wordt ook tijdens streaming verborgen, zodat er geen technische protocoltekst in de chat flitst.
+
+## 0.23.2 — Transparant boekgeheugen
+
+- Nieuw **Boekgeheugen** als zelfstandige boekpagina naast Boekprofiel. De gebruiker beheert vijf vrije geheugenrubrieken: Canon & feiten, Stijl van dit boek, Besluiten, Terugkerende voorkeuren en Open aandachtspunten.
+- Per boek is `ai/memory.md` de enige bron van waarheid. Het bestand blijft gewone, leesbare Markdown en wordt pas aangemaakt wanneer de gebruiker het geheugen expliciet opslaat.
+- Boekgeheugen is bewust handmatig in deze release: AI leest het mee maar kan `memory.md` nergens zelf wijzigen. Automatische of voorgestelde herinneringen horen pas in 0.23.3.
+- `ai/memory.md` valt onder dezelfde revision/conflictbeveiliging, versiegeschiedenis en herstelroute als Boekprofiel. Externe wijzigingen worden nooit stil overschreven.
+- Same-book reloads mergen geheugenvelden veilig: lokaal gewijzigde rubrieken blijven staan, onaangeraakte rubrieken volgen de nieuwste schijfversie.
+- AI ontvangt voortaan vier zichtbare lagen: globale Schrijverspersona, projectspecifiek Boekprofiel, expliciet Boekgeheugen en de gekozen manuscriptcontext. Als actuele manuscripttekst aantoonbaar botst met geheugen, krijgt de actuele tekst voorrang en moet AI het verschil benoemen.
+- Planning blijft de bron voor personages, scènes en outline; Boekgeheugen is bedoeld voor boekbrede kennis, beslissingen en terugkerende voorkeuren die niet al gestructureerd elders staan.
+- Pakketversie naar 0.23.2 verhoogd.
+
+## 0.23.1 — Boekprofiel en Nederlandse voorbeeldpersona’s
+
+- Nieuw **Boekprofiel** als zelfstandige boekpagina naast Boekdetails/Exporteren. De UI gebruikt dezelfde rustige profielopzet als de Schrijverspersona, met vrije tekst onder vaste rubrieken voor Genre & doelgroep, Kernpremisse, Vertelperspectief & tijd, Sfeer & toon, Thema’s & motieven, Setting & wereld, Tempo & spanningsboog, Relaties/romantiek/intensiteit, Afwijkingen van schrijverspersona, Redactionele aandachtspunten en Aanvullende instructies.
+- Per boek blijft `ai/boekprofiel.md` de enige bron van waarheid. Het bestand is gewone leesbare Markdown, wordt pas bij Opslaan aangemaakt en kan buiten QuietWriter met iedere teksteditor worden bekeken of bewerkt.
+- Boekprofielen vallen onder dezelfde revision/conflictbeveiliging en versiegeschiedenis als Planning/Publicatie. `ai/` wordt meegenomen in snapshots en herstel; een externe wijziging geeft een expliciete keuze tussen lokaal profiel en schijfversie.
+- Same-book reloads zijn profielbewust: lokaal gewijzigde velden blijven staan, terwijl onaangeraakte velden de nieuwste schijfwaarden overnemen. Zo veroorzaakt een conflict elders in het boek geen stille profieloverschrijving.
+- AI ontvangt voortaan drie zichtbare lagen: globale **Schrijverspersona**, projectspecifiek **Boekprofiel** en de gekozen manuscriptcontext. Als het boekprofiel bewust afwijkt van de persona, heeft die projectspecifieke instructie voor dat boek voorrang.
+- De drie voorbeeldpersona’s zijn vervangen door Nederlandse vertrekpunten: **Chantal van Gastel** (feelgood/chicklit), **Saskia Noort** (thriller) en **Carry Slee** (jeugd/tiener). Het blijven bewerkbare profielen op basis van brede genre-/vertelkenmerken; er wordt geen auteurstekst meegeleverd of gekopieerd.
+- Pakketversie naar 0.23.1 verhoogd.
+
 ## 0.23.0 — Gestructureerde schrijverspersona
 
 - De Schrijverspersona is opnieuw ontworpen als een begrijpelijk profiel met twaalf vaste onderdelen: Stem & toon, Vertelstijl, Taal & woordkeuze, Zinnen & ritme, Beschrijving & zintuigen, Dialoog & interactie, Emotie/spanning/intimiteit, Scènes & verteltempo, Redactionele voorkeuren, Vermijden, Voorbeeldteksten en Aanvullende instructies.
