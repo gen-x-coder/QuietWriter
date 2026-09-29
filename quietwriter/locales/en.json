@@ -703,5 +703,6 @@
   "media_manager.cleanup_confirm": "QuietWriter will remove {count} unused image(s) from the live book. A complete recovery point is created in Version History first. Continue?",
   "media_manager.cleanup_error": "Cleanup was not performed.\n\n{error}",
   "media_manager.cleanup_leftovers": "{count} media item(s) were removed from the manifest, but {leftovers} file(s) could not be physically deleted because of a file lock. They remain visible as unregistered.",
-  "media_manager.cleanup_done": "{count} unused image(s) cleaned; recovery point saved in Version History."
+  "media_manager.cleanup_done": "{count} unused image(s) cleaned; recovery point saved in Version History.",
+  "settings.general.autosave_always": "QuietWriter saves changes automatically. Ctrl+S remains available to save immediately."
 }

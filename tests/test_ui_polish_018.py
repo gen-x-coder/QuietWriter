@@ -24,10 +24,11 @@ def test_font_preview_is_beside_font_selector():
     assert "fh.addWidget(self.editor_font, 0, Qt.AlignTop); fh.addWidget(preview_card, 1)" in source
 
 
-def test_autosave_help_explains_manual_save():
+def test_autosave_help_explains_always_on_save():
     source = SETTINGS.read_text(encoding='utf-8')
     assert 'Ctrl+S' in source
-    assert 'drie seconden' in source
+    assert 'slaat wijzigingen automatisch op' in source
+    assert 'self.autosave = QCheckBox' not in source
 
 
 def test_settings_save_button_tracks_dirty_state():

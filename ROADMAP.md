@@ -299,3 +299,31 @@ De AI-laag krijgt voorrang boven de eerder geplande portable Markdown-media. De 
 
 ### Later onderzoek
 - Reedsy en vergelijkbare schrijfsystemen systematisch vergelijken voordat nieuwe grote schrijf-/publicatiefuncties worden gekozen.
+
+## 0.29.1 — Integriteit/live-workspace aansluiting
+
+- Centrale reload vóór audit en na herstel.
+- Stale editorstate mag herstelde inhoud niet meer overschrijven.
+- Extern verdwenen/beschadigde bestanden zijn direct vanuit Integriteit herstelbaar zonder omweg via Boekenplank.
+- Geblokkeerde en future-format boeken blijven fail-closed/read-only.
+- Recovery lookup per audit gecachet.
+- Daarna: 0.30 Editor polish (autosave altijd aan, woordtelling, spelling eerst technisch ontwerpen met Claude).
+
+
+## 0.29.2–0.29.4 — Corrupte tekst fail-closed
+- 0.29.2 maakte Integriteit bereikbaar bij ongeldige UTF-8 en gaf betrokken pagina's een alleen-lezen foutstaat.
+- 0.29.3 verplaatst de doorslaggevende bescherming naar storage: gewone saves mogen een bestaande corrupte tekstbron nooit vervangen.
+- UI-flags voorkomen daarnaast zinloze/misleidende mutatieacties op een beschadigd hoofdstuk, Boekgeheugen of Boekprofiel.
+- Expliciet herstel via Integriteit blijft de enige route die corrupte bronbytes mag vervangen.
+- 0.29.4 voorkomt dat de hoofdstuk-corruptievlag naar Voorwerk/Achterwerk lekt en maakt zoeken/vervangen/dupliceren bestand tegen corrupte andere hoofdstukken.
+- Na runtime-groen kan 0.29.x worden afgesloten; de transactionele `adopt_active_book()`-verbetering blijft bewust voor 0.30.0.
+
+### 0.30.0 extra stabiliteit
+- Maak `adopt_active_book()` transactioneel/all-or-nothing zodat een mislukte reload nooit pagina’s met verschillende Book-instanties achterlaat.
+
+
+## 0.31.0 — Navigatie en kleine editorpolish
+
+Afgerond in deze release: subtiele navigatiegroepen, autosave altijd aan en expliciete boektelling. Schrijverspersona blijft een zelfstandige globale schrijffunctie en is niet onder Instellingen geplaatst.
+
+Vervolg: transactionele/all-or-nothing adoptie van een live boek en daarna de spellingsarchitectuur technisch laten beoordelen vóór wijzigingen aan de spellings-UX.

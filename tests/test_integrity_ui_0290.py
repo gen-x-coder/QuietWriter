@@ -67,3 +67,12 @@ def test_legacy_book_stays_legacy_until_explicit_migration(tmp_path):
     assert checkpoint is not None
     assert migrated.format_version == 2
     assert json.loads(migrated.manifest_path.read_text(encoding='utf-8'))['format'] == 2
+
+
+def test_blocked_state_can_be_queried_without_clearing_it(tmp_path):
+    lib, book = make(tmp_path)
+    assert not lib.is_book_blocked(book)
+    lib.block_book(book)
+    assert lib.is_book_blocked(book)
+    with pytest.raises(BookBlockedError):
+        lib.verify_book_unchanged(book)

@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.31.0 — Rustigere navigatie en editorpolish
+
+- Hoofdnavigatie gegroepeerd met subtiele kopjes: Bibliotheek, Huidig boek, Schrijven en Programma.
+- Groepskopjes verdwijnen in de ingeklapte rail; Huidig boek verschijnt alleen wanneer een boek open is.
+- Automatisch opslaan is nu vast gedrag en kan niet meer worden uitgezet. Ctrl+S blijft direct opslaan.
+- De oude autosave-schakelaar is uit Instellingen verwijderd; bestaande configuraties worden naar autosave=true genormaliseerd.
+- De boekteller heet nu expliciet `Boek bevat … woorden`; de hoofdstukstatus onderin blijft `Hoofdstuk x van y · … woorden`.
+- Geen wijzigingen aan spellingscontrole of transactionele boekadoptie in deze release.
+
+## 0.29.4 — Publicatie-save en corruptiebestendige zoekacties
+
+- De hoofdstuk-corruptievlag geldt nu uitsluitend voor manuscripttekst en kan publicatietekst niet meer stil overslaan.
+- Voorwerk/Achterwerk wist de hoofdstuk-corruptiestatus expliciet; publicatie-save wordt vóór de hoofdstukguard afgehandeld.
+- Zoeken over sectie/boek slaat onleesbare hoofdstukken over en meldt dit in de statusbalk.
+- Alles vervangen slaat onleesbare hoofdstukken over in plaats van halverwege te crashen.
+- Dupliceren van een beschadigd hoofdstuk wordt veilig geweigerd met `CorruptSourceError`.
+- Extra regressietest borgt dat dupliceren geen enkel bestand wijzigt.
+
+
+## 0.29.3 — Corrupte bronbestanden fail-closed
+- Nieuwe `CorruptSourceError` in de storage-laag weigert normale writes over bestaande tekstbestanden die geen geldige UTF-8 zijn.
+- De guard geldt voor hoofdstukken, Boekgeheugen, Boekprofiel en Planning-notities; alleen de expliciete Integriteit-herstelroute kan zulke bytes vervangen.
+- Boekgeheugen en Boekprofiel bewaren een expliciete corrupte-bronstatus: navigatie, sectiewissels, Opslaan en AI-Onthouden kunnen de bron niet meer overschrijven.
+- De editor bewaart een expliciete corrupte-hoofdstukstatus; autosave en programmatische mutaties worden geneutraliseerd. Invoegen, AI en spelling zijn uitgeschakeld zolang het huidige hoofdstuk beschadigd is; Zoeken blijft bruikbaar maar vervangen niet.
+- Een geldig leeg UTF-8-bestand blijft normaal schrijfbaar.
+
+## 0.29.2 — Onleesbare tekst veilig herstellen
+- Integriteit blijft bereikbaar wanneer gewone tekstbestanden ongeldige UTF-8 bevatten.
+- Huidig hoofdstuk, Boekprofiel, Boekgeheugen en Planning-notities krijgen een expliciete alleen-lezen foutstaat bij decode-fouten.
+- Beschadigde tekst wordt nooit stil als lege inhoud geladen; autosave kan het bronbestand daardoor niet overschrijven.
+- Herstel blijft centraal herladen zodat een hersteld bestand direct weer de actuele inhoud toont.
+- Transactionele/all-or-nothing centrale adopt staat expliciet gepland voor 0.30.0.
+
+## 0.29.1 — Herstel sluit nu veilig aan op de live editor
+
+- Integriteit neemt vóór iedere audit eerst centraal de actuele schijftoestand over. Een bestand dat tijdens een geopende sessie verdwijnt of beschadigt kan daardoor direct worden hersteld zonder eerst via de Boekenplank te heropenen.
+- Na een geslaagd herstel wordt het boek centraal opnieuw geladen en geadopteerd. Editor, Planning, Boekdetails, Boekprofiel, Boekgeheugen, Media en Export wijzen daarna allemaal naar dezelfde herstelde live toestand.
+- Het huidige hoofdstuk-id wordt bij de reload behouden, zodat de editor het herstelde hoofdstuk direct opnieuw van schijf toont in plaats van stale tekst te bewaren.
+- Future-format en corrupte manifests blijven read-only auditbaar: als `load_book` ze niet veilig kan adopteren, neemt de integriteitschecker het over.
+- Een bewust geblokkeerd boek wordt bij een audit niet stil opnieuw getrackt of gedeblokkeerd. `Library.is_book_blocked()` maakt die toestand expliciet.
+- Herstelbron-lookup wordt per audit gecachet zodat selecteren van dezelfde issue niet telkens de volledige versiegeschiedenis hoeft te doorlopen.
+
 ## 0.29.0 — Integriteit & herstel
 
 - Nieuwe pagina **Integriteit** voor het geopende boek.

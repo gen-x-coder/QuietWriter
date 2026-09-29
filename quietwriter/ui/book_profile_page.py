@@ -27,6 +27,7 @@ class BookProfilePage(QWidget):
         self._current_key: str | None = None
         self._loading = False
         self.dirty = False
+        self._corrupt_source = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(32, 26, 36, 30)
@@ -85,11 +86,13 @@ class BookProfilePage(QWidget):
         return next(section for section in SECTIONS if section.key == key)
 
     def _store_editor(self):
+        if self._corrupt_source:
+            return
         if self._current_key is not None:
             self.profile[self._current_key] = self.edit.toPlainText()
 
     def _section_changed(self, item, _previous=None):
-        if item is None:
+        if item is None or self._corrupt_source:
             return
         if not self._loading:
             self._store_editor()
@@ -194,7 +197,21 @@ class BookProfilePage(QWidget):
             return True
         self._loading = True
         try:
-            self.profile = parse_book_profile(self.main.library.read_book_profile(self.book))
+            try:
+                self.profile = parse_book_profile(self.main.library.read_book_profile(self.book))
+            except UnicodeDecodeError:
+                self._corrupt_source = True
+                self.edit.setPlainText(tr(
+                    'corrupt_text.readonly',
+                    'Dit bestand is beschadigd en kan niet als UTF-8 worden gelezen.\n\nOpen Integriteit om het te controleren en zo mogelijk te herstellen.'
+                ))
+                self.edit.setReadOnly(True)
+                self.save_button.setEnabled(False)
+                self.status.setText(tr('corrupt_text.status', 'Beschadigd · alleen-lezen'))
+                self.dirty = False
+                return True
+            self._corrupt_source = False
+            self.edit.setReadOnly(False)
             self._loaded_profile = deepcopy(self.profile)
             row = self.sections.currentRow()
             if row < 0:
@@ -215,6 +232,8 @@ class BookProfilePage(QWidget):
 
     def save(self):
         if not self.book:
+            return True
+        if self._corrupt_source:
             return True
         self._store_editor()
         text = render_book_profile(self.profile)

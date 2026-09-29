@@ -703,5 +703,6 @@
   "media_manager.cleanup_confirm": "QuietWriter verwijdert {count} ongebruikte afbeelding(en) uit het live boek. Eerst wordt automatisch een volledig herstelpunt in Versiegeschiedenis gemaakt. Doorgaan?",
   "media_manager.cleanup_error": "Opruimen is niet uitgevoerd.\n\n{error}",
   "media_manager.cleanup_leftovers": "{count} media-item(s) zijn uit het manifest verwijderd, maar {leftovers} bestand(en) konden door een bestandslock niet fysiek worden verwijderd. Ze blijven als niet-geregistreerd zichtbaar.",
-  "media_manager.cleanup_done": "{count} ongebruikte afbeelding(en) opgeruimd; herstelpunt opgeslagen in Versiegeschiedenis."
+  "media_manager.cleanup_done": "{count} ongebruikte afbeelding(en) opgeruimd; herstelpunt opgeslagen in Versiegeschiedenis.",
+  "settings.general.autosave_always": "QuietWriter slaat wijzigingen automatisch op. Ctrl+S blijft beschikbaar om direct op te slaan."
 }
