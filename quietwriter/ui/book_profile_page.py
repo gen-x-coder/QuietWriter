@@ -144,13 +144,22 @@ class BookProfilePage(QWidget):
         ).format(path=str(self.main.library.book_profile_path(book))))
         return self.reload(force=force)
 
-    def adopt_book(self, book):
-        """Rebind same-book live state and merge untouched fields from disk."""
+    def prepare_adoption(self, book):
+        """Prepare the merge and recovery snapshot before UI commit starts."""
         same_book = bool(self.book and book and self.book.id == book.id)
         if same_book and self.dirty:
             self._store_editor()
             local_profile = deepcopy(self.profile)
-            disk_profile = parse_book_profile(self.main.library.read_book_profile(book))
+            try:
+                disk_profile = parse_book_profile(self.main.library.read_book_profile(book))
+            except UnicodeDecodeError:
+                self.main.library.create_version_with_file_overrides(
+                    book, {'ai/boekprofiel.md': render_book_profile(local_profile)}, kind='conflict_local'
+                )
+                return {
+                    'mode': 'corrupt', 'conflicts': False,
+                    'local_preserved': True,
+                }
             keys = [section.key for section in SECTIONS]
             merged, conflicts = merge_scalar_fields(local_profile, self._loaded_profile, disk_profile, keys)
             if conflicts:
@@ -160,8 +169,21 @@ class BookProfilePage(QWidget):
                 self.main.library.create_version_with_file_overrides(
                     book, {'ai/boekprofiel.md': render_book_profile(local_profile)}, kind='conflict_local'
                 )
+            return {
+                'mode': 'merge', 'merged': merged, 'disk': disk_profile,
+                'conflicts': bool(conflicts),
+            }
+        return {'mode': 'reload', 'conflicts': False}
+
+    def adopt_book(self, book, *, prepared=None, show_message: bool = True):
+        """Rebind live state, optionally using a preflight adoption plan."""
+        plan = prepared if prepared is not None else self.prepare_adoption(book)
+        if plan.get('mode') == 'corrupt':
+            return self.set_book(book, force=True)
+        if plan.get('mode') == 'merge':
             self.book = book
-            self.profile = merged
+            self.profile = deepcopy(plan['merged'])
+            disk_profile = plan['disk']
             self._loaded_profile = deepcopy(disk_profile)
             self.path_label.setText(tr(
                 'book_profile.file_help',
@@ -177,7 +199,7 @@ class BookProfilePage(QWidget):
             finally:
                 self._loading = False
             self._set_dirty(self.profile != disk_profile)
-            if conflicts:
+            if plan.get('conflicts') and show_message:
                 QMessageBox.information(
                     self,
                     tr('book_profile.merge_conflict_title', 'Lokale invoer veilig bewaard'),
@@ -189,6 +211,28 @@ class BookProfilePage(QWidget):
                 )
             return True
         return self.set_book(book, force=True)
+
+    def show_adoption_message(self, prepared):
+        if prepared and prepared.get('mode') == 'corrupt' and prepared.get('local_preserved'):
+            QMessageBox.information(
+                self,
+                tr('book_profile.corrupt_preserved_title', 'Lokale invoer veilig bewaard'),
+                tr(
+                    'book_profile.corrupt_preserved_text',
+                    'Het boekprofiel op schijf is beschadigd en is alleen-lezen geopend. '
+                    'Je lokale invoer staat apart in Versiegeschiedenis. Herstel het bronbestand via Integriteit.'
+                ),
+            )
+        elif prepared and prepared.get('conflicts'):
+            QMessageBox.information(
+                self,
+                tr('book_profile.merge_conflict_title', 'Lokale invoer veilig bewaard'),
+                tr(
+                    'book_profile.merge_conflict_text',
+                    'Dit boekprofiel is op twee plaatsen in dezelfde velden gewijzigd. '
+                    'De versie op schijf is voor die velden geladen; je lokale invoer staat apart in Versiegeschiedenis.'
+                ),
+            )
 
     def reload(self, *, force: bool = False):
         if not self.book:
@@ -260,6 +304,22 @@ class BookProfilePage(QWidget):
         return True
 
     def _resolve_external_change(self, local_text: str, exc):
+        try:
+            self.main.library.read_book_profile(self.book)
+        except UnicodeDecodeError:
+            old_book = self.book
+            preferred_chapter_id = self.main.editor_page.chapter.id if self.main.editor_page.chapter else None
+            try:
+                latest = self.main.library.load_book(old_book.path)
+                self.main.adopt_active_book(latest, preferred_chapter_id)
+                return True
+            except Exception as error:
+                QMessageBox.critical(
+                    self,
+                    tr('book_profile.conflict_failed_title', 'Conflict niet opgelost'),
+                    tr('book_profile.conflict_failed', 'Er is niets bewust overschreven.\n\n{error}').format(error=error)
+                )
+                return False
         changed = '\n'.join('• ' + name for name in exc.changed_files[:6])
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Warning)

@@ -92,6 +92,12 @@ class SettingsPage(QWidget):
         self.language.setCurrentIndex(language_index if language_index >= 0 else 0)
         self._add_settings_field(gl, tr('settings.general.language', 'Programmataal'), self.language,
             tr('settings.general.language_help', 'De gekozen taal wordt na een herstart van QuietWriter toegepast.'))
+        self.advanced_options = QCheckBox(tr('settings.general.advanced_options', 'Geavanceerde opties gebruiken'))
+        self.advanced_options.setChecked(settings.value('advanced_options', True, bool))
+        self._add_settings_field(
+            gl, tr('settings.general.advanced_options', 'Geavanceerde opties gebruiken'), self.advanced_options,
+            tr('settings.general.advanced_options_help', 'Toont specialistische functies die je niet nodig hebt voor dagelijks schrijven. Voorlopig geldt dit voor Integriteit & herstel.')
+        )
         self._add_settings_section(gl, tr('settings.section.saving', 'Opslaan'))
         saving_info = QLabel(tr('settings.general.autosave_always', 'QuietWriter slaat wijzigingen automatisch op. Ctrl+S blijft beschikbaar om direct op te slaan.'))
         saving_info.setObjectName('muted')
@@ -462,6 +468,7 @@ class SettingsPage(QWidget):
             int(self.manuscript_indent.value()),
             int(self.manuscript_paragraph_spacing.value()),
             bool(self.smart_quotes.isChecked()),
+            bool(self.advanced_options.isChecked()),
             self.root.text(),
             self.cover_template.text(),
             bool(self.ai_enabled.isChecked()),
@@ -480,7 +487,7 @@ class SettingsPage(QWidget):
             self.language, self.theme, self.editor_font,
             self.editor_font_size, self.manuscript_line_spacing,
             self.manuscript_indent, self.manuscript_paragraph_spacing,
-            self.smart_quotes, self.root, self.cover_template,
+            self.smart_quotes, self.advanced_options, self.root, self.cover_template,
             self.ai_enabled, self.ai_provider, self.ollama, self.openrouter_key, self.model,
             self.ai_disable_thinking, self.ai_quick_actions_expanded,
             self.spell_enabled, self.spell_language,
@@ -808,6 +815,7 @@ class SettingsPage(QWidget):
         self.settings.setValue('manuscript_indent', int(self.manuscript_indent.value()))
         self.settings.setValue('manuscript_paragraph_spacing', int(self.manuscript_paragraph_spacing.value()))
         self.settings.setValue('smart_quotes', self.smart_quotes.isChecked())
+        self.settings.setValue('advanced_options', self.advanced_options.isChecked())
         self.settings.setValue('autosave', True)
         self.settings.setValue('workspace', self.root.text())
         self.settings.setValue('ai_enabled', self.ai_enabled.isChecked())
@@ -855,6 +863,7 @@ class SettingsPage(QWidget):
         self.manuscript_paragraph_spacing.setValue(self.original_manuscript_style.paragraph_spacing_px)
         self.smart_quotes.setChecked(self.original_manuscript_style.smart_quotes)
         for widget in (self.theme, self.editor_font, self.editor_font_size, self.manuscript_line_spacing, self.manuscript_indent, self.manuscript_paragraph_spacing, self.smart_quotes): widget.blockSignals(False)
+        self.advanced_options.setChecked(self.settings.value('advanced_options', True, bool))
         language_value = str(self.settings.value('language', 'nl') or 'nl')
         language_index = self.language.findData(language_value)
         self.language.setCurrentIndex(language_index if language_index >= 0 else 0)

@@ -97,7 +97,7 @@ def book_file_names(book_path: Path, chapter_files: Iterable[str]) -> set[str]:
     current in-memory manifest does not know about yet.
     """
 
-    names = {'book.json', 'planning/characters.json', 'planning/outline.json', 'planning/notes.md', 'publication/publication.json', 'assets/manifest.json', 'ai/boekprofiel.md', 'ai/memory.md'}
+    names = {'book.json', 'planning/characters.json', 'planning/outline.json', 'planning/notes.md', 'publication/publication.json', 'export/settings.json', 'assets/manifest.json', 'ai/boekprofiel.md', 'ai/memory.md'}
     names.update(str(Path(name).as_posix()) for name in chapter_files)
     chapters_dir = Path(book_path) / 'chapters'
     if chapters_dir.exists():

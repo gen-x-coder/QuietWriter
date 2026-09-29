@@ -29,7 +29,10 @@ def test_ai_can_be_disabled_without_discarding_configuration():
     assert "settings.value('ai_enabled', True, bool)" in settings
     assert "self.settings.setValue('ai_enabled', self.ai_enabled.isChecked())" in settings
     assert 'for control in self._ai_controls:' in settings
-    assert "self.ai_button.setVisible(enabled)" in main
+    assert 'self.ai_button.setVisible(ai_enabled)' in main
+    assert 'self.persona_button.setVisible(ai_enabled)' in main
+    assert 'self.book_profile_button.setVisible(has_book and ai_enabled)' in main
+    assert 'self.book_memory_button.setVisible(has_book and ai_enabled)' in main
     assert "if not self.main.settings.value('ai_enabled', True, bool):" in editor
 
 

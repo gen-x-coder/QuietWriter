@@ -14,6 +14,8 @@ from ..exporting import (
     export_markdown, export_pdf, run_preflight,
 )
 from ..i18n import current_locale, tr
+from ..revisions import ExternalModificationError
+from ..storage import BookBlockedError, CorruptSourceError, StorageWriteError
 from .dialogs import confirm
 
 
@@ -28,9 +30,11 @@ class ExportPage(QWidget):
         super().__init__(main)
         self.main = main
         self.book = None
-        self.store = ExportSettingsStore()
+        self.store = ExportSettingsStore(main.library)
         self.export_settings: dict = {}
         self.document = None
+        self._corrupt_source = False
+        self._loading_settings = False
         self.last_output: Path | None = None
 
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0)
@@ -175,9 +179,20 @@ class ExportPage(QWidget):
     def set_book(self, book):
         self.book = book
         self.last_output = None; self.success_box.hide()
+        self._corrupt_source = False
         if not book:
             self.setEnabled(False); return
+        settings_path = self.store.path(book)
+        if settings_path.exists():
+            try:
+                self.store.validate_source(book)
+            except CorruptSourceError:
+                self._corrupt_source = True
+                self.setEnabled(False)
+                self.subtitle.setText(tr('export.corrupt_settings', 'De exportinstellingen zijn beschadigd. Herstel ze eerst via Integriteit.'))
+                return
         self.setEnabled(True)
+        self._loading_settings = True
         self.export_settings = self.store.load(book)
         fmt = self.export_settings.get('format', 'epub')
         {'epub': self.epub_button, 'pdf': self.pdf_button, 'markdown': self.markdown_button}.get(fmt, self.epub_button).setChecked(True)
@@ -198,6 +213,7 @@ class ExportPage(QWidget):
         self._refresh_document()
         self._refresh_output_dir()
         self._format_changed()
+        self._loading_settings = False
 
     def refresh(self):
         if self.book: self.set_book(self.book)
@@ -269,6 +285,66 @@ class ExportPage(QWidget):
         self.preflight_label.setText('\n'.join(self._preflight_text(item) for item in report.items))
         self.export_button.setEnabled(report.can_export)
 
+    def _resolve_external_change(self, exc: ExternalModificationError):
+        """Reload through the established live-book conflict path before retrying settings."""
+        editor = self.main.editor_page
+        publication_pending = False
+        try:
+            current = editor.content_stack.currentWidget()
+            publication_pending = (
+                current is editor.publication_editor and editor.publication_editor.has_pending_changes()
+            ) or (
+                current is editor.publication_setup and editor.publication_setup.has_pending_changes()
+            )
+        except Exception:
+            publication_pending = False
+
+        if bool(getattr(editor, 'dirty', False)) or publication_pending:
+            editor._resolve_external_change(exc)
+            self.book = getattr(self.main, '_active_book', None) or self.book
+            self.refresh()
+            return
+
+        try:
+            latest = self.main.library.load_book(self.book.path)
+            self.main.adopt_active_book(
+                latest,
+                preferred_chapter_id=getattr(getattr(editor, 'chapter', None), 'id', None),
+                planning_changed_files=exc.changed_files,
+            )
+            self.book = latest
+            self.refresh()
+            QMessageBox.information(
+                self,
+                tr('export.external_title', 'Boek extern gewijzigd'),
+                tr('export.external_reloaded', 'Het boek is op een andere computer gewijzigd. De nieuwste versie is geladen. Kies je exportinstelling opnieuw.'),
+            )
+        except Exception as reload_error:
+            QMessageBox.warning(
+                self,
+                tr('export.external_title', 'Boek extern gewijzigd'),
+                tr('export.external_reload_failed', 'De exportinstelling is niet opgeslagen en de nieuwste versie kon niet veilig worden geladen. Er is niets overschreven.\n\n{error}', error=reload_error),
+            )
+            self.refresh()
+
+    def _persist_settings(self) -> bool:
+        if not self.book or self._corrupt_source or self._loading_settings:
+            return True
+        self.export_settings = self._settings_from_ui()
+        try:
+            self.store.save(self.book, self.export_settings)
+            return True
+        except ExternalModificationError as exc:
+            self._resolve_external_change(exc)
+            return False
+        except (CorruptSourceError, BookBlockedError, StorageWriteError) as exc:
+            QMessageBox.warning(
+                self,
+                tr('export.settings_save_title', 'Exportinstellingen niet opgeslagen'),
+                str(exc),
+            )
+            return False
+
     def _format_changed(self, *args):
         fmt = self.format_name
         self.epub_panel.setVisible(fmt == 'epub')
@@ -281,7 +357,8 @@ class ExportPage(QWidget):
         else:
             self.export_button.setText(tr('export.action.epub', 'EPUB exporteren'))
         self.export_settings = self._settings_from_ui()
-        if self.book: self.store.save(self.book, self.export_settings)
+        if not self._persist_settings():
+            return
         self._options_changed()
 
     def _options_changed(self, *args):
@@ -289,8 +366,8 @@ class ExportPage(QWidget):
         template = TEMPLATES.get(key, TEMPLATES['classic'])
         self.template_help.setText(template.description_en if current_locale() == 'en' else template.description_nl)
         self.cover_box.setEnabled(self.include_cover.isChecked() and bool(self.document and self.document.cover_asset))
-        if self.book:
-            self.export_settings = self._settings_from_ui(); self.store.save(self.book, self.export_settings)
+        if not self._persist_settings():
+            return
         self._refresh_preflight()
 
     def _output_dir(self) -> Path:
@@ -321,7 +398,8 @@ class ExportPage(QWidget):
             self.document = build_export_document(self.main.library, self.book)
         except Exception as exc:
             QMessageBox.critical(self, tr('export.error.title', 'Exporteren'), tr('export.error.snapshot', 'De boeksnapshot kon niet veilig worden gemaakt.\n\n{error}', error=exc)); return
-        self.export_settings = self._settings_from_ui(); self.store.save(self.book, self.export_settings)
+        self.export_settings = self._settings_from_ui()
+        if not self._persist_settings(): return
         report = run_preflight(self.document, self.format_name, self.export_settings)
         self._refresh_preflight()
         if not report.can_export: return

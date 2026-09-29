@@ -39,6 +39,20 @@ def _guard_existing_utf8(path: Path):
         raise CorruptSourceError(path) from exc
 
 
+def _guard_existing_json(path: Path):
+    """Fail closed before replacing an existing JSON source that no longer parses."""
+    path = Path(path)
+    if not path.exists():
+        return
+    _guard_existing_utf8(path)
+    try:
+        value = json.loads(path.read_text(encoding='utf-8'))
+    except json.JSONDecodeError as exc:
+        raise CorruptSourceError(path) from exc
+    if not isinstance(value, dict):
+        raise CorruptSourceError(path)
+
+
 class StorageWriteError(OSError):
     def __init__(self, path: Path, cause: OSError):
         self.path = Path(path); self.cause = cause

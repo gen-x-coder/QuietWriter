@@ -144,21 +144,51 @@ class BookMemoryPage(QWidget):
         ).format(path=str(self.main.library.book_memory_path(book))))
         return self.reload(force=force)
 
-    def adopt_book(self, book):
-        """Rebind same-book live state and merge untouched fields from disk."""
+    def prepare_adoption(self, book):
+        """Prepare a same-book merge before MainWindow starts rebinding pages.
+
+        Any recovery snapshot is created here, while the old workspace is still
+        completely intact.  The returned plan can therefore be committed later
+        without storage writes.
+        """
         same_book = bool(self.book and book and self.book.id == book.id)
         if same_book and self.dirty:
             self._store_editor()
             local_memory = deepcopy(self.memory)
-            disk_memory = parse_book_memory(self.main.library.read_book_memory(book))
+            try:
+                disk_memory = parse_book_memory(self.main.library.read_book_memory(book))
+            except UnicodeDecodeError:
+                # The live source became unreadable while local input is dirty.
+                # Preserve the local draft before the commit switches this page
+                # to the existing corrupt/read-only state.
+                self.main.library.create_version_with_file_overrides(
+                    book, {'ai/memory.md': render_book_memory(local_memory)}, kind='conflict_local'
+                )
+                return {
+                    'mode': 'corrupt', 'conflicts': False,
+                    'local_preserved': True,
+                }
             keys = [section.key for section in SECTIONS]
             merged, conflicts = merge_scalar_fields(local_memory, self._loaded_memory, disk_memory, keys)
             if conflicts:
                 self.main.library.create_version_with_file_overrides(
                     book, {'ai/memory.md': render_book_memory(local_memory)}, kind='conflict_local'
                 )
+            return {
+                'mode': 'merge', 'merged': merged, 'disk': disk_memory,
+                'conflicts': bool(conflicts),
+            }
+        return {'mode': 'reload', 'conflicts': False}
+
+    def adopt_book(self, book, *, prepared=None, show_message: bool = True):
+        """Rebind live state, optionally using a preflight adoption plan."""
+        plan = prepared if prepared is not None else self.prepare_adoption(book)
+        if plan.get('mode') == 'corrupt':
+            return self.set_book(book, force=True)
+        if plan.get('mode') == 'merge':
             self.book = book
-            self.memory = merged
+            self.memory = deepcopy(plan['merged'])
+            disk_memory = plan['disk']
             self._loaded_memory = deepcopy(disk_memory)
             self.path_label.setText(tr(
                 'book_memory.file_help',
@@ -174,7 +204,7 @@ class BookMemoryPage(QWidget):
             finally:
                 self._loading = False
             self._set_dirty(self.memory != disk_memory)
-            if conflicts:
+            if plan.get('conflicts') and show_message:
                 QMessageBox.information(
                     self,
                     tr('book_memory.merge_conflict_title', 'Lokale invoer veilig bewaard'),
@@ -186,6 +216,28 @@ class BookMemoryPage(QWidget):
                 )
             return True
         return self.set_book(book, force=True)
+
+    def show_adoption_message(self, prepared):
+        if prepared and prepared.get('mode') == 'corrupt' and prepared.get('local_preserved'):
+            QMessageBox.information(
+                self,
+                tr('book_memory.corrupt_preserved_title', 'Lokale invoer veilig bewaard'),
+                tr(
+                    'book_memory.corrupt_preserved_text',
+                    'Het boekgeheugen op schijf is beschadigd en is alleen-lezen geopend. '
+                    'Je lokale invoer staat apart in Versiegeschiedenis. Herstel het bronbestand via Integriteit.'
+                ),
+            )
+        elif prepared and prepared.get('conflicts'):
+            QMessageBox.information(
+                self,
+                tr('book_memory.merge_conflict_title', 'Lokale invoer veilig bewaard'),
+                tr(
+                    'book_memory.merge_conflict_text',
+                    'Dit boekgeheugen is op twee plaatsen in dezelfde velden gewijzigd. '
+                    'De versie op schijf is voor die velden geladen; je lokale invoer staat apart in Versiegeschiedenis.'
+                ),
+            )
 
     def reload(self, *, force: bool = False):
         if not self.book:
@@ -322,6 +374,25 @@ class BookMemoryPage(QWidget):
         return True
 
     def _resolve_external_change(self, local_text: str, exc):
+        # If the source itself became unreadable, there is no safe 'mine vs disk'
+        # write choice. Adoption preflight preserves the local draft in History
+        # and then switches this page to its existing read-only corrupt state.
+        try:
+            self.main.library.read_book_memory(self.book)
+        except UnicodeDecodeError:
+            old_book = self.book
+            preferred_chapter_id = self.main.editor_page.chapter.id if self.main.editor_page.chapter else None
+            try:
+                latest = self.main.library.load_book(old_book.path)
+                self.main.adopt_active_book(latest, preferred_chapter_id)
+                return True
+            except Exception as error:
+                QMessageBox.critical(
+                    self,
+                    tr('book_memory.conflict_failed_title', 'Conflict niet opgelost'),
+                    tr('book_memory.conflict_failed', 'Er is niets bewust overschreven.\n\n{error}').format(error=error)
+                )
+                return False
         changed = '\n'.join('• ' + name for name in exc.changed_files[:6])
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Warning)

@@ -144,6 +144,30 @@ class PlanningPage(QWidget):
             return 'failed'
 
     def _resolve_external_change(self,kind,value,writer,exc):
+        # An unreadable notes source cannot safely participate in the normal
+        # mine/disk write choice. MainWindow preflight will preserve the dirty
+        # local notes and commit the existing read-only corrupt state instead.
+        if kind == 'notes':
+            try:
+                self.store.load_notes(self.book)
+            except UnicodeDecodeError:
+                old_book = self.book
+                preferred_chapter_id = self.main.editor_page.chapter.id if self.main.editor_page.chapter else None
+                try:
+                    latest = self.main.library.load_book(old_book.path)
+                    changed_files = set(exc.changed_files)
+                    changed_files.add('planning/notes.md')
+                    self.main.adopt_active_book(
+                        latest, preferred_chapter_id, planning_reload_kind='notes',
+                        planning_changed_files=sorted(changed_files),
+                    )
+                    return 'disk'
+                except Exception as error:
+                    QMessageBox.critical(
+                        self, tr('planning.conflict.failed_title', 'Conflict niet opgelost'),
+                        tr('planning.conflict.failed_text', 'Er is niets bewust overschreven.\n\n{error}', error=error)
+                    )
+                    return 'failed'
         # A modal conflict dialog runs a nested Qt event loop. Pause an unrelated
         # dirty Notes autosave so its 2.5 s timer cannot fire re-entrantly while
         # the user is still choosing how to resolve another planning file.

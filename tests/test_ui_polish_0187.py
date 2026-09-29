@@ -23,11 +23,11 @@ def test_chapter_drop_is_deferred_until_after_native_drag_loop():
 
 def test_ai_visibility_is_reapplied_after_restored_window_state():
     source = (ROOT / 'quietwriter' / 'ui' / 'main_window.py').read_text(encoding='utf-8')
-    assert 'self.restore_state(); self._apply_ai_visibility();' in source
+    assert 'self.restore_state(); self._apply_feature_visibility();' in source
     sync = source[source.index('    def sync_tool_buttons'):source.index('    def build_ai_context')]
     assert "ai_enabled = self.settings.value('ai_enabled', True, bool)" in sync
     assert 'self.ai_button.setVisible(ai_enabled)' in sync
-    apply_block = source[source.index('    def _apply_ai_visibility'):source.index('    def settings_saved')]
+    apply_block = source[source.index('    def _apply_feature_visibility'):source.index('    def settings_saved')]
     assert 'self.editor_page.right.setCurrentWidget(self.editor_page.search)' in apply_block
     assert 'self.editor_page.right.hide()' in apply_block
 

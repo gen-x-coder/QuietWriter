@@ -184,13 +184,8 @@ class BookDetailsPage(QWidget):
         idx = self.published.findData(self._canonical_published(values.get('published', 'No'))); self.published.setCurrentIndex(max(0, idx))
         self.synopsis.setPlainText(str(values.get('synopsis', '') or ''))
 
-    def adopt_book_preserving_form(self, book):
-        """Rebind live state with a three-way merge for dirty metadata fields.
-
-        Local-only edits stay in the form. Disk-only edits are adopted. If the
-        same field changed differently on both sides, the disk value stays live
-        and the complete local form is first preserved in Version History.
-        """
+    def prepare_adoption(self, book):
+        """Calculate the metadata merge and preserve conflicts before commit."""
         current = self._form_values()
         previous = self._baseline_values()
         incoming = self._book_values(book)
@@ -202,6 +197,18 @@ class BookDetailsPage(QWidget):
             self.library.create_version_with_file_overrides(
                 book, {'book.json': self.library.manifest_text(local_candidate)}, kind='conflict_local'
             )
+        return {'merged': merged, 'conflicts': bool(conflicts)}
+
+    def adopt_book_preserving_form(self, book, *, prepared=None, show_message: bool = True):
+        """Rebind live state with a three-way merge for dirty metadata fields.
+
+        Local-only edits stay in the form. Disk-only edits are adopted. If the
+        same field changed differently on both sides, the disk value stays live.
+        Conflict preservation itself happens during MainWindow preflight.
+        """
+        plan = prepared if prepared is not None else self.prepare_adoption(book)
+        merged = plan['merged']
+        conflicts = bool(plan.get('conflicts'))
 
         self.book = book
         self._baseline_title = book.title
@@ -213,7 +220,7 @@ class BookDetailsPage(QWidget):
             self._refresh_cover_preview()
         self._update_header_path()
 
-        if conflicts:
+        if conflicts and show_message:
             QMessageBox.information(
                 self,
                 tr('book_details.merge_conflict_title', 'Lokale invoer veilig bewaard'),
@@ -224,6 +231,18 @@ class BookDetailsPage(QWidget):
                 ),
             )
         return conflicts
+
+    def show_adoption_message(self, prepared):
+        if prepared and prepared.get('conflicts'):
+            QMessageBox.information(
+                self,
+                tr('book_details.merge_conflict_title', 'Lokale invoer veilig bewaard'),
+                tr(
+                    'book_details.merge_conflict_text',
+                    'Dezelfde boekgegevens zijn lokaal en extern gewijzigd. '
+                    'De versie op schijf is voor die velden geladen; je lokale invoer staat apart in Versiegeschiedenis.'
+                ),
+            )
 
     def _cover_candidate(self):
         if self.pending_cover == '__REMOVE__':

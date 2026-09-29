@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from .publication_models import PublicationData, item_definition
-from .storage import _safe_atomic_write_text
+from .storage import _safe_atomic_write_text, _guard_existing_utf8, _guard_existing_json
 
 
 class PublicationStore:
@@ -32,7 +32,7 @@ class PublicationStore:
             return PublicationData.defaults_for_book(book)
         try:
             payload = json.loads(path.read_text(encoding='utf-8'))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             payload = {}
         defaults = PublicationData.defaults_for_book(book)
         loaded = PublicationData.from_dict(payload)
@@ -52,6 +52,7 @@ class PublicationStore:
 
     def save(self, book, data: PublicationData):
         self.library.verify_book_unchanged(book)
+        _guard_existing_json(self.config_path(book))
         _safe_atomic_write_text(self.config_path(book), json.dumps(data.to_dict(), ensure_ascii=False, indent=2))
         self.library.refresh_book_revision(book)
 
@@ -60,12 +61,28 @@ class PublicationStore:
         if not definition or definition['kind'] != 'text':
             return ''
         path = self.text_path(book, key)
-        return path.read_text(encoding='utf-8') if path.exists() else ''
+        if not path.exists():
+            return ''
+        try:
+            return path.read_text(encoding='utf-8')
+        except UnicodeDecodeError:
+            return ''
+
+    def text_is_corrupt(self, book, key: str) -> bool:
+        path = self.text_path(book, key)
+        if not path.exists():
+            return False
+        try:
+            path.read_bytes().decode('utf-8')
+            return False
+        except UnicodeDecodeError:
+            return True
 
     def save_text(self, book, key: str, text: str):
         definition = item_definition(key)
         if not definition or definition['kind'] != 'text':
             raise ValueError(f'{key} is geen vrij tekstonderdeel.')
         self.library.verify_book_unchanged(book)
+        _guard_existing_utf8(self.text_path(book, key))
         _safe_atomic_write_text(self.text_path(book, key), text)
         self.library.refresh_book_revision(book)

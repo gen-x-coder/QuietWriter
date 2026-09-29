@@ -73,12 +73,13 @@ class MainWindow(QMainWindow):
         self.book_group_label = self._nav_group(tr('nav.group.current_book', 'HUIDIG BOEK'))
         self.write_button = self._nav_button('books', tr('nav.contents', 'Inhoud'), self.show_editor)
         self.planning_button = self._nav_button('planning', tr('nav.planning', 'Planning'), self.show_planning)
-        self.book_details_button = self._nav_button('edit', tr('nav.book_details', 'Boekdetails'), self.open_current_book_details)
-        self.book_profile_button = self._nav_button('persona', tr('nav.book_profile', 'Boekprofiel'), self.show_book_profile)
-        self.book_memory_button = self._nav_button('history', tr('nav.book_memory', 'Boekgeheugen'), self.show_book_memory)
+        self.book_memory_button = self._nav_button('memory', tr('nav.book_memory', 'Boekgeheugen'), self.show_book_memory)
+        self.book_profile_button = self._nav_button('book-profile', tr('nav.book_profile', 'Boekprofiel'), self.show_book_profile)
         self.media_button = self._nav_button('insert', tr('nav.media', 'Media'), self.show_media)
-        self.integrity_button = self._nav_button('history', tr('nav.integrity', 'Integriteit'), self.show_integrity)
+        self.book_details_button = self._nav_button('edit', tr('nav.book_details', 'Boekdetails'), self.open_current_book_details)
         self.export_button = self._nav_button('export', tr('nav.export', 'Exporteren'), self.show_export)
+        self.integrity_gap = QWidget(); self.integrity_gap.setFixedHeight(6); self.rail_layout.addWidget(self.integrity_gap)
+        self.integrity_button = self._nav_button('shield', tr('nav.integrity', 'Integriteit'), self.show_integrity)
         self.rail_layout.addStretch()
         self.writing_group_label = self._nav_group(tr('nav.group.writing', 'SCHRIJVEN'))
         self.persona_button = self._nav_button('persona', tr('nav.persona', 'Schrijverspersona'), self.show_persona)
@@ -100,13 +101,13 @@ class MainWindow(QMainWindow):
         self.spell_button = trb('spell', tr('tool.spell', 'Spellingscontrole'), self.editor_page.show_spell)
         self.insert_button = trb('insert', tr('tool.insert', 'Toevoegen'), self.editor_page.show_insert_menu)
         self.history_button = trb('history', tr('tool.history', 'Versiegeschiedenis'), self.editor_page.show_history)
-        self._apply_ai_visibility()
+        self._apply_feature_visibility()
         self.delete_chapter_button = trb('trash', tr('tool.delete_chapter', 'Huidig hoofdstuk verwijderen'), self.editor_page.delete_current_chapter, checkable=False)
         self.tool_layout.addStretch(); root.addWidget(self.toolrail)
         self._configure_rail_tab_order()
 
         self.start.open_book.connect(self.open_book); self.start.new_book.connect(self.new_book); self.start.import_book.connect(self.import_book)
-        self.restore_state(); self._apply_ai_visibility(); self._apply_nav_width(); self._apply_toolrail_width(); QTimer.singleShot(0, self.editor_page._position_contents_edge_button)
+        self.restore_state(); self._apply_feature_visibility(); self._apply_nav_width(); self._apply_toolrail_width(); QTimer.singleShot(0, self.editor_page._position_contents_edge_button)
         self.stack.currentChanged.connect(self._mode_changed); self._mode_changed(0)
 
         save = QAction('Opslaan', self); save.setShortcut('Ctrl+S'); save.triggered.connect(self.save_active); self.addAction(save)
@@ -136,39 +137,119 @@ class MainWindow(QMainWindow):
         path therefore comes through here and reconnects all page references to
         the exact same object graph.
         """
-        self._active_book = book
         if book is None:
+            self._active_book = None
             return None
-        self.library.track_book(book)
+        # Prepare first: exercise every disk-backed loader before any page is
+        # rebound. Corrupt UTF-8 sources have tolerant/read-only loaders; other
+        # structural failures abort here while the current workspace is intact.
+        prepared = self._prepare_active_book_adoption(book, preferred_chapter_id)
         self.editor_page.adopt_live_book(book, preferred_chapter_id)
-        self.planning_page.adopt_book(book, reload_kind=planning_reload_kind, changed_files=planning_changed_files)
-        self.book_profile_page.adopt_book(book)
-        self.book_memory_page.adopt_book(book)
+        planning_changed = set(planning_changed_files or [])
+        if prepared.get('planning_notes_corrupt'):
+            planning_changed.add('planning/notes.md')
+        self.planning_page.adopt_book(
+            book, reload_kind=planning_reload_kind, changed_files=sorted(planning_changed)
+        )
+        self.book_profile_page.adopt_book(book, prepared=prepared['profile'], show_message=False)
+        self.book_memory_page.adopt_book(book, prepared=prepared['memory'], show_message=False)
 
         details = self.book_details_page
         same_details_book = bool(details and details.book and details.book.id == book.id)
-        if same_details_book and details.has_pending_changes():
+        details_prepared = prepared['details'] is not None
+        detail_status_message = None
+        if same_details_book and details_prepared:
             # A same-book reload uses a three-way merge. Local-only form edits
             # stay live; same-field conflicts keep disk authoritative and first
             # preserve the full local form in Version History.
-            detail_conflicts = details.adopt_book_preserving_form(book)
+            detail_conflicts = details.adopt_book_preserving_form(
+                book, prepared=prepared['details'], show_message=False
+            )
             if detail_conflicts:
-                message = tr(
+                detail_status_message = tr(
                     'book_details.external_conflict_preserved',
                     'Boek extern gewijzigd; conflicterende lokale boekgegevens zijn apart bewaard in Versiegeschiedenis.'
                 )
             else:
-                message = tr(
+                detail_status_message = tr(
                     'book_details.external_preserved',
                     'Boek extern gewijzigd; je niet-opgeslagen boekgegevens zijn behouden.'
                 )
-            self.status.showMessage(message, 5000)
         else:
             self._replace_book_details_page(book)
         self.media_manager_page.adopt_book(book)
         self.integrity_page.adopt_book(book)
         self.export_page.set_book(book)
+        # Commit the central identity/revision baseline last. Page adoption above
+        # is deliberately side-effect free with respect to storage.
+        self._active_book = book
+        self.library.track_book(book)
+
+        # User-facing conflict notices come last. At this point every page and
+        # the central revision baseline already reference the same live Book.
+        self.book_profile_page.show_adoption_message(prepared['profile'])
+        self.book_memory_page.show_adoption_message(prepared['memory'])
+        if prepared.get('planning_notes_corrupt_preserved'):
+            self.planning_page.notes_page.show_corrupt_adoption_message()
+        if same_details_book and details_prepared:
+            if detail_status_message:
+                self.status.showMessage(detail_status_message, 5000)
+            details.show_adoption_message(prepared['details'])
         return book
+
+    def _prepare_active_book_adoption(self, book, preferred_chapter_id=None):
+        """Read all fallible book-backed sources before rebinding the live UI."""
+        # Manuscript: unreadable chapter text is a supported corrupt/read-only state.
+        chapter = None
+        if preferred_chapter_id:
+            for section in book.sections:
+                chapter = next((c for c in section.chapters if c.id == preferred_chapter_id), None)
+                if chapter:
+                    break
+        if chapter is None:
+            chapter = next((c for section in book.sections for c in section.chapters), None)
+        if chapter is not None:
+            try:
+                self.library.read_chapter(book, chapter)
+            except UnicodeDecodeError:
+                pass
+        # Three-way merges and their recovery writes must happen before any page
+        # is rebound. A snapshot failure therefore aborts adoption while the old
+        # workspace is still completely intact.
+        profile_plan = self.book_profile_page.prepare_adoption(book)
+        memory_plan = self.book_memory_page.prepare_adoption(book)
+        details_plan = None
+        details = self.book_details_page
+        if details and details.book and details.book.id == book.id and details.has_pending_changes():
+            details_plan = details.prepare_adoption(book)
+        # Planning/publication/export loaders are intentionally tolerant of corrupt
+        # UTF-8 now; calling them here also catches unrelated preparation failures.
+        self.planning_page.store.load_characters(book)
+        self.planning_page.store.load_scenes(book)
+        planning_notes_corrupt = False
+        planning_notes_corrupt_preserved = False
+        try:
+            self.planning_page.store.load_notes(book)
+        except UnicodeDecodeError:
+            planning_notes_corrupt = True
+            notes_page = self.planning_page.notes_page
+            same_planning_book = bool(
+                self.planning_page.book and book and self.planning_page.book.id == book.id
+            )
+            if same_planning_book and notes_page.dirty:
+                self.library.create_version_with_file_overrides(
+                    book, {'planning/notes.md': notes_page.editor.toPlainText()}, kind='conflict_local'
+                )
+                planning_notes_corrupt_preserved = True
+        self.editor_page.publication_store.load(book)
+        self.export_page.store.load(book)
+        return {
+            'profile': profile_plan,
+            'memory': memory_plan,
+            'details': details_plan,
+            'planning_notes_corrupt': planning_notes_corrupt,
+            'planning_notes_corrupt_preserved': planning_notes_corrupt_preserved,
+        }
 
 
     def preserve_local_and_close_future_book(self, book, *, file_overrides=None, state_book=None, context='wijzigingen'):
@@ -246,8 +327,17 @@ class MainWindow(QMainWindow):
                 b.setMinimumWidth(198); b.setMaximumWidth(198)
             else:
                 b.setFixedWidth(48)
+        ai_enabled = self.settings.value('ai_enabled', True, bool)
+        advanced = self.settings.value('advanced_options', True, bool)
+        has_book = self.active_book() is not None
         for heading in self.nav_group_labels:
-            heading.setVisible(self.rail_expanded and (heading is not self.book_group_label or self.active_book() is not None))
+            visible = self.rail_expanded
+            if heading is self.book_group_label:
+                visible = visible and has_book
+            elif heading is self.writing_group_label:
+                visible = visible and ai_enabled
+            heading.setVisible(visible)
+        self.integrity_gap.setVisible(self.rail_expanded and has_book and advanced)
         self.menu_button.setToolTip(tr('nav.collapse', 'Menu inklappen') if self.rail_expanded else tr('nav.expand', 'Menu uitklappen'))
         if not animate:
             self.rail.setMinimumWidth(target); self.rail.setMaximumWidth(target)
@@ -304,16 +394,7 @@ class MainWindow(QMainWindow):
             self.editor_page.exit_history_preview()
         self.toolrail.setVisible(in_editor)
         has_book = self.active_book() is not None
-        if hasattr(self, 'book_group_label'):
-            self.book_group_label.setVisible(self.rail_expanded and has_book)
-        self.write_button.setVisible(has_book)
-        self.planning_button.setVisible(has_book)
-        self.book_details_button.setVisible(has_book)
-        self.book_profile_button.setVisible(has_book)
-        self.book_memory_button.setVisible(has_book)
-        self.media_button.setVisible(has_book)
-        self.integrity_button.setVisible(has_book)
-        self.export_button.setVisible(has_book)
+        self._apply_feature_visibility()
         self._sync_nav_selection()
         self.sync_tool_buttons()
 
@@ -385,6 +466,8 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.planning_page)
 
     def show_book_profile(self):
+        if not self.settings.value('ai_enabled', True, bool):
+            return
         self._leave_settings_preview()
         if not self._save_book_details_if_pending(): return
         if not self.active_book():
@@ -399,6 +482,8 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.book_profile_page)
 
     def show_book_memory(self):
+        if not self.settings.value('ai_enabled', True, bool):
+            return
         self._leave_settings_preview()
         if not self._save_book_details_if_pending(): return
         if not self.active_book():
@@ -424,6 +509,8 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.media_manager_page)
 
     def show_integrity(self):
+        if not self.settings.value('advanced_options', True, bool):
+            return
         self._leave_settings_preview()
         if not self._save_book_details_if_pending(): return
         book = self.active_book()
@@ -435,6 +522,8 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.integrity_page)
 
     def show_persona(self):
+        if not self.settings.value('ai_enabled', True, bool):
+            return
         self._leave_settings_preview()
         if not self._save_book_details_if_pending(): return
         if not self._save_planning_if_active(): return
@@ -547,11 +636,9 @@ class MainWindow(QMainWindow):
         self.write_button.setVisible(True)
         self.planning_button.setVisible(True)
         self.book_details_button.setVisible(True)
-        self.book_profile_button.setVisible(True)
-        self.book_memory_button.setVisible(True)
         self.media_button.setVisible(True)
-        self.integrity_button.setVisible(True)
         self.export_button.setVisible(True)
+        self._apply_feature_visibility()
         self.stack.setCurrentWidget(self.editor_page)
         self._sync_nav_selection()
 
@@ -638,6 +725,7 @@ class MainWindow(QMainWindow):
         self._active_book = None
         self.start.refresh()
         self.write_button.setVisible(False); self.planning_button.setVisible(False); self.book_details_button.setVisible(False); self.book_profile_button.setVisible(False); self.book_memory_button.setVisible(False); self.media_button.setVisible(False); self.integrity_button.setVisible(False); self.export_button.setVisible(False)
+        self._apply_nav_width(False)
         self.media_manager_page.set_book(None)
         self.integrity_page.set_book(None)
         self.export_page.set_book(None)
@@ -733,19 +821,46 @@ class MainWindow(QMainWindow):
             target = self.editor_page if self.active_book() else self.start
         self.stack.setCurrentWidget(target)
 
-    def _apply_ai_visibility(self):
+    def _apply_feature_visibility(self):
+        """Apply user-facing feature switches without touching persisted content."""
         if not hasattr(self, 'ai_button'):
             return
-        enabled = self.settings.value('ai_enabled', True, bool)
-        self.ai_button.setVisible(enabled)
-        if not enabled:
-            self.ai_button.setChecked(False)
-            if self.editor_page.right.currentWidget() is self.editor_page.ai:
-                self.editor_page._remember_panel_widths()
-                # Never leave a hidden AI page as the active right-panel page.
-                self.editor_page.right.setCurrentWidget(self.editor_page.search)
-                self.editor_page.right.hide()
-        self.sync_tool_buttons()
+        ai_enabled = self.settings.value('ai_enabled', True, bool)
+        spell_enabled = self.settings.value('spell_enabled', True, bool)
+        advanced = self.settings.value('advanced_options', True, bool)
+        has_book = self.active_book() is not None
+
+        self.ai_button.setVisible(ai_enabled)
+        self.spell_button.setVisible(spell_enabled)
+        self.persona_button.setVisible(ai_enabled)
+        self.book_profile_button.setVisible(has_book and ai_enabled)
+        self.book_memory_button.setVisible(has_book and ai_enabled)
+        self.integrity_button.setVisible(has_book and advanced)
+        self.integrity_gap.setVisible(self.rail_expanded and has_book and advanced)
+        if hasattr(self, 'writing_group_label'):
+            self.writing_group_label.setVisible(self.rail_expanded and ai_enabled)
+        if hasattr(self, 'book_group_label'):
+            self.book_group_label.setVisible(self.rail_expanded and has_book)
+
+        hidden_right = ((not ai_enabled and self.editor_page.right.currentWidget() is self.editor_page.ai)
+                        or (not spell_enabled and self.editor_page.right.currentWidget() is self.editor_page.spell))
+        if hidden_right:
+            self.editor_page._remember_panel_widths()
+            self.editor_page.right.setCurrentWidget(self.editor_page.search)
+            self.editor_page.right.hide()
+
+        # Settings may have been opened from a page that has just been hidden.
+        # Returning from Settings should then go to the manuscript, not to an
+        # invisible destination.
+        return_page = getattr(self, '_settings_return_page', None)
+        if (not ai_enabled and return_page in (self.persona, self.book_profile_page, self.book_memory_page)) \
+                or (not advanced and return_page is self.integrity_page):
+            self._settings_return_page = self.editor_page if has_book else self.start
+        self._apply_nav_width(False)
+
+    # Compatibility name retained for older tests/plugins.
+    def _apply_ai_visibility(self):
+        self._apply_feature_visibility()
 
     def settings_saved(self, old_root, writing_layout_changed: bool = False):
         editor_font = str(self.settings.value('editor_font','Merriweather') or 'Merriweather')
@@ -761,7 +876,7 @@ class MainWindow(QMainWindow):
             self.editor_page._sync_undo_redo()
             self.planning_page.notes_page.editor.reset_undo_history()
         self.editor_page.load_dictionary_from_settings()
-        self._apply_ai_visibility()
+        self._apply_feature_visibility()
         self.editor_page.ai.apply_settings()
         if self.settings.value('workspace') != old_root:
             QMessageBox.information(self,'Werkmap gewijzigd','De nieuwe werkmap wordt gebruikt nadat de applicatie opnieuw is gestart.')
@@ -772,17 +887,18 @@ class MainWindow(QMainWindow):
         in_editor = self.stack.currentWidget() is self.editor_page
         right_visible = self.editor_page.right.isVisible() and in_editor
         ai_enabled = self.settings.value('ai_enabled', True, bool)
-        # Hiding AI is an editor invariant, not a one-off settings side effect.
-        # This also protects against restored window/splitter state.
+        spell_enabled = self.settings.value('spell_enabled', True, bool)
+        # Feature visibility is an editor invariant, not a one-off settings side effect.
         self.ai_button.setVisible(ai_enabled)
+        self.spell_button.setVisible(spell_enabled)
         self.search_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.search)
         self.ai_button.setChecked(bool(ai_enabled and right_visible and self.editor_page.right.currentWidget() is self.editor_page.ai))
-        self.spell_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.spell)
+        self.spell_button.setChecked(bool(spell_enabled and right_visible and self.editor_page.right.currentWidget() is self.editor_page.spell))
         self.insert_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.insert)
         self.history_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.history)
         corrupt_chapter = bool(in_editor and getattr(self.editor_page, '_chapter_corrupt', False))
         self.ai_button.setEnabled(bool(ai_enabled and not corrupt_chapter))
-        self.spell_button.setEnabled(not corrupt_chapter)
+        self.spell_button.setEnabled(bool(spell_enabled and not corrupt_chapter))
         self.insert_button.setEnabled(not corrupt_chapter)
         if hasattr(self, 'delete_chapter_button'):
             total = sum(len(sec.chapters) for sec in self.editor_page.book.sections) if self.editor_page.book else 0

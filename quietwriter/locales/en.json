@@ -206,7 +206,7 @@
   "bookshelf.import": "Import…",
   "settings.section.ai_usage": "Use",
   "settings.ai.enable": "Use AI assistant",
-  "settings.ai.enable_help": "Shows the AI assistant in the editor. When disabled, your AI settings remain stored but are inactive and no AI provider is used.",
+  "settings.ai.enable_help": "Shows AI features in QuietWriter. When disabled, AI assistant, Writer persona, Book profile and Book memory disappear from the interface. All content and settings remain stored and return when AI is enabled again.",
   "language.english": "English",
   "settings.saved_restart_language": "Saved · language applies after restart",
   "planning.outline.title": "Outline",
@@ -704,5 +704,14 @@
   "media_manager.cleanup_error": "Cleanup was not performed.\n\n{error}",
   "media_manager.cleanup_leftovers": "{count} media item(s) were removed from the manifest, but {leftovers} file(s) could not be physically deleted because of a file lock. They remain visible as unregistered.",
   "media_manager.cleanup_done": "{count} unused image(s) cleaned; recovery point saved in Version History.",
-  "settings.general.autosave_always": "QuietWriter saves changes automatically. Ctrl+S remains available to save immediately."
+  "settings.general.autosave_always": "QuietWriter saves changes automatically. Ctrl+S remains available to save immediately.",
+  "settings.general.advanced_options": "Use advanced options",
+  "settings.general.advanced_options_help": "Shows specialist features you do not need for everyday writing. For now this controls Integrity & recovery.",
+  "spell.disabled": "Spell checking is disabled.",
+  "integrity.recovery_source": "Recovery copy: {kind} from {time}.",
+  "integrity.recovery_kind.conflict_local": "local conflict version",
+  "integrity.recovery_kind.manual": "manual version",
+  "integrity.recovery_kind.daily": "daily version",
+  "integrity.recovery_kind.pre_restore": "pre-restore version",
+  "integrity.recovery_kind.version": "version"
 }

@@ -293,7 +293,7 @@ De AI-laag krijgt voorrang boven de eerder geplande portable Markdown-media. De 
 - Schrijverspersona blijft een zelfstandige schrijffunctie en verhuist niet naar Instellingen.
 - Geen grote navigatie-herbouw; rust en herkenbaarheid behouden.
 
-### 0.32 — Planning tijdens het schrijven
+### Oorspronkelijk 0.32 — Planning tijdens het schrijven (nu 0.34)
 - Pas na stabiliteit en UI-polish: rustig blok **In dit hoofdstuk** met gekoppelde scènes/personages.
 - Daarna zichtbare AI-context en planning-integriteit verder uitbouwen.
 
@@ -327,3 +327,75 @@ De AI-laag krijgt voorrang boven de eerder geplande portable Markdown-media. De 
 Afgerond in deze release: subtiele navigatiegroepen, autosave altijd aan en expliciete boektelling. Schrijverspersona blijft een zelfstandige globale schrijffunctie en is niet onder Instellingen geplaatst.
 
 Vervolg: transactionele/all-or-nothing adoptie van een live boek en daarna de spellingsarchitectuur technisch laten beoordelen vóór wijzigingen aan de spellings-UX.
+
+
+## 0.31.1 — Boeknavigatie verfijnd
+Werkvolgorde en unieke iconen in HUIDIG BOEK. Volgende stap wordt eerst technisch gereviewd via `TECHNISCH_ONTWERP_0312.md`: transactionele adoptie vóór spellingswijzigingen.
+
+
+## 0.31.2 — Stabiliteit en spellingsinteractie
+- JSON-corruptiebescherming uitgebreid.
+- Centrale voorbereidingsfase voor live-book adoptie.
+- Spellingspaneel volgt cursor; contextmenu volgt separaat.
+
+## 0.31.3 — Reviewronde 21 herstel
+- Valse exportconflicten na eigen instellingwijzigingen gesloten met verify/write/refresh revision-flow.
+- Spellingspaneel ververst stale offsets na tekstmutaties en negeert alleen echte edit-cursorbewegingen.
+- Afgekapte JSON is fail-closed voor Planning/Publicatie/Export; vrije publicatietekst heeft dezelfde corrupte-bronbescherming als overige tekststores.
+- Navigatiegap vóór Integriteit volgt centraal de actieve-boekstatus.
+
+## 0.31.4 — Reviewronde 22 export/herstel
+- Echte externe wijzigingen op de Exportpagina gaan via een zichtbare centrale reload/conflictflow; de aangeklikte exportoptie wordt niet stil verloren of doorgedrukt.
+- Afgekapte `export/settings.json` schakelt de Exportpagina fail-closed uit en verwijst naar Integriteit.
+- Integriteit audit en herstel omvatten nu ook `publication/texts/*.md`, zodat de alleen-lezen herstelmelding niet meer doodloopt.
+- Resterend voor **0.31.5**: conflict-snapshots, drie-wegs merges en meldingen volledig naar de prepare/preflight-fase van `adopt_active_book()` verplaatsen, zodat ook een write-fout tijdens conflictvoorbereiding nooit een half geadopteerde UI kan achterlaten.
+
+## 0.31.5 — Transactionele adopt-commit
+- Mergeplanning voor Boekgeheugen, Boekprofiel en Boekdetails gebeurt in de centrale preflight.
+- `conflict_local`-snapshots worden vóór de eerste UI-rebind geschreven; een snapshotfout laat de oude workspace volledig intact.
+- De commit past alleen vooraf berekende state toe en toont conflictnotificaties pas na de centrale `track_book()`-commit.
+- Volgende review: expliciete failure-injection op elk van de drie recovery-snapshots en controle dat alle boekgerichte pagina's plus `_active_book` exact dezelfde identiteit houden bij zowel mislukte als geslaagde adoptie.
+
+
+## 0.31.6 — Corrupte bron tijdens conflict/adoptie
+
+Status: geïmplementeerd voor reviewronde 25.
+
+- Boekgeheugen en Boekprofiel: lokale dirty invoer wordt in preflight veiliggesteld wanneer de externe bron precies dan onleesbare UTF-8 bevat.
+- Planning-notities: hetzelfde gedrag, inclusief het voorkomen dat pending tekst na adoptie opnieuw over de alleen-lezen-foutstaat wordt gelegd.
+- De normale mine/disk-keuze wordt voor een onleesbare eigen bron niet aangeboden, omdat geen van beide keuzes veilig naar die bron mag schrijven.
+- Na de commit blijft herstel via Integriteit de aangewezen route.
+
+## Actuele roadmap vanaf 0.32.0
+
+Deze volgorde vervangt de oudere voorlopige nummering waarin 0.32 direct voor Planning tijdens het schrijven was gereserveerd. De uitgebreide 0.31-stabiliteitsreeks heeft de nummering verschoven; de inhoudelijke volgorde blijft hetzelfde.
+
+### 0.32 — UI/editor polish en functiezichtbaarheid
+
+**0.32.0 — eerste stap, geïmplementeerd**
+- AI aan/uit is één duidelijke productschakelaar: AI-assistent, Schrijverspersona, Boekprofiel en Boekgeheugen volgen dezelfde zichtbaarheid. De bestanden blijven bestaan wanneer AI tijdelijk uit staat.
+- Nieuwe instelling **Geavanceerde opties gebruiken**, standaard aan. In de eerste versie valt alleen Integriteit & herstel hieronder.
+- Spellingscontrole uit betekent direct geen rode onderstrepingen en geen spellingspaneel/-knop; opnieuw starten is niet nodig.
+- Integriteit toont de herkomst van de gekozen herstelkopie zonder het bestaande herstelbeleid te veranderen.
+
+**Vervolg binnen 0.32.x**
+- Alleen concrete UI-/editorbevindingen uit praktijkgebruik of Claude-review oplossen; geen nieuwe subsystemen toevoegen.
+- Tekst en meldingen uniformeren, waaronder contextloze termen zoals “Structuuractie niet uitgevoerd”.
+- Spelling/contextmenu alleen verder uitbreiden wanneer runtimegebruik daar aantoonbaar behoefte aan geeft; hover blijft geen doel op zichzelf.
+- Geavanceerde opties pas met extra functies uitbreiden wanneer duidelijk is dat die voor gewone schrijvers ruis veroorzaken. Verborgen functies mogen nooit gegevens verwijderen.
+
+### 0.33 — Informatiearchitectuur en AI-positionering
+- Na gebruik van 0.32 beoordelen of Boekenplank, huidig boek en applicatiefuncties voldoende duidelijk van elkaar onderscheiden zijn.
+- De positie van Schrijverspersona definitief beoordelen als globale AI-/schrijffunctie. De AI-schakelaar uit 0.32 blijft leidend: persona/profiel/geheugen zijn inhoud, maar alleen relevant wanneer AI wordt gebruikt.
+- Geen grote navigatieherbouw zonder concrete UX-winst; de rustige lijn uit `UI_GUIDE.md` blijft leidend.
+
+### 0.34 — Planning tijdens het schrijven
+- Inklapbaar **In dit hoofdstuk** naast de editor met gekoppelde scènes en relevante personages.
+- Eerst alleen transparante, bestaande Planning-data tonen; geen tweede bron van waarheid creëren.
+- Daarna expliciet zichtbaar maken welke Planning-informatie als AI-context wordt gebruikt.
+- Planning-integriteit uitbreiden met verwijzingen naar verdwenen hoofdstukken/personages waar dat nog niet wordt afgedekt.
+- Pas later lokale aliasherkenning en eventuele AI-voorstellen voor feiten/stemprofielen onderzoeken.
+
+### Daarna
+- Nieuwe schrijf- of publicatiesubsystemen alleen toevoegen op basis van concreet gebruik, vergelijking met andere schrijfsystemen en een korte technische/UX-review. Eerst moet de bestaande applicatie als één geheel rustig en voorspelbaar blijven.
+

@@ -33,7 +33,7 @@ class SimpleStructuredPage(QWidget):
 
 class FreeTextPage(QWidget):
     def __init__(self, parent=None):
-        super().__init__(parent); self.key=None; self.dirty=False
+        super().__init__(parent); self.key=None; self.dirty=False; self.corrupt=False
         root=QVBoxLayout(self); root.setContentsMargins(30,24,30,24); root.setSpacing(10)
         top=QHBoxLayout(); self.title=QLabel(''); self.title.setObjectName('title'); top.addWidget(self.title); top.addStretch()
         self.save_button=QPushButton(tr('common.save', 'Opslaan')); self.save_button.setObjectName('primaryButton'); self.save_button.setEnabled(False); top.addWidget(self.save_button); root.addLayout(top)
@@ -42,10 +42,18 @@ class FreeTextPage(QWidget):
         self.editor.textChanged.connect(self._changed)
 
     def _changed(self):
+        if self.corrupt:
+            return
         self.dirty=True; self.save_button.setEnabled(True); self.timer.start()
 
-    def set_text(self,key,label,text):
-        self.timer.stop(); self.key=key; self.title.setText(label); self.editor.blockSignals(True); self.editor.setPlainText(text); self.editor.blockSignals(False); self.dirty=False; self.save_button.setEnabled(False)
+    def set_text(self,key,label,text, *, corrupt=False):
+        self.timer.stop(); self.key=key; self.title.setText(label); self.corrupt=bool(corrupt)
+        self.editor.blockSignals(True)
+        if self.corrupt:
+            self.editor.setPlainText(tr('publication.text.corrupt', 'Dit publicatiebestand is beschadigd en kan niet als UTF-8 worden gelezen.\n\nOpen Integriteit om het te controleren en zo mogelijk te herstellen.'))
+        else:
+            self.editor.setPlainText(text)
+        self.editor.setReadOnly(self.corrupt); self.editor.blockSignals(False); self.dirty=False; self.save_button.setEnabled(False)
 
 
 class PublicationEditor(QWidget):
@@ -107,7 +115,7 @@ class PublicationEditor(QWidget):
         elif key=='copyright': self.copyright.set_data(self.data.copyright); self.stack.setCurrentWidget(self.copyright)
         elif key=='epigraph': self.epigraph.set_data(self.data.epigraph); self.stack.setCurrentWidget(self.epigraph)
         elif key=='contents': self.contents.set_context(self.book,self.main.library,self.data.contents); self.stack.setCurrentWidget(self.contents)
-        elif kind=='text': self.free_text.set_text(key,tr(f'publication.item.{key}', definition['label']),self.store.load_text(self.book,key)); self.stack.setCurrentWidget(self.free_text)
+        elif kind=='text': self.free_text.set_text(key,tr(f'publication.item.{key}', definition['label']),self.store.load_text(self.book,key),corrupt=self.store.text_is_corrupt(self.book,key)); self.stack.setCurrentWidget(self.free_text)
         self.structured_dirty=False
         return True
 
@@ -166,6 +174,8 @@ class PublicationEditor(QWidget):
             if not self.structured_dirty:return True
             value=self._current_structured_value()
             return self._save_structured(self.key,value) if value is not None else True
+        if self.free_text.corrupt:
+            return True
         if not self.free_text.dirty:return True
         text = self.free_text.editor.toPlainText()
         result = self.owner.persist_publication_change(

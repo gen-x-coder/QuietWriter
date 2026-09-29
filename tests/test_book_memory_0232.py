@@ -78,7 +78,7 @@ def test_book_memory_navigation_and_ai_layering_are_wired():
     revisions = Path('quietwriter/revisions.py').read_text(encoding='utf-8')
     assert 'BookMemoryPage' in main
     assert "tr('nav.book_memory', 'Boekgeheugen')" in main
-    assert 'self.book_memory_page.adopt_book(book)' in main
+    assert "self.book_memory_page.adopt_book(book, prepared=prepared['memory'], show_message=False)" in main
     assert 'parse_book_memory(self.main.library.read_book_memory(self.book))' in page
     assert 'render_book_memory(self.memory)' in page
     assert 'BOEKGEHEUGEN (dit boek)' in prompting
