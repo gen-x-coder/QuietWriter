@@ -77,7 +77,7 @@ def test_book_profile_navigation_and_ai_layering_are_wired():
     revisions = Path('quietwriter/revisions.py').read_text(encoding='utf-8')
     assert 'BookProfilePage' in main
     assert "tr('nav.book_profile', 'Boekprofiel')" in main
-    assert 'self.book_profile_page.adopt_book(book)' in main
+    assert "self.book_profile_page.adopt_book(book, prepared=prepared['profile'], show_message=False)" in main
     assert 'parse_book_profile(self.main.library.read_book_profile(self.book))' in page
     assert 'render_book_profile(self.profile)' in page
     assert 'BOEKPROFIEL (dit boek)' in prompting

@@ -18,7 +18,8 @@ class MediaManagerSource0270Tests(unittest.TestCase):
         self.assertIn("tr('nav.media', 'Media')", source)
         self.assertIn('self.media_manager_page.adopt_book(book)', source)
         self.assertIn('def show_media(self):', source)
-        self.assertIn('self.media_button.setVisible(has_book)', source)
+        self.assertIn('self.media_button.setVisible(True)', source)
+        self.assertIn('def _apply_feature_visibility(self):', source)
 
     def test_media_page_is_text_first_and_uses_manager_cleanup(self):
         source = Path('quietwriter/ui/media_manager_page.py').read_text(encoding='utf-8')

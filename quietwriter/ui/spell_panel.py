@@ -53,6 +53,7 @@ class SpellPanel(QWidget):
         self.editor_page = editor_page
         self.rows = []
         self.index = 0
+        self._rows_rev = -1
         lay = QVBoxLayout(self); lay.setContentsMargins(18,18,18,18); lay.setSpacing(10)
         title = QLabel(tr('spell.title','Spellingscontrole')); title.setObjectName('sectionTitle')
         self.status = QLabel(''); self.status.setObjectName('muted'); self.status.setWordWrap(True)
@@ -70,7 +71,8 @@ class SpellPanel(QWidget):
         lay.addSpacing(8); lay.addStretch(1); lay.addLayout(buttons)
         self.refresh()
 
-    def refresh(self):
+    def refresh(self, *, select_in_editor: bool = True):
+        self._rows_rev = self.editor_page.editor.document().revision()
         d = self.editor_page.dictionary
         if not d.words:
             self.rows=[]; self.index=0; self.status.setText(tr('spell.no_dictionary','Er is nog geen woordenboek ingesteld.')); self.word.clear(); self.suggestions.clear(); self._configure_tab_order(); return
@@ -80,7 +82,7 @@ class SpellPanel(QWidget):
         self.rows = title_rows + body_rows
         if not self.rows:
             self.index=0; self.status.setText(tr('spell.no_errors','Geen spelfouten gevonden in dit hoofdstuk.')); self.word.clear(); self.suggestions.clear(); self._configure_tab_order(); return
-        self.index=min(max(self.index,0),len(self.rows)-1); self.show_current()
+        self.index=min(max(self.index,0),len(self.rows)-1); self.show_current(select_in_editor=select_in_editor)
 
     def focus_first_control(self):
         """Put keyboard focus on the first useful action in the guided panel."""
@@ -97,7 +99,7 @@ class SpellPanel(QWidget):
         for first, second in zip(controls, controls[1:], strict=False):
             QWidget.setTabOrder(first, second)
 
-    def show_current(self):
+    def show_current(self, *, select_in_editor: bool = True):
         if not self.rows: return
         source,word,start,end=self.rows[self.index]
         where = 'Hoofdstuktitel' if source == 'title' else 'Hoofdstuktekst'
@@ -105,11 +107,28 @@ class SpellPanel(QWidget):
         self.word.setText(word)
         self.suggestions.set_suggestions(self.editor_page.dictionary.suggest(word))
         self._configure_tab_order()
+        if not select_in_editor:
+            return
         if source == 'title':
             self.editor_page.chapter_title.setFocus()
             self.editor_page.chapter_title.setSelection(start, end-start)
         else:
             cur=self.editor_page.editor.textCursor(); cur.setPosition(start); cur.setPosition(end,QTextCursor.KeepAnchor); self.editor_page.editor.setTextCursor(cur); self.editor_page.editor.ensureCursorVisible()
+
+
+    def follow_editor_cursor(self):
+        """Focus the misspelling under the caret without moving/selecting editor text."""
+        revision = self.editor_page.editor.document().revision()
+        if not self.rows or revision != self._rows_rev:
+            self.refresh(select_in_editor=False)
+        pos = self.editor_page.editor.textCursor().position()
+        for index, row in enumerate(self.rows):
+            source, _word, start, end = row
+            if source == 'body' and start <= pos <= end:
+                self.index = index
+                self.show_current(select_in_editor=False)
+                return True
+        return False
 
     @staticmethod
     def _row_key(row):

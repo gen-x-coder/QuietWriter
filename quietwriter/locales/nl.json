@@ -206,7 +206,7 @@
   "bookshelf.import": "Importeren…",
   "settings.section.ai_usage": "Gebruik",
   "settings.ai.enable": "AI-assistent gebruiken",
-  "settings.ai.enable_help": "Toont de AI-assistent in de editor. Staat dit uit, dan blijven de AI-instellingen bewaard maar zijn ze niet actief en wordt er geen AI-provider gebruikt.",
+  "settings.ai.enable_help": "Toont AI-functies in QuietWriter. Staat dit uit, dan verdwijnen AI-assistent, Schrijverspersona, Boekprofiel en Boekgeheugen uit de interface. Alle inhoud en instellingen blijven bewaard en verschijnen weer zodra je AI opnieuw inschakelt.",
   "language.english": "Engels",
   "settings.saved_restart_language": "Opgeslagen · taal wordt na herstart toegepast",
   "planning.outline.title": "Outline",
@@ -704,5 +704,14 @@
   "media_manager.cleanup_error": "Opruimen is niet uitgevoerd.\n\n{error}",
   "media_manager.cleanup_leftovers": "{count} media-item(s) zijn uit het manifest verwijderd, maar {leftovers} bestand(en) konden door een bestandslock niet fysiek worden verwijderd. Ze blijven als niet-geregistreerd zichtbaar.",
   "media_manager.cleanup_done": "{count} ongebruikte afbeelding(en) opgeruimd; herstelpunt opgeslagen in Versiegeschiedenis.",
-  "settings.general.autosave_always": "QuietWriter slaat wijzigingen automatisch op. Ctrl+S blijft beschikbaar om direct op te slaan."
+  "settings.general.autosave_always": "QuietWriter slaat wijzigingen automatisch op. Ctrl+S blijft beschikbaar om direct op te slaan.",
+  "settings.general.advanced_options": "Geavanceerde opties gebruiken",
+  "settings.general.advanced_options_help": "Toont specialistische functies die je niet nodig hebt voor dagelijks schrijven. Voorlopig geldt dit voor Integriteit & herstel.",
+  "spell.disabled": "Spellingscontrole is uitgeschakeld.",
+  "integrity.recovery_source": "Herstelkopie: {kind} van {time}.",
+  "integrity.recovery_kind.conflict_local": "lokale conflictversie",
+  "integrity.recovery_kind.manual": "handmatige versie",
+  "integrity.recovery_kind.daily": "dagversie",
+  "integrity.recovery_kind.pre_restore": "versie vóór herstel",
+  "integrity.recovery_kind.version": "versie"
 }

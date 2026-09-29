@@ -56,7 +56,7 @@ def _sha256(path: Path) -> str:
 class BookIntegrityChecker:
     """Read-only integrity audit for a QuietWriter book folder."""
 
-    JSON_FILES = ('planning/characters.json', 'planning/outline.json', 'publication/publication.json')
+    JSON_FILES = ('planning/characters.json', 'planning/outline.json', 'publication/publication.json', 'export/settings.json')
     UTF8_FILES = ('planning/notes.md', 'ai/boekprofiel.md', 'ai/memory.md')
 
     def audit_folder(self, folder: Path) -> IntegrityReport:
@@ -151,6 +151,15 @@ class BookIntegrityChecker:
             except (OSError, UnicodeError) as exc:
                 report.issues.append(IntegrityIssue('aux_text_invalid', 'error', rel, f'Bestand is niet als UTF-8 leesbaar: {exc}', True))
 
+        publication_texts = folder / 'publication' / 'texts'
+        if publication_texts.is_dir():
+            for path in sorted(publication_texts.glob('*.md')):
+                rel = path.relative_to(folder).as_posix()
+                try:
+                    path.read_text(encoding='utf-8')
+                except (OSError, UnicodeError) as exc:
+                    report.issues.append(IntegrityIssue('aux_text_invalid', 'error', rel, f'Bestand is niet als UTF-8 leesbaar: {exc}', True))
+
         self._audit_media(folder, report)
         return report
 
@@ -195,15 +204,21 @@ class BookIntegrityChecker:
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
             return False
 
-    def latest_recovery_file(self, library, book, relative: str) -> Path | None:
-        """Newest history copy that passes the same content rule used by repair."""
+    def latest_recovery_candidate(self, library, book, relative: str) -> dict | None:
+        """Newest valid history candidate, including provenance for transparent repair UI."""
         for version in library.list_versions(book):
             if version.get('kind') == 'pre_integrity_repair':
                 continue
             candidate = Path(version['path']) / relative
             if candidate.is_file() and self._valid_recovery_candidate(library, book, relative, candidate):
-                return candidate
+                return {'path': candidate, 'kind': version.get('kind', 'manual'),
+                        'created_at': version.get('created_at', ''), 'id': version.get('id', '')}
         return None
+
+    def latest_recovery_file(self, library, book, relative: str) -> Path | None:
+        """Newest history copy that passes the same content rule used by repair."""
+        candidate = self.latest_recovery_candidate(library, book, relative)
+        return candidate['path'] if candidate else None
 
     @staticmethod
     def _atomic_write_bytes(target: Path, data: bytes):

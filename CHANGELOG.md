@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.32.0 — Functiezichtbaarheid en directe editorfeedback
+
+- **AI-assistent gebruiken** stuurt nu alle AI-oppervlakken: AI-assistent, Schrijverspersona, Boekprofiel en Boekgeheugen verdwijnen uit de interface wanneer AI uit staat. De onderliggende Markdown en AI-instellingen blijven volledig bewaard en verschijnen weer bij opnieuw inschakelen.
+- Instellingen → Algemeen bevat **Geavanceerde opties gebruiken**. Deze staat standaard aan en bepaalt in 0.32.0 uitsluitend of **Integriteit & herstel** in de boeknavigatie zichtbaar is. De instelling verandert of verwijdert geen boekdata.
+- Spellingscontrole uitschakelen verwijdert rode onderstrepingen direct uit het reeds geopende manuscript, sluit een eventueel geopend spellingspaneel en verbergt de spellingsknop. Een herstart is niet meer nodig.
+- Integriteit toont bij een beschikbare herstelkopie ook de herkomst, bijvoorbeeld een lokale conflictversie met tijdstip. De selectie van de nieuwste geldige herstelkopie verandert niet.
+- Navigatie na Instellingen valt veilig terug op Inhoud wanneer de pagina waarvandaan Instellingen werd geopend door de nieuwe zichtbaarheidsschakelaar verborgen is.
+
+## 0.31.6 — Corrupte bron tijdens lokale invoer
+
+- Extern beschadigd `ai/memory.md` of `ai/boekprofiel.md` blokkeert de conflictflow niet meer wanneer lokale invoer nog dirty is.
+- De lokale Boekgeheugen-/Boekprofiel-invoer wordt tijdens adoption-preflight eerst als `conflict_local` in Versiegeschiedenis bewaard; daarna opent de beschadigde bron in de bestaande alleen-lezen-foutstaat.
+- Planning-notities volgen hetzelfde fail-closed patroon: dirty lokale notities worden veiliggesteld en een beschadigd `planning/notes.md` wordt niet terug over de foutstaat heen hersteld.
+- Bij een onleesbare eigen bron wordt de normale mine/disk-conflictdialoog overgeslagen: overschrijven is dan niet veilig; QuietWriter bewaart lokaal werk en verwijst naar Integriteit.
+- De transactionele 0.31.5-preflight blijft leidend: een fout bij het maken van het herstelpunt laat de live UI volledig op de oude boekversie staan.
+
+## 0.31.5 — Transactionele live-book adoptie
+- Drie-wegs merges voor Boekgeheugen, Boekprofiel en Boekdetails worden nu volledig voorbereid vóórdat één pagina naar de nieuwe live-bookstate wordt omgebonden.
+- Eventuele `conflict_local`-recoveryversies worden in die preflight gemaakt. Als zo'n snapshot door een lock of schrijffout mislukt, blijft de volledige bestaande workspace op het oude `Book`-object staan.
+- De commitfase gebruikt de vooraf berekende mergeplannen en schrijft zelf geen recoveryversies meer.
+- Conflictmeldingen en de statusmelding van Boekdetails worden pas getoond nadat alle pagina's én de centrale revision-baseline succesvol op hetzelfde nieuwe `Book`-object staan.
+- Hiermee wordt het laatste bekende gemengde-statepad uit reviewronde 21 gesloten zonder de bestaande conflictkeuzes of merge-regels te veranderen.
+
+## 0.31.4 — Exportconflictflow en volledig publicatieherstel
+- Exportinstellingen vangen echte externe boekwijzigingen nu zichtbaar af in plaats van een Qt-exceptie naar de excepthook te laten ontsnappen. Bij een schone editor wordt de nieuwste boekversie centraal geadopteerd en kiest de gebruiker de exportinstelling daarna opnieuw.
+- Als manuscript- of publicatietekst nog pending is, gebruikt Export dezelfde bestaande editor-conflictflow als Media zodat lokale tekst niet door een reload verloren kan gaan.
+- Afgekapte maar UTF-8-geldige `export/settings.json` wordt al bij het binden van de Exportpagina herkend; de pagina gaat fail-closed met de bestaande herstelmelding in plaats van per klik te falen.
+- Integriteit controleert nu ook alle bestaande `publication/texts/*.md`-bestanden op UTF-8 en markeert beschadigde publicatietekst als herstelbaar via Versiegeschiedenis.
+- De opslagguard blijft de laatste verdedigingslaag: geen van deze UI-routes mag corrupte of extern gewijzigde bronbytes stil overschrijven.
+- De transactionele/all-or-nothing commit van `adopt_active_book()` blijft bewust apart voor 0.31.5; deze release houdt de export- en herstelbasis eerst schoon en testbaar.
+
+## 0.31.3 — Exportrevisie, spelling en corruptieguards
+- Exportinstellingen gebruiken nu dezelfde revision-guard als andere boekstores: verify vóór write en refresh van de baseline erna. Eigen wijzigingen op Export veroorzaken daardoor geen vals extern conflict.
+- De Exportpagina onderdrukt writes tijdens het laden van UI-instellingen, zodat een reload nooit door signalen terugschrijft.
+- Spellingscursorvolging ververst foutoffsets zodra de documentrevision wijzigde; de refresh selecteert daarbij geen tekst.
+- Het onderscheid tussen typen en doelbewuste cursorbeweging gebruikt echte `contentsChange`-tekstmutaties in plaats van een revision-heuristiek.
+- Bestaande JSON-bronnen voor Planning, Publicatie en Export worden vóór opslaan ook syntactisch gevalideerd. Afgekapte maar geldige UTF-8-JSON kan niet meer stil worden overschreven.
+- Beschadigde vrije publicatietekst opent als alleen-lezen herstelmelding; normale save weigert de corrupte bytes te vervangen.
+- De witruimte vóór Integriteit volgt centraal de actieve-boekmodus en verdwijnt ook via Boekenplank.
+- Transactionele preflight voor conflict-snapshots/dialogen tijdens `adopt_active_book` blijft als afzonderlijke architectuurfix open; 0.31.3 verandert die commitflow bewust niet.
+
+## 0.31.2 — Veilige adoptie en spelling volgt cursor
+- Resterende JSON-bronnen beschermd tegen ongeldige UTF-8; exportinstellingen toegevoegd aan Integriteit.
+- Centrale voorbereidingsfase vóór `adopt_active_book`; actieve identiteit/revision tracking pas als laatste gecommit.
+- Spellingspaneel volgt doelbewuste cursorbeweging zonder editorselectie te wijzigen.
+- Witruimte vóór Integriteit synchroniseert direct met open/dicht boek.
+
+## 0.31.1 — Boekvolgorde en onderscheidende iconen
+- HUIDIG BOEK volgt nu de schrijfworkflow: Inhoud, Planning, Boekgeheugen, Boekprofiel, Media, Boekdetails, Exporteren, Integriteit.
+- Kleine witruimte vóór Integriteit in de uitgeklapte rail.
+- Eigen iconen voor Boekgeheugen, Boekprofiel en Integriteit; Schrijverspersona behoudt het persona-icoon.
+- Tabvolgorde volgt de nieuwe knopvolgorde.
+- Technische reviewnotitie toegevoegd voor transactionele boekadoptie en de volgende spellingsstap.
+
+
 ## 0.31.0 — Rustigere navigatie en editorpolish
 
 - Hoofdnavigatie gegroepeerd met subtiele kopjes: Bibliotheek, Huidig boek, Schrijven en Programma.

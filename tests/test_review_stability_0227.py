@@ -100,11 +100,11 @@ def test_book_details_navigation_saves_editor_and_same_book_adopt_preserves_dirt
     adopt = main.split('    def adopt_active_book', 1)[1].split('    def _nav_button', 1)[0]
     assert 'if self.editor_page.save() is False: return' in open_details
     assert 'details.has_pending_changes()' in adopt
-    assert 'details.adopt_book_preserving_form(book)' in adopt
+    assert 'details.adopt_book_preserving_form(' in adopt and "prepared=prepared['details']" in adopt
 
     details = _source('quietwriter/ui/book_details.py')
     assert 'def has_pending_changes(self) -> bool:' in details
-    assert 'def adopt_book_preserving_form(self, book):' in details
+    assert 'def adopt_book_preserving_form(self, book, *, prepared=None, show_message: bool = True):' in details
     assert 'merge_scalar_fields(current, previous, incoming, keys)' in details
     assert 'self._apply_form_values(merged)' in details
     assert "{'book.json': self.library.manifest_text(local_candidate)}" in details

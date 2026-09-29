@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from .planning_models import Character, Scene
-from .storage import _safe_atomic_write_text, _guard_existing_utf8
+from .storage import _safe_atomic_write_text, _guard_existing_utf8, _guard_existing_json
 
 
 class PlanningStore:
@@ -27,7 +27,7 @@ class PlanningStore:
         try:
             value = json.loads(path.read_text(encoding='utf-8'))
             return value
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return default
 
     def load_characters(self, book) -> list[Character]:
@@ -37,6 +37,7 @@ class PlanningStore:
 
     def save_characters(self, book, characters: list[Character]):
         self.library.verify_book_unchanged(book)
+        _guard_existing_json(self.root(book) / 'characters.json')
         payload = {'version': 1, 'characters': [c.to_dict() for c in characters]}
         _safe_atomic_write_text(self.root(book) / 'characters.json', json.dumps(payload, ensure_ascii=False, indent=2))
         self.library.refresh_book_revision(book)
@@ -48,6 +49,7 @@ class PlanningStore:
 
     def save_scenes(self, book, scenes: list[Scene]):
         self.library.verify_book_unchanged(book)
+        _guard_existing_json(self.root(book) / 'outline.json')
         payload = {'version': 1, 'scenes': [s.to_dict() for s in scenes]}
         _safe_atomic_write_text(self.root(book) / 'outline.json', json.dumps(payload, ensure_ascii=False, indent=2))
         self.library.refresh_book_revision(book)

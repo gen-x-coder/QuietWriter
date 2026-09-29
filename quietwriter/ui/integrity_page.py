@@ -27,6 +27,7 @@ class IntegrityPage(QWidget):
         self.report = None
         self._central_reload_in_progress = False
         self._recovery_cache = {}
+        self._recovery_meta_cache = {}
 
         root = QVBoxLayout(self)
         root.setContentsMargins(42, 34, 42, 34)
@@ -143,6 +144,7 @@ class IntegrityPage(QWidget):
         self.repair_button.setEnabled(False)
         self.migrate_button.setEnabled(False)
         self._recovery_cache = {}
+        self._recovery_meta_cache = {}
         if not self.book:
             self.report = None
             self.summary.setText(tr('integrity.no_book', 'Geen boek geopend.'))
@@ -191,12 +193,26 @@ class IntegrityPage(QWidget):
             return
 
         recovery = None
+        recovery_meta = None
         if issue.recoverable and issue.path != 'book.json':
             if issue.path not in self._recovery_cache:
-                self._recovery_cache[issue.path] = self.checker.latest_recovery_file(self.library, self.book, issue.path)
+                recovery_meta = self.checker.latest_recovery_candidate(self.library, self.book, issue.path)
+                self._recovery_meta_cache[issue.path] = recovery_meta
+                self._recovery_cache[issue.path] = recovery_meta['path'] if recovery_meta else None
             recovery = self._recovery_cache[issue.path]
+            recovery_meta = self._recovery_meta_cache.get(issue.path)
         if issue.recoverable and recovery is not None:
             recovery_text = tr('integrity.recovery_available', 'Er is een geldige herstelkopie in Versiegeschiedenis beschikbaar.')
+            if recovery_meta:
+                kind_key = {
+                    'conflict_local': 'integrity.recovery_kind.conflict_local',
+                    'manual': 'integrity.recovery_kind.manual',
+                    'daily': 'integrity.recovery_kind.daily',
+                    'pre_restore': 'integrity.recovery_kind.pre_restore',
+                }.get(recovery_meta.get('kind'), 'integrity.recovery_kind.version')
+                kind = tr(kind_key, 'versie')
+                stamp = str(recovery_meta.get('created_at') or '').replace('T', ' ')[:16]
+                recovery_text += '\n' + tr('integrity.recovery_source', 'Herstelkopie: {kind} van {time}.', kind=kind, time=stamp)
         elif issue.recoverable:
             recovery_text = tr('integrity.recovery_missing', 'Er is geen geldige herstelkopie in Versiegeschiedenis gevonden.')
         else:

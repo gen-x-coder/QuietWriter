@@ -4,7 +4,7 @@ import copy
 import json
 from pathlib import Path
 
-from ..storage import _safe_atomic_write_text
+from ..storage import _safe_atomic_write_text, _guard_existing_json
 
 
 def default_export_settings() -> dict:
@@ -34,8 +34,15 @@ def default_export_settings() -> dict:
 class ExportSettingsStore:
     """Small per-book export preferences, kept separate from publication data."""
 
+    def __init__(self, library=None):
+        self.library = library
+
     def path(self, book) -> Path:
         return Path(book.path) / 'export' / 'settings.json'
+
+    def validate_source(self, book):
+        """Raise CorruptSourceError when existing settings cannot be safely rewritten."""
+        _guard_existing_json(self.path(book))
 
     def load(self, book) -> dict:
         settings = default_export_settings()
@@ -44,7 +51,7 @@ class ExportSettingsStore:
             return settings
         try:
             current = json.loads(path.read_text(encoding='utf-8'))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return settings
         if isinstance(current, dict):
             if current.get('format') in {'epub', 'pdf', 'markdown'}:
@@ -56,6 +63,9 @@ class ExportSettingsStore:
         return settings
 
     def save(self, book, settings: dict):
+        if self.library is not None:
+            self.library.verify_book_unchanged(book)
+        _guard_existing_json(self.path(book))
         payload = copy.deepcopy(default_export_settings())
         payload['format'] = settings.get('format', 'epub') if settings.get('format') in {'epub', 'pdf', 'markdown'} else 'epub'
         if isinstance(settings.get('epub'), dict):
@@ -63,3 +73,5 @@ class ExportSettingsStore:
         if isinstance(settings.get('pdf'), dict):
             payload['pdf'].update(settings['pdf'])
         _safe_atomic_write_text(self.path(book), json.dumps(payload, ensure_ascii=False, indent=2))
+        if self.library is not None:
+            self.library.refresh_book_revision(book)

@@ -1,5 +1,5 @@
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 from ..manuscript_editor import ManuscriptEditor
 from ...i18n import tr
 
@@ -32,6 +32,17 @@ class NotesPage(QWidget):
         self.timer.stop()
         self.editor.blockSignals(True); self.editor.setPlainText(text); self.editor.blockSignals(False)
         self.dirty=True; self.save_button.setEnabled(True); self.timer.start()
+
+    def show_corrupt_adoption_message(self):
+        QMessageBox.information(
+            self,
+            tr('planning.notes.corrupt_preserved_title', 'Lokale notities veilig bewaard'),
+            tr(
+                'planning.notes.corrupt_preserved_text',
+                'Het notitiebestand op schijf is beschadigd en is alleen-lezen geopend. '
+                'Je lokale notities staan apart in Versiegeschiedenis. Herstel het bronbestand via Integriteit.'
+            ),
+        )
 
     def changed(self):
         self.dirty=True; self.save_button.setEnabled(True); self.timer.start()

@@ -94,7 +94,7 @@ class EditorPage(QWidget):
         _writing_typography = WritingTypography.from_settings(QSettings('QuietWriter','QuietWriter'))
         self.chapter_title.setFont(_writing_typography.title_font())
         self.chapter_title.editingFinished.connect(self.rename_current)
-        self.editor = ManuscriptEditor(); self.editor.setObjectName('editor'); self.editor.textChanged.connect(self.on_text_changed)
+        self.editor = ManuscriptEditor(); self.editor.setObjectName('editor'); self.editor.textChanged.connect(self.on_text_changed); self.editor.cursorPositionChanged.connect(self._spell_follow_cursor); self.editor.document().contentsChange.connect(self._spell_contents_changed)
         self.editor.set_image_resolver(self._resolve_editor_image_path)
         self.editor.imageEditRequested.connect(self._open_image_editor)
         self.editor.imageDeleteRequested.connect(self._delete_image_block)
@@ -108,6 +108,7 @@ class EditorPage(QWidget):
         # resynchronise. Real textChanged events schedule the same check.
         self.editor.undoAvailable.connect(self._schedule_undo_redo_sync)
         self.editor.redoAvailable.connect(self._schedule_undo_redo_sync)
+        self._spell_cursor_from_edit = False
         self.dictionary = WordDictionary()
         self.dictionary.load_personal(self.main.library.dict_dir / 'persoonlijk.txt')
         self.dictionary.load_persistent_ignored(self.main.library.dict_dir / 'altijd_negeren.txt')
@@ -827,9 +828,24 @@ class EditorPage(QWidget):
                 try: self.dictionary.load_dic(Path(path))
                 except Exception: pass
         # Inline red underlining is passive feedback and remains available even
-        # while the spelling panel is closed. Opening the panel is what starts
-        # the guided walk-through and text selection.
-        self.highlighter.set_active(bool(enabled and self.dictionary.words))
+        # while the spelling panel is closed. Disabling spelling must remove it
+        # immediately; a restart may never be required for presentation state.
+        active = bool(enabled and self.dictionary.words)
+        self.highlighter.set_active(active)
+        self.highlighter.rehighlight()
+        document = self.editor.document()
+        document.markContentsDirty(0, max(1, document.characterCount()))
+        self.editor.viewport().update()
+        if not enabled:
+            self.spell.rows = []
+            self.spell.index = 0
+            self.spell.suggestions.clear()
+            self.spell.word.clear()
+            self.spell.status.setText(tr('spell.disabled', 'Spellingscontrole is uitgeschakeld.'))
+            if self.right.currentWidget() is self.spell:
+                self._remember_panel_widths()
+                self.right.setCurrentWidget(self.search)
+                self.right.hide()
 
     def find_chapter_in_book(self, cid):
         for s in self.book.sections:
@@ -926,6 +942,12 @@ class EditorPage(QWidget):
         if current:
             self._set_editor_chapter(current)
 
+    def _spell_contents_changed(self, _position, removed, added):
+        if removed + added <= 0:
+            return
+        self._spell_cursor_from_edit = True
+        QTimer.singleShot(0, lambda: setattr(self, '_spell_cursor_from_edit', False))
+
     def on_text_changed(self):
         if self.preview_live_book or self._chapter_corrupt:
             return
@@ -933,6 +955,14 @@ class EditorPage(QWidget):
         self._schedule_undo_redo_sync()
         self.update_counts()
         self.autosave_timer.start()
+
+
+    def _spell_follow_cursor(self):
+        """Let the open spelling panel follow deliberate caret navigation, never typing."""
+        if getattr(self, '_spell_cursor_from_edit', False):
+            return
+        if self.right.isVisible() and self.right.currentWidget() is self.spell:
+            self.spell.follow_editor_cursor()
 
     def _adopt_disk_book(self, preferred_chapter_id: str | None = None):
         latest = self.main.library.load_book(self.book.path)

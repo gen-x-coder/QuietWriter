@@ -19,6 +19,8 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 - Preview-elementen horen naast hun keuze wanneer dat vergelijken makkelijker maakt, niet eronder als de dropdown ze afdekt.
 - Opslaan is alleen actief wanneer waarden gewijzigd zijn.
 - Schrijflettertype en manuscriptlayout worden in Instellingen niet live op de verborgen editor toegepast. De lokale preview blijft binnen het instellingenscherm; na Opslaan wordt de presentatie één keer toegepast en mag QuietWriter de presentatie-Undo-historie opschonen zodat font-, regelafstand- en inspringwijzigingen nooit als manuscriptbewerkingen verschijnen.
+- Een feature-schakelaar verandert zichtbaarheid/activatie, nooit inhoud. Tijdelijk uitschakelen mag geen persona-, boekprofiel-, boekgeheugen-, spellings- of hersteldata verwijderen.
+- **Geavanceerde opties** staat standaard aan. Een functie die hieronder wordt geplaatst is specialistisch maar niet minder veilig; verbergen mag nooit stille mutaties of een tweede gedragspad introduceren.
 
 ### Detail/formulier
 - Vaste header, scrollbare inhoud, primaire actie onderaan wanneer commit nodig is.
@@ -73,6 +75,10 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 - Historie- en herstel-lijsten bieden Enter/Return als equivalent van hun primaire veilige muisactie. Destructieve acties worden nooit impliciet door list-activatie uitgevoerd.
 - Een centrale same-book reload/conflictoplossing mag lokale, nog niet opgeslagen invoer in een **ander** formulier of planningdocument nooit stil vervangen. Alleen de conflicterende bron wordt autoritatief herladen; dirty invoer elders blijft staan of wordt veldgewijs gemerged met de nieuwe live state.
 - Boekdetails gebruikt bij een externe same-book reload een drie-wegs merge per veld. Lokaal-only wijzigingen blijven in het formulier, disk-only wijzigingen volgen schijf en wanneer hetzelfde veld aan beide kanten verschillend is gewijzigd blijft de schijfwaarde live terwijl de volledige lokale formulierinvoer eerst apart in Versiegeschiedenis wordt bewaard. Een gekozen/verwijderde pending omslag blijft expliciet van de gebruiker totdat die Opslaan kiest.
+- **AI-assistent gebruiken** is de centrale zichtbaarheidsschakelaar voor AI-gerelateerde oppervlakken. Uitgeschakeld verdwijnen AI-assistent, Schrijverspersona, Boekprofiel en Boekgeheugen uit de navigatie, maar hun bestanden en instellingen blijven bestaan.
+- Wanneer een instelling de pagina verbergt waarvandaan Instellingen werd geopend, keert de gebruiker na Opslaan terug naar een geldige zichtbare bestemming (bij een open boek: Inhoud).
+- Spellingscontrole uit moet onmiddellijk zichtbaar zijn in het reeds geopende document: geen rode onderstrepingen en geen actieve spellingsbediening; een herstart of hoofdstukwissel mag nooit nodig zijn.
+- Integriteit/herstel vermeldt bij een concrete herstelactie waar de geselecteerde herstelkopie vandaan komt wanneer die metadata bekend is; herstel mag niet als een onzichtbare “nieuwste versie” worden gepresenteerd.
 
 ## Schrijfweergave en font-rendering
 
@@ -238,6 +244,7 @@ Tekstprompts voor hoofdstukken en secties gebruiken QuietWriter's eigen `prompt_
 
 - Boekprofiel, Boekgeheugen en Boekdetails volgen dezelfde conflictregel als Planning: lokale-only invoer mag blijven staan, disk-only invoer wordt overgenomen en hetzelfde veld dat op beide plaatsen verschillend wijzigde wordt nooit stil lokaal over de schijfversie heen gezet.
 - Bij zo'n dubbel gewijzigd veld blijft de schijfwaarde de live bron en wordt de volledige lokale formulierstate eerst als aparte `conflict_local`-versie in Versiegeschiedenis vastgelegd. De gebruiker krijgt daar zichtbare feedback over.
+- Bij centrale live-bookadoptie gebeurt die merge- en recoveryvoorbereiding vóór de eerste zichtbare pagina wordt omgebonden. Een mislukte recovery-write mag dus nooit leiden tot een workspace waarin pagina's verschillende `Book`-objecten gebruiken; meldingen volgen pas nadat de adoptie volledig is gecommit.
 - Capabilitymetadata voor **Thinking uitschakelen** is runtimecache, geen formulierinstelling. Metadata die al tijdens startup wordt opgehaald moet meteen bruikbaar zijn; een handmatige **Modellen ophalen**-actie mag geen voorwaarde zijn voor correcte requestparameters.
 - PDF gebruikt de eigen body-marges en daarom `QTextDocument.documentMargin = 0`; een Qt-standaardmarge mag nooit een lege fysieke slotpagina veroorzaken.
 
