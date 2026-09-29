@@ -80,7 +80,7 @@ def test_editor_collect_and_current_replace_use_protected_range_filter():
 
 def test_planning_same_book_adoption_preserves_unrelated_pending_state():
     planning = _source('quietwriter/ui/planning/planning_page.py')
-    assert 'def adopt_book(self, book, *, reload_kind=None):' in planning
+    assert 'def adopt_book(self, book, *, reload_kind=None, changed_files=None):' in planning
     assert "reload_kind != 'notes' and self.notes_page.dirty" in planning
     assert "reload_kind != 'characters'" in planning
     assert 'self.notes_page.restore_pending_text(pending_notes)' in planning
@@ -105,6 +105,6 @@ def test_book_details_navigation_saves_editor_and_same_book_adopt_preserves_dirt
     details = _source('quietwriter/ui/book_details.py')
     assert 'def has_pending_changes(self) -> bool:' in details
     assert 'def adopt_book_preserving_form(self, book):' in details
-    assert 'locally_changed = {key for key, value in current.items() if value != previous.get(key)}' in details
-    assert "if 'author' not in locally_changed: self.author.setText(incoming['author'])" in details
-    assert "if 'description' not in locally_changed: self.description.setPlainText(incoming['description'])" in details
+    assert 'merge_scalar_fields(current, previous, incoming, keys)' in details
+    assert 'self._apply_form_values(merged)' in details
+    assert "{'book.json': self.library.manifest_text(local_candidate)}" in details

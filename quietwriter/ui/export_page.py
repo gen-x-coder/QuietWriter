@@ -18,7 +18,7 @@ from .dialogs import confirm
 
 
 class ExportPage(QWidget):
-    """Single lightweight home for EPUB/Markdown export.
+    """Single lightweight home for EPUB/PDF/Markdown export.
 
     The page owns UI preferences only. Publication content remains in the existing
     PublicationStore and rendering receives a read-only ExportDocument snapshot.
@@ -84,6 +84,11 @@ class ExportPage(QWidget):
         for rb in (self.cover_art_only, self.cover_has_text): rb.setObjectName('publicationRadio'); cbl.addWidget(rb)
         self.cover_box = cover_box; el.addWidget(cover_box)
         self.show_sections = QCheckBox(tr('export.sections.show', 'Sectietitels als eigen pagina opnemen')); self.show_sections.setObjectName('publicationToggle'); el.addWidget(self.show_sections)
+        epub_validation_help = QLabel(tr(
+            'export.epub.validation_help',
+            'QuietWriter controleert na export de EPUB-structuur en interne verwijzingen voordat het bestand wordt geplaatst.'
+        ))
+        epub_validation_help.setObjectName('muted'); epub_validation_help.setWordWrap(True); el.addWidget(epub_validation_help)
         body.addWidget(self.epub_panel)
 
         self.pdf_panel = QFrame(); self.pdf_panel.setObjectName('panel')
@@ -335,9 +340,18 @@ class ExportPage(QWidget):
         except Exception as exc:
             QMessageBox.critical(self, tr('export.error.title', 'Exporteren'), tr('export.error.failed', 'Exporteren is mislukt.\n\n{error}', error=exc)); return
         self.last_output = destination
-        self.success_label.setText(tr('export.success', 'Export voltooid:\n{path}', path=destination))
+        if self.format_name == 'epub':
+            self.success_label.setText(tr(
+                'export.success.epub_validated',
+                'EPUB voltooid en intern gecontroleerd:\n{path}',
+                path=destination,
+            ))
+            status_text = tr('export.success.epub_validated.short', 'EPUB voltooid en gecontroleerd')
+        else:
+            self.success_label.setText(tr('export.success', 'Export voltooid:\n{path}', path=destination))
+            status_text = tr('export.success.short', 'Export voltooid')
         self.success_box.show()
-        self.main.status.showMessage(tr('export.success.short', 'Export voltooid'), 2500)
+        self.main.status.showMessage(status_text, 2500)
 
     def _open_file(self):
         if self.last_output and self.last_output.exists(): QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))

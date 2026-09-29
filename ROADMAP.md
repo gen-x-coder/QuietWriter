@@ -236,13 +236,18 @@ De AI-laag krijgt voorrang boven de eerder geplande portable Markdown-media. De 
 - **0.23.11 — Ollama thinking-capability fallback — afgerond:** `/api/show.capabilities` wordt gebruikt wanneer gedetailleerde thinking-controlmetadata ontbreekt; 🧠 staat voor thinking/reasoning-support en de UI onderscheidt bekende uitschakelbaarheid van een capability-only `think:false`-verzoek.
 - **0.24.0 — Afbeeldingslayout — afgerond:** relatieve breedte, links/midden/rechts en eenvoudige tekstomloop zijn als leesbare Markdown-metadata toegevoegd; de editor geeft de intentie rustig weer en EPUB rendert de layout met relatieve CSS/float zonder een nieuwe custom-renderlaag.
 - **0.25.0 — PDF-export MVP — afgerond:** de twee afzonderlijke Qt-spikes hebben vaste A5-paginering, running headers/paginanummers, hoofdstukstarts, afbeeldingslayout en paginagrensgedrag voldoende aangetoond. PDF is nu een echte exportkeuze met A5/A4, margepresets, templates en een veilige no-wrap fallback voor lange onderschriften.
-- **Volgende:** EPUB-reader-validatie, met Calibre als eerste vaste referentie; daarna alleen concrete compatibiliteitsproblemen oplossen.
+- **0.25.1 — code-review ronde 5 — afgerond:** PDF-DPI en afbeelding/onderschrift-paginering gecorrigeerd; Planning bewaart lokale notities/personagebewerkingen conflict-aware zonder externe tekst stil te overschrijven; `##`-regels zijn round-trip-safe in Persona/Boekprofiel/Boekgeheugen; persona-afsluitguard en thinking-capabilityguard toegevoegd; verouderde AI-racetests bijgewerkt.
+- **0.25.2 — code-review ronde 6 — afgerond:** Qt-racetestfixtures gecorrigeerd; PDF-documentmarge op nul; startup thinking-capability direct gecachet; drie-wegs same-field merge + herstelversie voor Boekprofiel/Boekgeheugen/Boekdetails; letterlijke backslashes vóór `##` volledig round-trip-safe.
+- **0.26.0 — EPUB-validatie en reader-navigatie — afgerond:** verpakte EPUB wordt vóór commit intern op container/package/manifest/spine/nav en lokale resource-/fragmentverwijzingen gecontroleerd; reader-landmarks wijzen naar Inhoud en het begin van het manuscript.
+- **0.27.0 — Media Manager — afgerond:** book-local afbeeldingen hebben een deterministische inventaris met gebruik/integriteit/history-status; ongebruikte manifestassets kunnen veilig in één cleanupbatch worden verwijderd na een automatisch herstelpunt, terwijl ongeregistreerde bestanden en onzekere historische afhankelijkheden conservatief blijven staan.
+- **0.27.1 — Media Manager runtime-hardening — afgerond:** herstelbare prullenbakhoofdstukken beschermen hun assets; batch-cleanup ruimt alleen de expliciet veilige subset op; externe wijzigingen verlaten de Media-foutlus via de centrale live-book/conflictflow.
+- **Volgende:** niet-visuele product-/releasehardening die volledig geautomatiseerd of headless getest kan worden; visuele polish alleen op basis van concrete praktijkfeedback.
 
 **Productstappen na 0.25.0**
 - **PDF-export MVP — afgerond:** Qt-route bewezen en geïntegreerd met A5/A4, margepresets, templates, headers/footers, publicatiestructuur en afbeeldingen. Verdere printfijninstellingen alleen op basis van praktijkgebruik.
-- **EPUB-reader-validatie — volgende:** Calibre als eerste vaste referentie; daarna gericht testen in andere gangbare readers en alleen concrete compatibiliteitsproblemen oplossen.
+- **EPUB-reader-validatie — 0.26.0 technisch afgerond:** interne archive-/linkvalidatie en minimale reader-landmarks toegevoegd. Calibre blijft eerste praktijkreferentie; andere readers alleen gericht testen en alleen concrete compatibiliteitsproblemen oplossen.
 - **Editor-image polish:** alleen verdere verfijning wanneer praktijkgebruik daar aanleiding toe geeft; geen complexe DTP-/custom-renderlaag.
-- Later: media-inspectie/ongebruikte-assets opruimen met historie-awareness en eventueel expliciete e-bookoptimalisatie voor zeer grote afbeeldingen.
+- **Media-inspectie/ongebruikte-assets opruimen — afgerond in 0.27.0.** Eventuele automatische e-bookoptimalisatie voor zeer grote afbeeldingen blijft later en alleen bij concrete behoefte.
 - Markdown-export blijft technisch beschikbaar maar is geen actieve productprioriteit; portable companion-assets worden pas heroverwogen bij concrete behoefte.
 - OpenRouter uitgebreider blijven testen binnen de gewone schrijfchat.
 
@@ -261,3 +266,36 @@ De AI-laag krijgt voorrang boven de eerder geplande portable Markdown-media. De 
 - Planning collection pages use the same title/action hierarchy.
 - Editable forms retain a bottom-right save action; collection actions live in the page header.
 - Settings has one explicit commit action; navigation away discards unsaved values and restores live previews.
+
+### 0.28.0–0.28.4 — Integriteit & migratiebasis — reviewfase
+- Read-only boekaudit voor structurele/inhoudelijke beschadiging zonder silent fallback.
+- Gericht History-herstel met checkpoint en revision guard.
+- Expliciete, atomische en opeenvolgende boekformaatmigraties; geen stille migratie tijdens openen.
+- **0.28.1:** runtime/failure-injectionbevindingen verwerkt: future-format guard bij werkelijk openen, onbekende manifestvelden round-trip-safe, gedeelde load/audit-validatie, inhoudelijk gevalideerde herstelbronnen, byte-exact herstel, deterministische History-volgorde, genormaliseerde duplicate-detectie en strikt atomische writes zonder directe-overwritefallback.
+- **0.28.2:** UI/storage-grens gehard: één `StorageWriteError`, dirty/autosave/close-failsafes bij locks, future-format conflict bewaart lokale tekst en sluit het incompatibele boek veilig, metadata-validatie voltooid en binaire herstelwrites delen de retrylogica.
+- **0.28.3:** future-format veilig loskoppelen gecentraliseerd en Boekdetails-saveguards toegevoegd.
+- **0.28.4:** detach is write-blocked en save-vrij; Boekdetails heeft nu ook de normale external-change merge/uitweg.
+- **Status:** afgerond en runtime groen bevonden door Claude; 0.29.0 bouwt hierop voort.
+
+**Vervolg na integriteits-UI — Planning dichter bij schrijven (ideeën uit reviewronde 10):** eerst een inklapbaar “In dit hoofdstuk”-blok met gekoppelde scènes/personages, daarna zichtbare automatische AI-context en planning-referenties in de integriteitsaudit. Lokale aliasherkenning kan daarna volgen. Hoofdstukvolgorde blijft bewust op één plek muteerbaar; de outline krijgt geen tweede drag-and-drop structuurbron.
+- Volgende stap na groen: een rustige Integriteit/Herstel-UI bovenop deze service; daarna alleen aanvullende herstelgevallen wanneer runtime-tests concrete gaten tonen.
+
+
+## Na 0.29.0
+
+### 0.30 — Editor polish
+- Spellingscontrole samen met Claude technisch herontwerpen: selectie/cursor, suggesties en robuuste contextinteractie; hover alleen als dat betrouwbaar blijkt.
+- Automatisch opslaan altijd aan; instelling verwijderen. `Ctrl+S` blijft als expliciete directe save.
+- Woordtelling in Inhoud verduidelijken naar bijvoorbeeld **Boek bevat 12.345 woorden**.
+
+### 0.31 — Rustigere navigatiestructuur
+- Met kleine tussenkoppen/visuele scheiding onderscheid maken tussen Boekenplank, onderdelen van het geopende boek en algemene functies.
+- Schrijverspersona blijft een zelfstandige schrijffunctie en verhuist niet naar Instellingen.
+- Geen grote navigatie-herbouw; rust en herkenbaarheid behouden.
+
+### 0.32 — Planning tijdens het schrijven
+- Pas na stabiliteit en UI-polish: rustig blok **In dit hoofdstuk** met gekoppelde scènes/personages.
+- Daarna zichtbare AI-context en planning-integriteit verder uitbouwen.
+
+### Later onderzoek
+- Reedsy en vergelijkbare schrijfsystemen systematisch vergelijken voordat nieuwe grote schrijf-/publicatiefuncties worden gekozen.

@@ -8,7 +8,10 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QScrollArea, QTextEdit, QVBoxLayout, QWidget
 )
 from ..storage import slugify
+from ..migrations import FutureBookFormatError
 from ..i18n import tr
+from ..field_merge import merge_scalar_fields
+from ..revisions import ExternalModificationError
 from .dialogs import confirm
 
 class BookDetailsPage(QWidget):
@@ -18,6 +21,7 @@ class BookDetailsPage(QWidget):
     def __init__(self, library, settings, book, parent=None, before_delete=None):
         super().__init__(parent)
         self.library = library
+        self.main = parent
         self.before_delete = before_delete
         self.settings = settings
         self.book = book
@@ -146,39 +150,80 @@ class BookDetailsPage(QWidget):
     def has_pending_changes(self) -> bool:
         return self.pending_cover is not None or self._form_values() != self._baseline_values()
 
+    def _candidate_with_form_values(self, base_book, values: dict):
+        """Build a recovery-only Book carrying the current local form values."""
+        candidate = copy.deepcopy(base_book)
+        candidate.title = str(values.get('title', '') or '').strip() or base_book.title
+        raw_slug = str(values.get('slug', '') or '').strip()
+        candidate.metadata.update({
+            'slug': slugify(raw_slug or candidate.title),
+            'date': str(values.get('date', '') or ''),
+            'description': str(values.get('description', '') or ''),
+            'intro': str(values.get('intro', '') or ''),
+            'meta': str(values.get('meta', '') or ''),
+            'image_alt': str(values.get('image_alt', '') or ''),
+            'author': str(values.get('author', '') or ''),
+            'language': str(values.get('language', 'nl') or 'nl'),
+            'tags': str(values.get('tags', '') or ''),
+            'published': self._canonical_published(values.get('published', 'No')),
+            'synopsis': str(values.get('synopsis', '') or ''),
+        })
+        return candidate
+
+    def _apply_form_values(self, values: dict):
+        self.title_edit.setText(str(values.get('title', '') or ''))
+        self.slug_edit.setText(str(values.get('slug', '') or ''))
+        self.date_edit.setText(str(values.get('date', '') or ''))
+        self.description.setPlainText(str(values.get('description', '') or ''))
+        self.intro_text.setPlainText(str(values.get('intro', '') or ''))
+        self.meta.setPlainText(str(values.get('meta', '') or ''))
+        self.image_alt.setPlainText(str(values.get('image_alt', '') or ''))
+        self.author.setText(str(values.get('author', '') or ''))
+        idx = self.language.findData(values.get('language', 'nl')); self.language.setCurrentIndex(max(0, idx))
+        self.tags.setText(str(values.get('tags', '') or ''))
+        idx = self.published.findData(self._canonical_published(values.get('published', 'No'))); self.published.setCurrentIndex(max(0, idx))
+        self.synopsis.setPlainText(str(values.get('synopsis', '') or ''))
+
     def adopt_book_preserving_form(self, book):
-        """Rebind a new live Book and merge external values into untouched fields."""
+        """Rebind live state with a three-way merge for dirty metadata fields.
+
+        Local-only edits stay in the form. Disk-only edits are adopted. If the
+        same field changed differently on both sides, the disk value stays live
+        and the complete local form is first preserved in Version History.
+        """
         current = self._form_values()
         previous = self._baseline_values()
         incoming = self._book_values(book)
-        locally_changed = {key for key, value in current.items() if value != previous.get(key)}
+        keys = tuple(current.keys())
+        merged, conflicts = merge_scalar_fields(current, previous, incoming, keys)
+
+        if conflicts:
+            local_candidate = self._candidate_with_form_values(book, current)
+            self.library.create_version_with_file_overrides(
+                book, {'book.json': self.library.manifest_text(local_candidate)}, kind='conflict_local'
+            )
 
         self.book = book
         self._baseline_title = book.title
         self._baseline_metadata = copy.deepcopy(book.metadata or {})
         self.old_slug = book.slug
-
-        # Keep only actual local edits. Every untouched form field follows the
-        # newly adopted disk state, preventing a later Save from reverting an
-        # unrelated metadata change made on another computer.
-        if 'title' not in locally_changed: self.title_edit.setText(incoming['title'])
-        if 'slug' not in locally_changed: self.slug_edit.setText(incoming['slug'])
-        if 'date' not in locally_changed: self.date_edit.setText(incoming['date'])
-        if 'description' not in locally_changed: self.description.setPlainText(incoming['description'])
-        if 'intro' not in locally_changed: self.intro_text.setPlainText(incoming['intro'])
-        if 'meta' not in locally_changed: self.meta.setPlainText(incoming['meta'])
-        if 'image_alt' not in locally_changed: self.image_alt.setPlainText(incoming['image_alt'])
-        if 'author' not in locally_changed: self.author.setText(incoming['author'])
-        if 'language' not in locally_changed:
-            idx = self.language.findData(incoming['language']); self.language.setCurrentIndex(max(0, idx))
-        if 'tags' not in locally_changed: self.tags.setText(incoming['tags'])
-        if 'published' not in locally_changed:
-            idx = self.published.findData(incoming['published']); self.published.setCurrentIndex(max(0, idx))
-        if 'synopsis' not in locally_changed: self.synopsis.setPlainText(incoming['synopsis'])
+        self._apply_form_values(merged)
 
         if self.pending_cover is None:
             self._refresh_cover_preview()
         self._update_header_path()
+
+        if conflicts:
+            QMessageBox.information(
+                self,
+                tr('book_details.merge_conflict_title', 'Lokale invoer veilig bewaard'),
+                tr(
+                    'book_details.merge_conflict_text',
+                    'Dezelfde boekgegevens zijn lokaal en extern gewijzigd. '
+                    'De versie op schijf is voor die velden geladen; je lokale invoer staat apart in Versiegeschiedenis.'
+                ),
+            )
+        return conflicts
 
     def _cover_candidate(self):
         if self.pending_cover == '__REMOVE__':
@@ -267,7 +312,7 @@ class BookDetailsPage(QWidget):
         title = self.title_edit.text().strip()
         slug = self.slug_edit.text().strip()
         if not title:
-            QMessageBox.warning(self, tr('book_details.title', 'Boekdetails'), tr('book_details.title_required', 'Geef het boek een titel.')); return
+            QMessageBox.warning(self, tr('book_details.title', 'Boekdetails'), tr('book_details.title_required', 'Geef het boek een titel.')); return False
         if not slug:
             slug = slugify(title)
         # slug normaliseren zodat bestandsnamen en metadata voorspelbaar blijven.
@@ -297,8 +342,43 @@ class BookDetailsPage(QWidget):
         })
         try:
             self.library.save_book_details(self.book, candidate, self.pending_cover)
+        except FutureBookFormatError:
+            recovery = self._candidate_with_form_values(self.book, self._form_values())
+            return self.main.preserve_local_and_close_future_book(
+                self.book, state_book=recovery, context='boekgegevens'
+            ) if self.main else False
+        except ExternalModificationError:
+            # A normal Dropbox/external change must not turn the save guard into
+            # a dead end. Reload first; adopt_active_book performs the existing
+            # three-way form merge and preserves same-field conflicts in History.
+            try:
+                latest = self.library.load_book(self.book.path)
+            except FutureBookFormatError:
+                recovery = self._candidate_with_form_values(self.book, self._form_values())
+                return self.main.preserve_local_and_close_future_book(
+                    self.book, state_book=recovery, context='boekgegevens'
+                ) if self.main else False
+            except Exception as e:
+                QMessageBox.warning(
+                    self, tr('book_details.title', 'Boekdetails'),
+                    tr('book_details.reload_failed', 'Het boek is extern gewijzigd, maar de nieuwste versie kon niet veilig worden geladen. Je invoer blijft staan.\n\n{error}', error=e)
+                )
+                return False
+            try:
+                self.main.adopt_active_book(latest)
+            except Exception as e:
+                QMessageBox.warning(
+                    self, tr('book_details.title', 'Boekdetails'),
+                    tr('book_details.merge_failed', 'Het boek is extern gewijzigd. Je invoer blijft staan, maar samenvoegen is mislukt.\n\n{error}', error=e)
+                )
+                return False
+            QMessageBox.information(
+                self, tr('book_details.external_title', 'Boek extern gewijzigd'),
+                tr('book_details.external_retry', 'De nieuwste versie is geladen en je lokale boekgegevens zijn behouden. Controleer de gegevens en sla daarna opnieuw op.')
+            )
+            return False
         except Exception as e:
-            QMessageBox.warning(self, tr('book_details.title', 'Boekdetails'), tr('book_details.save_failed', 'Opslaan mislukt:\n{error}', error=e)); return
+            QMessageBox.warning(self, tr('book_details.title', 'Boekdetails'), tr('book_details.save_failed', 'Opslaan mislukt:\n{error}', error=e)); return False
 
         # Commit to the shared in-memory identity only after the guarded disk
         # transaction has succeeded. Sections/chapters are intentionally kept on
@@ -310,6 +390,7 @@ class BookDetailsPage(QWidget):
         self._baseline_title = self.book.title
         self._baseline_metadata = copy.deepcopy(self.book.metadata or {})
         self.saved.emit(self.book)
+        return True
 
     def delete_book(self):
         if not confirm(

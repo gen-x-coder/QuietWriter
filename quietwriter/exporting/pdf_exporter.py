@@ -159,7 +159,7 @@ li { margin-bottom: 3px; }
 .contents-section { font-weight: bold; margin-top: 10px; }
 .page-section { }
 .page-break { page-break-before: always; }
-table.image-box { border-collapse: collapse; page-break-inside: avoid; }
+table.image-box { border-collapse: collapse; }
 table.image-box td { padding: 0; }
 '''
 
@@ -385,6 +385,54 @@ def _paper_and_margins(settings: dict) -> tuple[str, tuple[float, float], tuple[
     return options['paper_size'], _PAPER_MM[options['paper_size']], _MARGIN_PRESETS[options['margin_preset']]
 
 
+def _keep_pdf_tables_together(qdoc, body_h: float, QTextTable, QTextFormat) -> int:
+    """Move image tables that cross a QTextDocument page boundary to the next page.
+
+    Qt rich-text CSS does not implement ``page-break-inside: avoid``.  The PDF
+    renderer therefore performs a small layout pass after HTML parsing: any
+    QTextTable whose bounding rectangle crosses a body-page boundary receives
+    an explicit AlwaysBefore page-break policy.  Re-layout can move later tables,
+    so repeat a few times until stable.
+    """
+    moved_total = 0
+    if body_h <= 0:
+        return 0
+
+    def tables(frame):
+        for child in frame.childFrames():
+            if isinstance(child, QTextTable):
+                yield child
+            yield from tables(child)
+
+    for _pass in range(4):
+        changed = 0
+        layout = qdoc.documentLayout()
+        for table in list(tables(qdoc.rootFrame())):
+            rect = layout.frameBoundingRect(table)
+            if not rect.isValid() or rect.height() <= 0:
+                continue
+            top_page = int(max(0.0, rect.top()) // body_h)
+            # Subtract a tiny epsilon so an exact page-edge does not count as a split.
+            bottom = max(rect.top(), rect.bottom() - 0.01)
+            bottom_page = int(max(0.0, bottom) // body_h)
+            if bottom_page <= top_page:
+                continue
+            fmt = table.format()
+            policy = fmt.pageBreakPolicy()
+            wanted = policy | QTextFormat.PageBreakFlag.PageBreak_AlwaysBefore
+            if policy == wanted:
+                continue
+            fmt.setPageBreakPolicy(wanted)
+            table.setFormat(fmt)
+            changed += 1
+            moved_total += 1
+        if not changed:
+            break
+        # Querying documentSize forces the dirty document layout to recalculate.
+        qdoc.documentLayout().documentSize()
+    return moved_total
+
+
 def export_pdf(document: ExportDocument, destination: Path, settings: dict) -> Path:
     """Export one immutable snapshot to a paginated PDF using Qt only.
 
@@ -395,7 +443,7 @@ def export_pdf(document: ExportDocument, destination: Path, settings: dict) -> P
     """
     try:
         from PySide6.QtCore import QMarginsF, QRectF, QSizeF, QUrl, Qt
-        from PySide6.QtGui import QColor, QFont, QImage, QPageLayout, QPageSize, QPainter, QPdfWriter, QTextDocument
+        from PySide6.QtGui import QColor, QFont, QImage, QPageLayout, QPageSize, QPainter, QPdfWriter, QTextDocument, QTextFormat, QTextTable
     except Exception as exc:  # pragma: no cover - application dependency at runtime
         raise RuntimeError('PDF-export vereist de PySide6/Qt-omgeving van QuietWriter.') from exc
 
@@ -448,6 +496,14 @@ def export_pdf(document: ExportDocument, destination: Path, settings: dict) -> P
         writer.setCreator('QuietWriter')
 
         qdoc = QTextDocument()
+        # The PDF body rectangle already owns all page margins. QTextDocument's
+        # default 4 px documentMargin can otherwise create an extra empty last
+        # page when content ends only a few pixels below a page boundary.
+        qdoc.setDocumentMargin(0)
+        # QTextDocument otherwise converts CSS pt sizes using the screen DPI
+        # (typically 96), while QPdfWriter renders at 144 dpi.  Bind the layout
+        # to the writer before HTML parsing so 10.8 pt is truly 10.8 pt in PDF.
+        qdoc.documentLayout().setPaintDevice(writer)
         qdoc.setDefaultFont(QFont('Georgia', 11))
         qdoc.setPageSize(QSizeF(body_w, body_h))
 
@@ -460,6 +516,7 @@ def export_pdf(document: ExportDocument, destination: Path, settings: dict) -> P
             qdoc.addResource(QTextDocument.ResourceType.ImageResource, QUrl(f'qw-asset://{asset.id}'), image)
 
         qdoc.setHtml(html_text)
+        _keep_pdf_tables_together(qdoc, body_h, QTextTable, QTextFormat)
         page_count = int(qdoc.pageCount())
         if page_count < 1:
             raise ValueError('PDF-export leverde geen pagina\'s op.')

@@ -237,6 +237,7 @@ class StartPage(QWidget):
                 item.widget().deleteLater()
 
         books = self.library.list_books()
+        load_errors = list(getattr(self.library, 'last_list_errors', []) or [])
         total = len(books)
 
         word_counts = {}
@@ -291,6 +292,10 @@ class StartPage(QWidget):
             else:
                 self.count.setText(tr('bookshelf.count.many', '{count} boeken', count=total))
         self.no_results.setVisible(bool(query) and not books)
+        if load_errors:
+            names = ', '.join(str(row.get('title') or '?') for row in load_errors[:3])
+            suffix = f' • {len(load_errors)} boek(en) niet geopend: {names}'
+            self.count.setText(self.count.text() + suffix)
 
         create = QFrame()
         create.setObjectName('newBookCard')

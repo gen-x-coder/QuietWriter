@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QMessageBox, QPushButton, QVB
 from ..current_page_stack import CurrentPageStack
 from ...planning_storage import PlanningStore
 from ...revisions import ExternalModificationError, RevisionVerificationError
+from ...migrations import FutureBookFormatError
 from ...i18n import tr
 from .characters_page import CharactersPage
 from .outline_page import OutlinePage
@@ -47,29 +48,43 @@ class PlanningPage(QWidget):
         self.pages.setCurrentIndex(index)
         for i,b in enumerate(self.buttons): b.setChecked(i==index)
 
-    def set_book(self,book):
-        if self.book and self.book.id != getattr(book,'id',None):
+    def set_book(self,book, *, force=False):
+        # A forced detach is used only after all local planning state has already
+        # been preserved in a conflict_local History snapshot. It must never run
+        # save_pending(): the live book may now belong to a newer QuietWriter.
+        if not force and self.book and self.book.id != getattr(book,'id',None):
             if self.save_pending() is False:
                 return False
         self.book=book
         enabled=book is not None; self.setEnabled(enabled)
-        if not enabled:return True
+        if not enabled:
+            if force:
+                self.characters_page.load(); self.outline_page.load(); self.notes_page.load()
+            return True
         self.characters_page.load(); self.outline_page.load(); self.notes_page.load(); return True
 
-    def adopt_book(self, book, *, reload_kind=None):
-        """Rebind a freshly loaded Book without discarding unrelated drafts.
+    @staticmethod
+    def _changed_paths(changed_files) -> set[str]:
+        return {str(path).replace('\\', '/').lstrip('./') for path in (changed_files or [])}
 
-        ``reload_kind`` names the planning file whose conflict was just resolved.
-        Pending input belonging to other planning files is restored after the
-        authoritative disk state has been reloaded.
+    def adopt_book(self, book, *, reload_kind=None, changed_files=None):
+        """Rebind a freshly loaded Book without silently merging a real conflict.
+
+        Unrelated pending input is restored only when its own backing file did
+        not change externally.  If it did, ``_resolve_external_change`` stores
+        the local draft in a recovery version and this method deliberately loads
+        the authoritative disk text instead.
         """
         same_book = bool(self.book and book and self.book.id == book.id)
+        changed = self._changed_paths(changed_files)
         pending_notes = None
         pending_character = None
         if same_book:
-            if reload_kind != 'notes' and self.notes_page.dirty:
+            if (reload_kind != 'notes' and self.notes_page.dirty
+                    and 'planning/notes.md' not in changed):
                 pending_notes = self.notes_page.editor.toPlainText()
-            if reload_kind != 'characters':
+            if (reload_kind != 'characters'
+                    and 'planning/characters.json' not in changed):
                 pending_character = self.characters_page.pending_editor_snapshot()
 
         self.book = book
@@ -83,10 +98,16 @@ class PlanningPage(QWidget):
             self.characters_page.restore_editor_snapshot(pending_character)
         return True
 
-    def _unrelated_pending_overrides(self, conflict_kind):
+    def _pending_overrides(self, conflict_kind):
+        """Return all unrelated unsaved planning input for a recovery snapshot."""
         overrides = {}
         if conflict_kind != 'notes' and self.notes_page.dirty:
             overrides['planning/notes.md'] = self.notes_page.editor.toPlainText()
+        if conflict_kind != 'characters':
+            snapshot = self.characters_page.pending_editor_snapshot()
+            if snapshot is not None:
+                characters = self.characters_page.characters_with_snapshot(snapshot)
+                overrides['planning/characters.json'] = self._planning_override_bytes('characters', characters)
         return overrides
 
     def save_pending(self):
@@ -139,30 +160,65 @@ class PlanningPage(QWidget):
             return 'failed'
         old_book = self.book
         preferred_chapter_id = self.main.editor_page.chapter.id if self.main.editor_page.chapter else None
+        changed_paths = self._changed_paths(exc.changed_files)
+        pending_overrides = self._pending_overrides(kind)
+        conflicting_pending = [
+            path for path in pending_overrides
+            if path in changed_paths
+        ]
         try:
-            pending_overrides = self._unrelated_pending_overrides(kind)
             if box.clickedButton() is mine:
-                # Preserve unrelated dirty planning documents before the central
-                # same-book reload, then preserve external disk state and write
-                # only the planning file for which the user chose "mine".
+                # Keep unrelated local drafts in a recovery snapshot.  They are
+                # restored into the live UI only when their own file was not one
+                # of the externally changed files.
                 if pending_overrides:
-                    self.main.library.create_version_with_file_overrides(old_book,pending_overrides,kind='conflict_local')
+                    self.main.library.create_version_with_file_overrides(
+                        old_book, pending_overrides, kind='conflict_local'
+                    )
                 self.main.library.create_version(old_book,kind='conflict_external')
                 latest=self.main.library.load_book(old_book.path)
                 self.main.library.track_book(latest)
                 writer(latest,value)
                 result='mine'
             else:
-                # Preserve the selected local planning payload plus unrelated
-                # dirty notes in History before accepting the disk state.
+                # Preserve the selected local payload plus every unrelated local
+                # draft in one recovery version, but leave the live disk state
+                # untouched when the user explicitly chooses "schijf".
                 relative={'characters':'planning/characters.json','scenes':'planning/outline.json','notes':'planning/notes.md'}[kind]
                 overrides={relative:self._planning_override_bytes(kind,value)}
                 overrides.update(pending_overrides)
                 self.main.library.create_version_with_file_overrides(old_book,overrides,kind='conflict_local')
                 latest=self.main.library.load_book(old_book.path)
                 result='disk'
-            self.main.adopt_active_book(latest, preferred_chapter_id, planning_reload_kind=kind)
+            self.main.adopt_active_book(
+                latest, preferred_chapter_id, planning_reload_kind=kind,
+                planning_changed_files=exc.changed_files,
+            )
+            if conflicting_pending:
+                labels = []
+                if 'planning/notes.md' in conflicting_pending:
+                    labels.append(tr('planning.nav.notes', 'Notities'))
+                if 'planning/characters.json' in conflicting_pending:
+                    labels.append(tr('planning.nav.characters', 'Personages'))
+                QMessageBox.information(
+                    self,
+                    tr('planning.pending_conflict.title', 'Lokale planning veilig bewaard'),
+                    tr(
+                        'planning.pending_conflict.text',
+                        'Ook je niet-opgeslagen {items} waren extern gewijzigd. '
+                        'De versie op schijf is geladen; je lokale invoer staat apart in Versiegeschiedenis.',
+                        items=', '.join(labels),
+                    ),
+                )
             return result
+        except FutureBookFormatError:
+            relative={'characters':'planning/characters.json','scenes':'planning/outline.json','notes':'planning/notes.md'}[kind]
+            overrides={relative:self._planning_override_bytes(kind,value)}
+            overrides.update(pending_overrides)
+            ok = self.main.preserve_local_and_close_future_book(old_book, file_overrides=overrides, context='planning')
+            if not ok and paused_notes and self.notes_page.dirty:
+                self.notes_page.timer.start()
+            return 'failed'
         except Exception as error:
             if paused_notes and self.notes_page.dirty:
                 self.notes_page.timer.start()

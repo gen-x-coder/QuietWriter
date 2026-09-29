@@ -12,6 +12,7 @@ from .cover import render_cover
 from .markup import markdown_to_xhtml, markdown_to_xhtml_with_headings
 from .models import ExportDocument, ExportItem
 from .templates import template_css
+from .epub_validation import validate_epub_archive
 
 
 XHTML_NS = 'http://www.w3.org/1999/xhtml'
@@ -24,13 +25,13 @@ _ITEM_LABELS = {
         'title_page': 'Titelpagina', 'copyright': 'Copyright', 'dedication': 'Opdracht',
         'epigraph': 'Epigraaf', 'contents': 'Inhoud', 'foreword': 'Voorwoord',
         'preface': 'Inleiding', 'afterword': 'Nawoord', 'acknowledgements': 'Dankwoord',
-        'about_author': 'Over de auteur',
+        'about_author': 'Over de auteur', 'landmarks': 'Navigatie', 'start_reading': 'Start lezen',
     },
     'en': {
         'title_page': 'Title page', 'copyright': 'Copyright', 'dedication': 'Dedication',
         'epigraph': 'Epigraph', 'contents': 'Contents', 'foreword': 'Foreword',
         'preface': 'Preface', 'afterword': 'Afterword', 'acknowledgements': 'Acknowledgements',
-        'about_author': 'About the author',
+        'about_author': 'About the author', 'landmarks': 'Navigation', 'start_reading': 'Start reading',
     },
 }
 
@@ -292,6 +293,28 @@ def export_epub(document: ExportDocument, destination: Path, settings: dict) -> 
     nav_list = ''.join(nav_rows)
     nav_heading = _item_label('contents', language)
     nav_body = f'<nav epub:type="toc" id="toc"><h1>{html.escape(nav_heading)}</h1><ol>{nav_list}</ol></nav>'
+
+    # Small EPUB landmarks layer for reader navigation. W3C recommends a
+    # bodymatter landmark and, when an in-book contents page exists, a toc
+    # landmark. Keep this intentionally minimal instead of mirroring the ToC.
+    landmark_rows: list[str] = []
+    if contents_placeholder is not None:
+        landmark_rows.append(
+            f'<li><a epub:type="toc" href="text/contents.xhtml">{html.escape(nav_heading)}</a></li>'
+        )
+    if chapter_paths:
+        body_href = chapter_paths[0][0]
+        landmark_rows.append(
+            f'<li><a epub:type="bodymatter" href="{html.escape(body_href, quote=True)}">'
+            f'{html.escape(_item_label("start_reading", language))}</a></li>'
+        )
+    landmarks_body = ''
+    if landmark_rows:
+        landmarks_body = (
+            f'<nav epub:type="landmarks"><h2>{html.escape(_item_label("landmarks", language))}</h2>'
+            f'<ol>{"".join(landmark_rows)}</ol></nav>'
+        )
+    nav_body += landmarks_body
     nav_doc = (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         f'<html xmlns="{XHTML_NS}" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="{html.escape(language, quote=True)}" lang="{html.escape(language, quote=True)}">'
@@ -353,6 +376,10 @@ def export_epub(document: ExportDocument, destination: Path, settings: dict) -> 
             zf.writestr('mimetype', b'application/epub+zip', compress_type=zipfile.ZIP_STORED)
             for name, data in files.items():
                 zf.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
+        # Validate the actual packaged archive before replacing an existing
+        # export. This catches broken manifest/spine/nav/resource references
+        # that plain XML parsing cannot detect.
+        validate_epub_archive(tmp)
         os.replace(tmp, destination)
     finally:
         try:

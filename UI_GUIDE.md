@@ -72,7 +72,7 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 - Niet-interactieve kaarten krijgen geen hover-background. Alleen de daadwerkelijke inline actie of knop communiceert klikbaarheid.
 - Historie- en herstel-lijsten bieden Enter/Return als equivalent van hun primaire veilige muisactie. Destructieve acties worden nooit impliciet door list-activatie uitgevoerd.
 - Een centrale same-book reload/conflictoplossing mag lokale, nog niet opgeslagen invoer in een **ander** formulier of planningdocument nooit stil vervangen. Alleen de conflicterende bron wordt autoritatief herladen; dirty invoer elders blijft staan of wordt veldgewijs gemerged met de nieuwe live state.
-- Boekdetails mergeert bij een externe same-book reload alleen schijfwaarden in velden die lokaal nog onaangeraakt zijn. Lokaal gewijzigde velden en een gekozen/verwijderde pending omslag blijven expliciet van de gebruiker totdat die Opslaan kiest.
+- Boekdetails gebruikt bij een externe same-book reload een drie-wegs merge per veld. Lokaal-only wijzigingen blijven in het formulier, disk-only wijzigingen volgen schijf en wanneer hetzelfde veld aan beide kanten verschillend is gewijzigd blijft de schijfwaarde live terwijl de volledige lokale formulierinvoer eerst apart in Versiegeschiedenis wordt bewaard. Een gekozen/verwijderde pending omslag blijft expliciet van de gebruiker totdat die Opslaan kiest.
 
 ## Schrijfweergave en font-rendering
 
@@ -97,6 +97,8 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 - De exportpagina verandert de publicatiestructuur nooit impliciet. De knop **Publicatiestructuur aanpassen** navigeert terug naar de bestaande setup.
 - Preflight is inline feedback en gebruikt geen modale dialoog voor waarschuwingen. Alleen blokkerende runtimefouten/overschrijven vragen een dialoog.
 - EPUB-instellingen blijven reflowable-readerinstellingen: template, omslag, omslagtekstmodus en sectietitels. PDF heeft apart vaste-pagina-instellingen: template, A5/A4, margepreset, paginanummers, rustige lopende kop en sectietitelpagina’s.
+- Na EPUB-rendering valideert QuietWriter eerst het tijdelijke, daadwerkelijk verpakte archief: mimetype/container/package/manifest/spine/nav en alle door QuietWriter gegenereerde lokale links/resources moeten intern consistent zijn voordat het doelbestand atomisch wordt vervangen.
+- `nav.xhtml` bevat naast de gewone EPUB-ToC een minimale landmarks-laag: `bodymatter` naar het eerste hoofdstuk en alleen bij een zichtbare Inhoud-pagina een `toc`-landmark. Landmarks blijven beperkt tot punten die een reader daadwerkelijk als snelnavigatie kan gebruiken.
 - Omslagtekst kent bewust slechts twee modi: QuietWriter voegt titel/auteur toe aan tekstloos artwork, of QuietWriter gebruikt een reeds complete omslag. Geen coverdesigner.
 - De exportmap is computergebonden en staat daarom in QSettings; per-boek renderkeuzes staan onder `export/settings.json`.
 - Na succesvolle export blijft de gebruiker op dezelfde pagina en krijgt hij **Bestand openen** en **Map openen**; normale successen gebruiken geen QMessageBox.
@@ -220,3 +222,38 @@ Tekstprompts voor hoofdstukken en secties gebruiken QuietWriter's eigen `prompt_
 
 - Een expliciete **Onthouden**-actie schrijft de reeds door de gebruiker goedgekeurde geheugenstate. De opslagroute mag daarbij niet opnieuw een mogelijk stale zichtbaar Boekgeheugen-tekstveld over de programmatic wijziging heen kopiëren.
 - Geslaagde opslag verwijdert de afgehandelde voorstelkaart en geeft zichtbare succesfeedback; mislukte opslag laat de kaart staan met concrete foutfeedback.
+
+## Correctnessregels na code-review ronde 5 (0.25.1)
+
+- PDF-layout bindt `QTextDocument` vóór HTML-parsing aan de `QPdfWriter`-paintdevice. Puntgroottes en paginageometrie moeten altijd in dezelfde DPI-context worden berekend.
+- Een afbeelding en onderschrift vormen in PDF één keep-together-eenheid. QuietWriter controleert de werkelijke Qt-tabelgeometrie na layout en forceert zo nodig een pagina-einde vóór de tabel; CSS `page-break-inside` wordt niet als betrouwbaar beschouwd.
+- Bij een Planning-conflict mag lokale pending invoer alleen automatisch worden teruggezet als het eigen backingbestand niet in de extern gewijzigde bestanden staat. Bij een dubbele wijziging blijft de diskversie live en wordt de lokale invoer apart herstelbaar in Versiegeschiedenis bewaard.
+- Een geopend bestaand personageformulier telt net als een nieuw concept als pending state zodra de verzamelde velden afwijken van het opgeslagen personage.
+- Vrije tekst in Schrijverspersona, Boekprofiel en Boekgeheugen mag `##`-tussenkoppen bevatten. QuietWriter ontsnapt zulke regels in de leesbare Markdownbron en verwijdert bij het inlezen precies één eigen escape. Ook een door de gebruiker letterlijk ingevoerde `\##` of meerdere voorafgaande backslashes blijft daardoor byte-voor-inhoud gelijk.
+- Een dirty Schrijverspersona valt onder dezelfde navigatie-/afsluit-saveguard als de andere profielpagina's.
+- Een grijze **Thinking uitschakelen**-optie betekent ook runtime-technisch dat QuietWriter geen disable-parameter meestuurt voor dat bekende provider/model.
+
+
+## Same-field externe wijzigingen (0.25.2)
+
+- Boekprofiel, Boekgeheugen en Boekdetails volgen dezelfde conflictregel als Planning: lokale-only invoer mag blijven staan, disk-only invoer wordt overgenomen en hetzelfde veld dat op beide plaatsen verschillend wijzigde wordt nooit stil lokaal over de schijfversie heen gezet.
+- Bij zo'n dubbel gewijzigd veld blijft de schijfwaarde de live bron en wordt de volledige lokale formulierstate eerst als aparte `conflict_local`-versie in Versiegeschiedenis vastgelegd. De gebruiker krijgt daar zichtbare feedback over.
+- Capabilitymetadata voor **Thinking uitschakelen** is runtimecache, geen formulierinstelling. Metadata die al tijdens startup wordt opgehaald moet meteen bruikbaar zijn; een handmatige **Modellen ophalen**-actie mag geen voorwaarde zijn voor correcte requestparameters.
+- PDF gebruikt de eigen body-marges en daarom `QTextDocument.documentMargin = 0`; een Qt-standaardmarge mag nooit een lege fysieke slotpagina veroorzaken.
+
+## Media Manager (0.27.0)
+
+- **Media** is een boekniveau-pagina tussen Boekgeheugen en Exporteren. De eerste versie is bewust tekstgericht: inventaris en integriteit zijn belangrijker dan een visuele galerij.
+- De pagina toont de omslag alleen ter informatie. Omslag wijzigen/verwijderen blijft onderdeel van Boekdetails; inline-media-cleanup raakt covers nooit.
+- Beheerde afbeeldingen krijgen één van vier statussen: Gebruikt, Ongebruikt, Ontbreekt of Gewijzigd. Niet-geregistreerde bestanden onder `assets/images/` zijn zichtbaar maar worden nooit automatisch verwijderd.
+- Opruimen is batchgericht en herstelbaar: één expliciete actie verwijdert alleen bewezen ongebruikte manifestassets en maakt daarvoor eerst één volledig `media_cleanup`-herstelpunt in Versiegeschiedenis.
+- Als één live Markdownbron niet betrouwbaar gelezen kan worden, wordt cleanup geheel geblokkeerd. Onzekerheid mag nooit als 'ongebruikt' worden geïnterpreteerd.
+- Historische versies zijn zelfstandig: een live ongebruikte asset mag weg wanneer iedere oude versie die hem gebruikt een eigen kopie bezit. Als zo'n kopie ontbreekt wordt cleanup geweigerd, omdat een restore anders afhankelijk kan zijn van de nog aanwezige live UUID-binary.
+- Een bestandslock ná de manifestcommit mag alleen een zichtbaar ongeregistreerd restbestand opleveren. De UI claimt dan niet dat de fysieke cleanup volledig klaar is.
+
+
+## Media Manager correctness (0.27.1)
+
+- Een hoofdstuk in de hoofdstukprullenbak is herstelbare inhoud en telt daarom als actuele mediagebruiker. Media toont zulke bronnen als **Prullenbak: <titel>**.
+- Batch-opruimen werkt uitsluitend op de assets die de actuele inventaris als `can_cleanup` markeert. Historisch onveilige assets blijven staan zonder veilige kandidaten te blokkeren.
+- Een externe wijziging tijdens cleanup wordt nooit omzeild. Met een schone editor wordt de nieuwste live-bookstate centraal geadopteerd; met pending manuscript/publicatie-invoer gaat de bestaande conflictflow vóór automatisch herladen.

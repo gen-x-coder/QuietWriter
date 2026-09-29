@@ -42,6 +42,10 @@ class SettingsPage(QWidget):
         ]
         self._ai_models_by_provider = {'ollama': list(self.available_models), 'openrouter': []}
         self._ai_model_info_by_provider = {'ollama': supplied_infos, 'openrouter': {}}
+        # Startup model discovery already contains capability metadata. Persist
+        # it immediately so the chat runtime guard does not depend on the user
+        # pressing "Modellen ophalen" once during this session.
+        self._cache_model_capabilities('ollama', supplied_infos.values())
         self._ai_model_drafts = {
             'ollama': str(settings.value('ollama_model', '') or ''),
             'openrouter': str(settings.value('openrouter_model', '') or ''),
@@ -649,6 +653,24 @@ class SettingsPage(QWidget):
         self.model.blockSignals(False)
         self._update_thinking_control()
 
+    def _cache_model_capabilities(self, provider_name: str, infos) -> None:
+        """Persist provider capability metadata independently from form saves."""
+        for info in infos or ():
+            if not isinstance(info, dict):
+                continue
+            name = str(info.get('name') or '')
+            if not name:
+                continue
+            supported = info.get('thinking_supported')
+            can_disable = info.get('thinking_can_disable')
+            if supported is False or can_disable is False:
+                state = 'false'
+            elif can_disable is True:
+                state = 'true'
+            else:
+                state = 'unknown'
+            self.settings.setValue(f'ai_thinking_can_disable/{provider_name}/{name}', state)
+
     def _selected_model_info(self) -> dict | None:
         provider_name = str(self.ai_provider.currentData() or 'ollama')
         model_name = self._selected_ai_model()
@@ -715,6 +737,9 @@ class SettingsPage(QWidget):
             previous = self._selected_ai_model()
             self._ai_models_by_provider[provider_name] = models
             self._ai_model_info_by_provider[provider_name] = {m['name']: dict(m) for m in infos}
+            # Capability metadata is a provider cache, not a user preference.
+            # Keep the same runtime guard current after an explicit refresh.
+            self._cache_model_capabilities(provider_name, infos)
             if previous in models:
                 self._ai_model_drafts[provider_name] = previous
             elif models:

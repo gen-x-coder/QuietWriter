@@ -27,6 +27,22 @@ SECTIONS = (
 _SECTION_BY_TITLE = {section.title.casefold(): section for section in SECTIONS}
 
 
+def _escape_section_body(text: str) -> str:
+    """Escape every field line whose visible text could look like a section header."""
+    lines = str(text or '').replace('\r\n', '\n').replace('\r', '\n').split('\n')
+    return '\n'.join(
+        ('\\' + line) if line.lstrip('\\').startswith('## ') else line
+        for line in lines
+    )
+
+
+def _unescape_section_line(line: str) -> str:
+    # Rendering adds exactly one protective backslash, even when the user's
+    # literal line already began with one or more backslashes. Remove exactly
+    # that one so render -> parse is lossless for ##, \##, \\##, ...
+    return line[1:] if line.startswith('\\') and line[1:].lstrip('\\').startswith('## ') else line
+
+
 def empty_book_profile() -> dict[str, str]:
     return {section.key: '' for section in SECTIONS}
 
@@ -59,6 +75,12 @@ def parse_book_profile(markdown: str) -> dict[str, str]:
         current_lines = []
 
     for line in lines:
+        if line.startswith('\\') and line.lstrip('\\').startswith('## '):
+            if current_title is not None:
+                current_lines.append(_unescape_section_line(line))
+            else:
+                preamble.append(_unescape_section_line(line))
+            continue
         if line.startswith('## '):
             flush()
             title = line[3:].strip()
@@ -87,7 +109,7 @@ def parse_book_profile(markdown: str) -> dict[str, str]:
 def render_book_profile(profile: dict[str, str]) -> str:
     parts = ['# Boekprofiel']
     for section in SECTIONS:
-        body = (profile.get(section.key) or '').strip()
+        body = _escape_section_body((profile.get(section.key) or '').strip())
         parts.append(f'## {section.title}\n\n{body}'.rstrip())
     return '\n\n'.join(parts).rstrip() + '\n'
 

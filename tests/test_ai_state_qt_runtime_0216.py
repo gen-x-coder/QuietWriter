@@ -61,14 +61,22 @@ def test_late_cancel_from_book_a_cannot_mutate_book_b(app):
 
         main = SimpleNamespace(
             settings=FakeSettings(),
-            library=SimpleNamespace(read_persona=lambda: 'persona'),
+            library=SimpleNamespace(
+                read_persona=lambda: 'persona',
+                read_book_profile=lambda _book: '',
+                read_book_memory=lambda _book: '',
+            ),
         )
+        _active = {'book': None}
+        main.active_book = lambda: _active['book']
         panel = AIPanel(main)
+        _active['book'] = book_a
         panel.set_book(book_a)
         provider = BlockingProvider()
         context = SimpleNamespace(label='test', pieces=['Testcontext'], text='context')
         panel._continue_send(provider, 'model', 'Vraag uit boek A', context)
 
+        _active['book'] = book_b
         panel.set_book(book_b)
         assert [m['content'] for m in panel.messages] == ['Bericht van boek B.']
 

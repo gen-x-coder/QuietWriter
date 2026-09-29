@@ -26,10 +26,11 @@ from ..media.markup import (
 )
 from ..media.store import MediaStore, MediaError
 from ..revisions import ExternalModificationError, RevisionVerificationError
+from ..migrations import FutureBookFormatError
 from ..publication_models import FRONT_MATTER, BACK_MATTER
 from ..publication_storage import PublicationStore
 from ..spell_engine import WordDictionary
-from ..storage import Chapter, Section
+from ..storage import Chapter, Section, StorageWriteError
 from ..themes import THEMES
 from ..typography import WritingTypography
 from .dialogs import confirm, prompt_text
@@ -456,6 +457,18 @@ class EditorPage(QWidget):
                     result='disk'
                 self.main.adopt_active_book(latest, preferred_chapter_id)
                 return result
+            except FutureBookFormatError:
+                snapshot_exists = box.clickedButton() is disk
+                if not snapshot_exists:
+                    try:
+                        self.main.library.create_version_with_file_overrides(old_book, {relative_path: local_text}, kind='conflict_local')
+                        snapshot_exists = True
+                    except Exception as snapshot_error:
+                        QMessageBox.critical(self, 'Lokale tekst niet veiliggesteld', 'De publicatietekst kon niet in Versiegeschiedenis worden bewaard. Het boek blijft open.\n\n' + str(snapshot_error))
+                        return 'failed'
+                QMessageBox.warning(self, 'Nieuwere QuietWriter nodig', 'Dit boek gebruikt inmiddels een nieuwere QuietWriter-versie. Je lokale publicatietekst is bewaard in Versiegeschiedenis. Het boek wordt gesloten; werk QuietWriter bij voordat je verdergaat.')
+                self.main.force_return_to_bookshelf(old_book)
+                return 'failed'
             except Exception as error:
                 QMessageBox.critical(self,tr('publication.conflict.failed_title', 'Conflict niet opgelost'),tr('publication.conflict.failed_text', 'Er is niets bewust overschreven.\n\n{error}', error=error))
                 return 'failed'
@@ -1064,6 +1077,12 @@ class EditorPage(QWidget):
                 self._adopt_disk_book(chapter_id)
                 self.autosave_status.setText('● Versie op schijf geladen')
             return True
+        except FutureBookFormatError:
+            self.book = old_book; self.chapter = old_chapter
+            self.editor.blockSignals(True); self.editor.setPlainText(local_text); self.editor.blockSignals(False)
+            self.dirty = True
+            already = clicked is use_disk  # that branch created conflict_local before load_book()
+            return self._leave_future_format_book(old_book, {old_chapter.file: local_text}, snapshot_exists=already)
         except ExternalModificationError:
             # The disk changed again while the user was deciding. Never bypass
             # the guard; leave local text in the editor and let the user retry.
@@ -1090,6 +1109,29 @@ class EditorPage(QWidget):
             self.autosave_timer.start(1800)
         return False
 
+    def _handle_storage_write_error(self, exc: StorageWriteError) -> bool:
+        self.dirty = True
+        self.autosave_status.setText('⚠ Opslaan mislukt · bestand vergrendeld')
+        if self.main.settings.value('autosave', True, bool):
+            self.autosave_timer.start(2500)
+        return False
+
+    def _leave_future_format_book(self, old_book, chapter_overrides=None, *, snapshot_exists=False):
+        """Preserve local work, then detach from a book this version cannot safely edit."""
+        try:
+            if not snapshot_exists:
+                self.main.library.create_version_from_state(old_book, chapter_overrides or {}, kind='conflict_local')
+        except Exception as snapshot_error:
+            QMessageBox.critical(self, 'Lokale tekst niet veiliggesteld',
+                'Dit boek gebruikt inmiddels een nieuwere QuietWriter-versie, maar je lokale tekst kon niet in Versiegeschiedenis worden bewaard. '
+                'Het boek blijft daarom open. Kopieer je tekst handmatig voordat je afsluit.\n\n' + str(snapshot_error))
+            return False
+        QMessageBox.warning(self, 'Nieuwere QuietWriter nodig',
+            'Dit boek is op een andere computer met een nieuwere QuietWriter opgeslagen. Je laatste lokale tekst is bewaard in Versiegeschiedenis. '
+            'QuietWriter sluit dit boek nu om te voorkomen dat het nieuwere formaat wordt beschadigd. Werk QuietWriter bij voordat je verdergaat.')
+        self.main.force_return_to_bookshelf(old_book)
+        return False
+
     def save(self):
         # Never touch disk, show a conflict dialog or mutate the manuscript model
         # while a drag interaction owns QTreeWidget indexes. Autosave is resumed
@@ -1114,6 +1156,8 @@ class EditorPage(QWidget):
             return self._resolve_external_change(exc)
         except RevisionVerificationError as exc:
             return self._handle_verification_error(exc)
+        except StorageWriteError as exc:
+            return self._handle_storage_write_error(exc)
         self.dirty = False
         self.main.search_index.rebuild_book(self.book)
         self.autosave_status.setText('● Opgeslagen · zojuist')
