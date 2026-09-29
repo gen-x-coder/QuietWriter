@@ -21,6 +21,24 @@ class BookBlockedError(RuntimeError):
     """A detached/incompatible book is deliberately closed for writes."""
 
 
+class CorruptSourceError(RuntimeError):
+    """Refuse normal writes over an existing text file that is not valid UTF-8."""
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        super().__init__(f'{self.path} is beschadigd en kan niet veilig worden overschreven; herstel het eerst via Integriteit.')
+
+
+def _guard_existing_utf8(path: Path):
+    """Fail closed before a normal text save can destroy corrupt source bytes."""
+    path = Path(path)
+    if not path.exists():
+        return
+    try:
+        path.read_bytes().decode('utf-8')
+    except UnicodeDecodeError as exc:
+        raise CorruptSourceError(path) from exc
+
+
 class StorageWriteError(OSError):
     def __init__(self, path: Path, cause: OSError):
         self.path = Path(path); self.cause = cause
@@ -155,6 +173,10 @@ class Library:
     def block_book(self, book: Book):
         """Fail closed for a detached/incompatible book until it is explicitly reopened."""
         self._blocked_book_ids.add(book.id)
+
+    def is_book_blocked(self, book: Book) -> bool:
+        """Return whether writes for this live book are deliberately blocked."""
+        return book.id in self._blocked_book_ids
 
     def tracked_revision(self, book: Book) -> BookRevision | None:
         return self._tracked_revisions.get(book.id)
@@ -439,6 +461,9 @@ class Library:
         source_path = book.path / source.file
         target_path = book.path / rel
         target_path.parent.mkdir(parents=True, exist_ok=True)
+        # Duplicating is a normal content operation, not a recovery path.
+        # Never turn invalid UTF-8 into a generic decode crash or copy it blindly.
+        _guard_existing_utf8(source_path)
         _safe_atomic_write_text(target_path, source_path.read_text(encoding='utf-8') if source_path.exists() else '')
         section.chapters.insert(index + 1, target)
         try:
@@ -557,6 +582,7 @@ class Library:
         self.verify_book_unchanged(book)
         self.ensure_daily_archive(book)
         path = book.path / chapter.file
+        _guard_existing_utf8(path)
         _safe_atomic_write_text(path, text)
         book.metadata['last_used'] = datetime.now().timestamp()
         try:
@@ -1279,6 +1305,7 @@ class Library:
 
     def save_book_profile(self, book: Book, text: str):
         self.verify_book_unchanged(book)
+        _guard_existing_utf8(self.book_profile_path(book))
         _safe_atomic_write_text(self.book_profile_path(book), text)
         self._refresh_if_tracked(book)
 
@@ -1293,6 +1320,7 @@ class Library:
 
     def save_book_memory(self, book: Book, text: str):
         self.verify_book_unchanged(book)
+        _guard_existing_utf8(self.book_memory_path(book))
         _safe_atomic_write_text(self.book_memory_path(book), text)
         self._refresh_if_tracked(book)
 

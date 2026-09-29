@@ -93,9 +93,10 @@ class SettingsPage(QWidget):
         self._add_settings_field(gl, tr('settings.general.language', 'Programmataal'), self.language,
             tr('settings.general.language_help', 'De gekozen taal wordt na een herstart van QuietWriter toegepast.'))
         self._add_settings_section(gl, tr('settings.section.saving', 'Opslaan'))
-        self.autosave = QCheckBox(tr('settings.general.autosave', 'Automatisch opslaan')); self.autosave.setChecked(settings.value('autosave', True, bool))
-        self._add_settings_field(gl, tr('settings.general.autosave', 'Automatisch opslaan'), self.autosave,
-            tr('settings.general.autosave_help', 'Slaat wijzigingen ongeveer drie seconden na je laatste toetsaanslag automatisch op. Staat dit uit, dan gebruik je Ctrl+S om handmatig op te slaan.'))
+        saving_info = QLabel(tr('settings.general.autosave_always', 'QuietWriter slaat wijzigingen automatisch op. Ctrl+S blijft beschikbaar om direct op te slaan.'))
+        saving_info.setObjectName('muted')
+        saving_info.setWordWrap(True)
+        gl.addWidget(saving_info)
         gl.addStretch(1)
         self._add_settings_category(nav_lay, tr('settings.general', 'Algemeen'), general)
 
@@ -454,7 +455,6 @@ class SettingsPage(QWidget):
     def _current_form_state(self):
         return (
             self.language.currentData() or 'nl',
-            bool(self.autosave.isChecked()),
             self.theme.currentText(),
             self.editor_font.currentText(),
             int(self.editor_font_size.value()),
@@ -477,7 +477,7 @@ class SettingsPage(QWidget):
 
     def _wire_dirty_tracking(self):
         widgets = (
-            self.language, self.autosave, self.theme, self.editor_font,
+            self.language, self.theme, self.editor_font,
             self.editor_font_size, self.manuscript_line_spacing,
             self.manuscript_indent, self.manuscript_paragraph_spacing,
             self.smart_quotes, self.root, self.cover_template,
@@ -808,7 +808,7 @@ class SettingsPage(QWidget):
         self.settings.setValue('manuscript_indent', int(self.manuscript_indent.value()))
         self.settings.setValue('manuscript_paragraph_spacing', int(self.manuscript_paragraph_spacing.value()))
         self.settings.setValue('smart_quotes', self.smart_quotes.isChecked())
-        self.settings.setValue('autosave', self.autosave.isChecked())
+        self.settings.setValue('autosave', True)
         self.settings.setValue('workspace', self.root.text())
         self.settings.setValue('ai_enabled', self.ai_enabled.isChecked())
         provider = str(self.ai_provider.currentData() or 'ollama')
@@ -858,7 +858,7 @@ class SettingsPage(QWidget):
         language_value = str(self.settings.value('language', 'nl') or 'nl')
         language_index = self.language.findData(language_value)
         self.language.setCurrentIndex(language_index if language_index >= 0 else 0)
-        self.autosave.setChecked(self.settings.value('autosave', True, bool))
+        self.settings.setValue('autosave', True)
         self.root.setText(self.settings.value('workspace', str(Path.home()/APP_NAME)))
         self.cover_template.setText(self.settings.value('cover_header_template', '/{slug}.jpg'))
         self.ai_enabled.setChecked(self.settings.value('ai_enabled', True, bool))

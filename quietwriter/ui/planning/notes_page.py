@@ -14,7 +14,20 @@ class NotesPage(QWidget):
         self.timer=QTimer(self); self.timer.setSingleShot(True); self.timer.setInterval(2500); self.timer.timeout.connect(self.save)
         lay.addLayout(top); lay.addWidget(info); lay.addSpacing(4); lay.addWidget(self.editor,1)
     def load(self):
-        self.timer.stop(); self.editor.blockSignals(True); self.editor.setPlainText(self.owner.store.load_notes(self.owner.book) if self.owner.book else ''); self.editor.blockSignals(False); self.dirty=False; self.save_button.setEnabled(False)
+        self.timer.stop(); self.editor.blockSignals(True)
+        try:
+            text = self.owner.store.load_notes(self.owner.book) if self.owner.book else ''
+        except UnicodeDecodeError:
+            self.editor.setPlainText(tr(
+                'planning.notes.corrupt',
+                'Dit notitiebestand is beschadigd en kan niet als UTF-8 worden gelezen.\n\nOpen Integriteit om het te controleren en zo mogelijk te herstellen.'
+            ))
+            self.editor.setReadOnly(True)
+            self.editor.blockSignals(False)
+            self.dirty=False; self.save_button.setEnabled(False)
+            return
+        self.editor.setPlainText(text); self.editor.setReadOnly(False)
+        self.editor.blockSignals(False); self.dirty=False; self.save_button.setEnabled(False)
     def restore_pending_text(self, text: str):
         self.timer.stop()
         self.editor.blockSignals(True); self.editor.setPlainText(text); self.editor.blockSignals(False)

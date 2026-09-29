@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 
 from ..i18n import tr
 from ..integrity import BookIntegrityChecker
-from ..migrations import MigrationError
+from ..migrations import FutureBookFormatError, MigrationError
 from ..revisions import ExternalModificationError
 from ..storage import BookBlockedError, StorageWriteError
 
@@ -25,6 +25,8 @@ class IntegrityPage(QWidget):
         self.book = None
         self.checker = BookIntegrityChecker()
         self.report = None
+        self._central_reload_in_progress = False
+        self._recovery_cache = {}
 
         root = QVBoxLayout(self)
         root.setContentsMargins(42, 34, 42, 34)
@@ -98,18 +100,54 @@ class IntegrityPage(QWidget):
     def adopt_book(self, book):
         self.book = book
         self.setEnabled(bool(book))
-        if self.isVisible():
+        # adopt_active_book() calls every page. During our own pre/post-audit
+        # reload that must not recursively start another integrity refresh.
+        if self.isVisible() and not self._central_reload_in_progress:
             self.refresh()
+
+    def _adopt_latest_disk_state(self):
+        """Reload the current book centrally without saving anything.
+
+        Integrity is entered only after all editable pages have been saved. A
+        fresh adoption therefore makes the disk state authoritative and resets
+        revision tracking to exactly the state that is about to be audited.
+        Future-format/corrupt manifests are intentionally left to the read-only
+        checker, which can explain them without trying to adopt them.
+        """
+        if not self.book or self.library.is_book_blocked(self.book):
+            return self.book
+        preferred_chapter_id = getattr(getattr(self.main, 'editor_page', None), 'chapter', None)
+        preferred_chapter_id = getattr(preferred_chapter_id, 'id', None)
+        try:
+            latest = self.library.load_book(self.book.path)
+        except (FutureBookFormatError, MigrationError, OSError, ValueError, TypeError):
+            return self.book
+        self._central_reload_in_progress = True
+        try:
+            try:
+                self.main.adopt_active_book(latest, preferred_chapter_id=preferred_chapter_id)
+            except Exception:
+                # A damaged UTF-8 text file may make one of the ordinary UI
+                # loaders reject the book. Integrity must remain reachable in
+                # exactly that situation: keep the existing live state and let
+                # the read-only checker describe/recover the damaged file.
+                return self.book
+            self.book = latest
+        finally:
+            self._central_reload_in_progress = False
+        return latest
 
     def refresh(self):
         self.list.clear()
         self.details.clear()
         self.repair_button.setEnabled(False)
         self.migrate_button.setEnabled(False)
+        self._recovery_cache = {}
         if not self.book:
             self.report = None
             self.summary.setText(tr('integrity.no_book', 'Geen boek geopend.'))
             return
+        self._adopt_latest_disk_state()
         try:
             self.report = self.checker.audit_folder(Path(self.book.path))
         except Exception as exc:
@@ -154,7 +192,9 @@ class IntegrityPage(QWidget):
 
         recovery = None
         if issue.recoverable and issue.path != 'book.json':
-            recovery = self.checker.latest_recovery_file(self.library, self.book, issue.path)
+            if issue.path not in self._recovery_cache:
+                self._recovery_cache[issue.path] = self.checker.latest_recovery_file(self.library, self.book, issue.path)
+            recovery = self._recovery_cache[issue.path]
         if issue.recoverable and recovery is not None:
             recovery_text = tr('integrity.recovery_available', 'Er is een geldige herstelkopie in Versiegeschiedenis beschikbaar.')
         elif issue.recoverable:
@@ -169,7 +209,9 @@ class IntegrityPage(QWidget):
         issue = item.data(Qt.UserRole) if item else None
         if not issue or not issue.recoverable or issue.path == 'book.json':
             return
-        source = self.checker.latest_recovery_file(self.library, self.book, issue.path)
+        source = self._recovery_cache.get(issue.path)
+        if source is None:
+            source = self.checker.latest_recovery_file(self.library, self.book, issue.path)
         if source is None:
             QMessageBox.information(self, tr('integrity.no_recovery_title', 'Geen herstelkopie'), tr('integrity.no_recovery', 'Voor dit bestand is geen geldige herstelkopie beschikbaar.'))
             self.refresh()
@@ -192,6 +234,10 @@ class IntegrityPage(QWidget):
         except (StorageWriteError, OSError, ValueError) as exc:
             QMessageBox.critical(self, tr('integrity.repair_failed_title', 'Herstel mislukt'), tr('integrity.repair_failed', 'Het bestand kon niet veilig worden hersteld.\n\n{error}', error=exc))
             return
+        # The repair changed disk state behind every page. Reload centrally
+        # before the editor can become active again, otherwise stale editor text
+        # could overwrite the just-restored chapter on its next autosave.
+        self._adopt_latest_disk_state()
         self.main.status.showMessage(tr('integrity.repaired_status', 'Bestand hersteld en opnieuw gecontroleerd'), 4000)
         self.refresh()
 

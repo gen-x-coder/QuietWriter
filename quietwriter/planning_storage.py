@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from .planning_models import Character, Scene
-from .storage import _safe_atomic_write_text
+from .storage import _safe_atomic_write_text, _guard_existing_utf8
 
 
 class PlanningStore:
@@ -58,5 +58,6 @@ class PlanningStore:
 
     def save_notes(self, book, text: str):
         self.library.verify_book_unchanged(book)
+        _guard_existing_utf8(self.root(book) / 'notes.md')
         _safe_atomic_write_text(self.root(book) / 'notes.md', text)
         self.library.refresh_book_revision(book)

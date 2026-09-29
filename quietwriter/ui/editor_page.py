@@ -30,7 +30,7 @@ from ..migrations import FutureBookFormatError
 from ..publication_models import FRONT_MATTER, BACK_MATTER
 from ..publication_storage import PublicationStore
 from ..spell_engine import WordDictionary
-from ..storage import Chapter, Section, StorageWriteError
+from ..storage import Chapter, Section, StorageWriteError, CorruptSourceError
 from ..themes import THEMES
 from ..typography import WritingTypography
 from .dialogs import confirm, prompt_text
@@ -48,7 +48,7 @@ class EditorPage(QWidget):
         super().__init__()
         self.main = main
         self.media_store = MediaStore(main.library)
-        self.book = None; self.chapter = None; self.dirty = False
+        self.book = None; self.chapter = None; self.dirty = False; self._chapter_corrupt = False
         self._editing_image_block: int | None = None
         self._editing_image_reference_path: str | None = None
         self._chapter_word_counts = {}
@@ -74,7 +74,7 @@ class EditorPage(QWidget):
         self.add_content_button = QPushButton(tr('editor.add', '+ Toevoegen')); self.add_content_button.setObjectName('secondaryButton'); self.add_content_button.clicked.connect(self.add_menu)
         head.addWidget(title); head.addStretch(); head.addWidget(self.add_content_button)
         self.tree = ManuscriptTree(); self.tree.setObjectName('manuscriptTree'); self.tree.itemClicked.connect(self.tree_clicked); self.tree.keyboardActivated.connect(self.tree_keyboard_activated); self.tree.chapterDropped.connect(self.move_chapter); self.tree.dragStarted.connect(self._on_tree_drag_started); self.tree.dragFinished.connect(self._on_tree_drag_finished); self.tree.setContextMenuPolicy(Qt.CustomContextMenu); self.tree.customContextMenuRequested.connect(self.tree_context_menu)
-        self.book_words = QLabel('0 woorden'); self.book_words.setObjectName('muted')
+        self.book_words = QLabel('Boek bevat 0 woorden'); self.book_words.setObjectName('muted')
         ml.addLayout(head); ml.addWidget(self.tree); ml.addWidget(self.book_words)
 
         self.center = QWidget(); cl = QVBoxLayout(self.center); cl.setContentsMargins(0,0,0,0); cl.setSpacing(0)
@@ -280,7 +280,7 @@ class EditorPage(QWidget):
         # nested event loop in which ordinary QTimers keep firing.
         self._autosave_resume_after_drag = bool(
             self.autosave_timer.isActive()
-            or (self.dirty and self.main.settings.value('autosave', True, bool))
+            or self.dirty
         )
         self.autosave_timer.stop()
         if hasattr(self, 'publication_editor'):
@@ -307,7 +307,7 @@ class EditorPage(QWidget):
             self._publication_autosave_resume_after_drag = False
             self._save_pending_after_drag = False
             self._publication_save_pending_after_drag = False
-            if should_resume and self.dirty and self.main.settings.value('autosave', True, bool):
+            if should_resume and self.dirty:
                 # A short fresh delay is intentional. It keeps conflict dialogs and
                 # disk I/O outside the dragFinished signal stack as well.
                 self.autosave_timer.start(250)
@@ -477,7 +477,10 @@ class EditorPage(QWidget):
             return 'failed'
 
     def _set_publication_context(self):
+        # Corruption is a property of manuscript chapter text only.  Publication
+        # editors have their own storage and must never inherit this guard.
         self.chapter = None
+        self._chapter_corrupt = False
         self.autosave_timer.stop()
         self.undo_button.setEnabled(False)
         self.redo_button.setEnabled(False)
@@ -673,6 +676,9 @@ class EditorPage(QWidget):
                     return
                 try:
                     copied = self.main.library.duplicate_chapter(self.book, chapter_id)
+                except CorruptSourceError:
+                    QMessageBox.warning(self, 'Hoofdstuk beschadigd', 'Dit hoofdstuk is beschadigd en kan niet worden gedupliceerd. Herstel het eerst via Integriteit.')
+                    return
                 except (ExternalModificationError, RevisionVerificationError) as exc:
                     self._handle_concurrency_issue(exc); return
                 except Exception as exc:
@@ -869,7 +875,31 @@ class EditorPage(QWidget):
         self.chapter = chapter
         self.chapter_title.setText(chapter.title)
         self.editor.blockSignals(True)
-        self.editor.setPlainText(self.main.library.read_chapter(self.book, chapter))
+        try:
+            text = self.main.library.read_chapter(self.book, chapter)
+        except UnicodeDecodeError:
+            self._chapter_corrupt = True
+            text = tr(
+                'editor.corrupt_text',
+                'Dit hoofdstukbestand is beschadigd en kan niet als UTF-8 worden gelezen.\n\n'
+                'Het bestand is alleen-lezen om overschrijven te voorkomen. Open Integriteit om het te controleren en zo mogelijk te herstellen.'
+            )
+            self.editor.setPlainText(text)
+            self.editor.setReadOnly(True)
+            self.chapter_title.setReadOnly(True)
+            self.editor.blockSignals(False)
+            self.dirty = False
+            self.autosave_timer.stop()
+            self.autosave_status.setText(tr('editor.corrupt_readonly', 'Beschadigd · alleen-lezen'))
+            self._sync_undo_redo()
+            self.update_counts()
+            self.main.sync_tool_buttons()
+            return
+        self._chapter_corrupt = False
+        self.editor.setPlainText(text)
+        if not self.preview_live_book:
+            self.editor.setReadOnly(False)
+            self.chapter_title.setReadOnly(False)
         self.editor.blockSignals(False)
         self._sync_undo_redo()
         self.editor.apply_typography(WritingTypography.from_settings(self.main.settings))
@@ -897,12 +927,12 @@ class EditorPage(QWidget):
             self._set_editor_chapter(current)
 
     def on_text_changed(self):
-        if self.preview_live_book:
+        if self.preview_live_book or self._chapter_corrupt:
             return
         self.dirty = True; self.autosave_status.setText('Niet opgeslagen')
         self._schedule_undo_redo_sync()
         self.update_counts()
-        if self.main.settings.value('autosave', True, bool): self.autosave_timer.start()
+        self.autosave_timer.start()
 
     def _adopt_disk_book(self, preferred_chapter_id: str | None = None):
         latest = self.main.library.load_book(self.book.path)
@@ -1105,15 +1135,13 @@ class EditorPage(QWidget):
         self.dirty = True
         # Sync software can briefly lock/on-demand hydrate a file. This is not a
         # content conflict. Keep the text in memory and quietly retry autosave.
-        if self.main.settings.value('autosave', True, bool):
-            self.autosave_timer.start(1800)
+        self.autosave_timer.start(1800)
         return False
 
     def _handle_storage_write_error(self, exc: StorageWriteError) -> bool:
         self.dirty = True
         self.autosave_status.setText('⚠ Opslaan mislukt · bestand vergrendeld')
-        if self.main.settings.value('autosave', True, bool):
-            self.autosave_timer.start(2500)
+        self.autosave_timer.start(2500)
         return False
 
     def _leave_future_format_book(self, old_book, chapter_overrides=None, *, snapshot_exists=False):
@@ -1144,9 +1172,15 @@ class EditorPage(QWidget):
             return False
         if self.preview_live_book:
             return True
+        # Publication text is independent of the last manuscript chapter.
+        # Handle those contexts before applying the chapter-corruption guard.
         if self.content_stack.currentWidget() is self.publication_editor:
             return self.publication_editor.save_pending()
         if self.content_stack.currentWidget() is self.publication_setup:
+            return True
+        if self._chapter_corrupt:
+            self.dirty = False
+            self.autosave_timer.stop()
             return True
         if not (self.book and self.chapter and self.dirty):
             return True
@@ -1227,7 +1261,7 @@ class EditorPage(QWidget):
         if self.chapter:
             self._chapter_word_counts[self.chapter.id] = words
         total = sum(self._chapter_word_counts.values()) if self.book else 0
-        self.book_words.setText(f'{total:,}'.replace(',', '.') + ' woorden')
+        self.book_words.setText('Boek bevat ' + f'{total:,}'.replace(',', '.') + ' woorden')
         chapter_index = 0; chapter_total = 0
         if self.book:
             flat = [c for sec in self.book.sections for c in sec.chapters]
@@ -1327,7 +1361,7 @@ class EditorPage(QWidget):
         self.populate_tree(after=open_new_chapter)
 
     def insert_scene_break(self):
-        if not self.book or not self.chapter or self.preview_live_book:
+        if not self.book or not self.chapter or self.preview_live_book or self._chapter_corrupt:
             return
         cursor = self.editor.textCursor()
         text = self.editor.toPlainText()
@@ -1510,7 +1544,7 @@ class EditorPage(QWidget):
 
     def _insert_image_from_panel(self, source_path: str, alt_text: str, caption: str,
                                  width: str, align: str, wrap: bool):
-        if not self.book or not self.chapter or self.preview_live_book:
+        if not self.book or not self.chapter or self.preview_live_book or self._chapter_corrupt:
             return
         try:
             asset = self.media_store.import_image(self.book, Path(source_path))
@@ -1771,6 +1805,7 @@ class EditorPage(QWidget):
             self.main.library.untrack_book(live)
         self.book = None
         self.chapter = None
+        self._chapter_corrupt = False
         self.publication_editor.set_book(None)
         self.content_stack.setCurrentWidget(self.manuscript_content)
         self._chapter_word_counts = {}
@@ -1780,7 +1815,7 @@ class EditorPage(QWidget):
         self.book_title_label.clear()
         self.editor.blockSignals(True); self.editor.clear(); self.editor.blockSignals(False)
         self._sync_undo_redo()
-        self.book_words.setText('0 woorden')
+        self.book_words.setText('Boek bevat 0 woorden')
         self.right.hide()
         if hasattr(self, 'ai'): self.ai.set_book(None)
         self._set_spell_active(False)
@@ -1805,18 +1840,33 @@ class EditorPage(QWidget):
 
     def collect_search_matches(self):
         rx=self._search_regex()
-        if not rx: return []
+        if not rx:
+            self._search_corrupt_skipped = []
+            return []
         rows=[]
+        skipped=[]
         for ch in self._chapters_in_scope():
-            text=self.editor.toPlainText() if self.chapter and ch.id==self.chapter.id else self.main.library.read_chapter(self.book,ch)
+            try:
+                text=self.editor.toPlainText() if self.chapter and ch.id==self.chapter.id else self.main.library.read_chapter(self.book,ch)
+            except UnicodeDecodeError:
+                skipped.append(ch.title)
+                continue
             searchable = mask_image_paths(text)
             for m in searchable_matches(text, rx):
                 a=max(0,m.start()-40); b=min(len(text),m.end()+60); snippet=searchable[a:b].replace('\n',' ')
                 rows.append((ch.id,ch.title,snippet,m.start(),m.end()-m.start()))
+        self._search_corrupt_skipped = skipped
         return rows
+
+    def _report_search_skips(self):
+        skipped = getattr(self, '_search_corrupt_skipped', [])
+        if skipped:
+            count = len(skipped)
+            self.main.status.showMessage(f'{count} beschadigd hoofdstuk' + (' is' if count == 1 else 'ken zijn') + ' overgeslagen. Herstel via Integriteit.', 5000)
 
     def do_search(self):
         self.search.show_results(self.collect_search_matches())
+        self._report_search_skips()
 
     def open_search_match(self, match):
         cid,start,length=match
@@ -1840,6 +1890,9 @@ class EditorPage(QWidget):
         self.open_search_match((target[0],target[3],target[4]))
 
     def replace_current_match(self):
+        if self._chapter_corrupt:
+            self.main.status.showMessage(tr('editor.corrupt_readonly', 'Beschadigd · alleen-lezen'), 3000)
+            return
         if self.preview_live_book:
             self.main.status.showMessage(tr('history.read_only', 'Historische versie is alleen-lezen.'), 3000)
             return
@@ -1855,6 +1908,9 @@ class EditorPage(QWidget):
         cur.insertText(self.search.replace.text()); self.do_search()
 
     def replace_all_matches(self):
+        if self._chapter_corrupt:
+            self.main.status.showMessage(tr('editor.corrupt_readonly', 'Beschadigd · alleen-lezen'), 3000)
+            return
         if self.preview_live_book:
             self.main.status.showMessage(tr('history.read_only', 'Historische versie is alleen-lezen.'), 3000)
             return
@@ -1865,8 +1921,13 @@ class EditorPage(QWidget):
         if self.save() is False:
             return
         chapters=self._chapters_in_scope()
+        skipped=[]
         for ch in chapters:
-            text=self.editor.toPlainText() if self.chapter and ch.id==self.chapter.id else self.main.library.read_chapter(self.book,ch)
+            try:
+                text=self.editor.toPlainText() if self.chapter and ch.id==self.chapter.id else self.main.library.read_chapter(self.book,ch)
+            except UnicodeDecodeError:
+                skipped.append(ch.title)
+                continue
             changed=replace_searchable_text(text, rx, replacement)
             if changed!=text:
                 if self.chapter and ch.id==self.chapter.id:
@@ -1880,6 +1941,9 @@ class EditorPage(QWidget):
         if self.save() is False:
             return
         self.main.search_index.rebuild_book(self.book); self.do_search(); self.update_counts(saved=True)
+        if skipped:
+            count=len(skipped)
+            self.main.status.showMessage(f'{count} beschadigd hoofdstuk' + (' is' if count == 1 else 'ken zijn') + ' overgeslagen bij vervangen. Herstel via Integriteit.', 5000)
 
 
     def _remember_panel_widths(self, *_):

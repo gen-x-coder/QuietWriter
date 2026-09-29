@@ -8,7 +8,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QHBoxLayout, QInputDialog, QMainWindow,
-    QMessageBox, QPushButton, QStatusBar, QVBoxLayout, QWidget
+    QLabel, QMessageBox, QPushButton, QStatusBar, QVBoxLayout, QWidget
 )
 
 from .current_page_stack import CurrentPageStack
@@ -65,9 +65,12 @@ class MainWindow(QMainWindow):
         root.addWidget(self.rail); root.addWidget(self.stack, 1)
 
         self.nav_buttons = []
+        self.nav_group_labels = []
         self.menu_button = self._nav_button('menu', tr('nav.menu', 'Menu'), self.toggle_nav, checkable=False)
-        self.rail_layout.addSpacing(8)
+        self.rail_layout.addSpacing(4)
+        self.library_group_label = self._nav_group(tr('nav.group.library', 'BIBLIOTHEEK'))
         self.bookshelf_button = self._nav_button('shelf', tr('nav.bookshelf', 'Boekenplank'), self.go_home)
+        self.book_group_label = self._nav_group(tr('nav.group.current_book', 'HUIDIG BOEK'))
         self.write_button = self._nav_button('books', tr('nav.contents', 'Inhoud'), self.show_editor)
         self.planning_button = self._nav_button('planning', tr('nav.planning', 'Planning'), self.show_planning)
         self.book_details_button = self._nav_button('edit', tr('nav.book_details', 'Boekdetails'), self.open_current_book_details)
@@ -77,7 +80,9 @@ class MainWindow(QMainWindow):
         self.integrity_button = self._nav_button('history', tr('nav.integrity', 'Integriteit'), self.show_integrity)
         self.export_button = self._nav_button('export', tr('nav.export', 'Exporteren'), self.show_export)
         self.rail_layout.addStretch()
+        self.writing_group_label = self._nav_group(tr('nav.group.writing', 'SCHRIJVEN'))
         self.persona_button = self._nav_button('persona', tr('nav.persona', 'Schrijverspersona'), self.show_persona)
+        self.program_group_label = self._nav_group(tr('nav.group.program', 'PROGRAMMA'))
         self.settings_button = self._nav_button('settings', tr('nav.settings', 'Instellingen'), self.open_settings)
         self.trash_button = self._nav_button('trash', tr('nav.trash', 'Prullenbak'), self.show_trash)
 
@@ -201,6 +206,15 @@ class MainWindow(QMainWindow):
             return page.save() is not False
         return True
 
+    def _nav_group(self, label):
+        heading = QLabel(label)
+        heading.setObjectName('navGroupLabel')
+        heading.setProperty('navGroupText', label)
+        heading.setContentsMargins(11, 6, 0, 0)
+        self.rail_layout.addWidget(heading)
+        self.nav_group_labels.append(heading)
+        return heading
+
     def _nav_button(self, icon_name, label, fn, checkable=True):
         b = QPushButton()
         b.setObjectName('navButton')
@@ -232,6 +246,8 @@ class MainWindow(QMainWindow):
                 b.setMinimumWidth(198); b.setMaximumWidth(198)
             else:
                 b.setFixedWidth(48)
+        for heading in self.nav_group_labels:
+            heading.setVisible(self.rail_expanded and (heading is not self.book_group_label or self.active_book() is not None))
         self.menu_button.setToolTip(tr('nav.collapse', 'Menu inklappen') if self.rail_expanded else tr('nav.expand', 'Menu uitklappen'))
         if not animate:
             self.rail.setMinimumWidth(target); self.rail.setMaximumWidth(target)
@@ -288,6 +304,8 @@ class MainWindow(QMainWindow):
             self.editor_page.exit_history_preview()
         self.toolrail.setVisible(in_editor)
         has_book = self.active_book() is not None
+        if hasattr(self, 'book_group_label'):
+            self.book_group_label.setVisible(self.rail_expanded and has_book)
         self.write_button.setVisible(has_book)
         self.planning_button.setVisible(has_book)
         self.book_details_button.setVisible(has_book)
@@ -762,6 +780,10 @@ class MainWindow(QMainWindow):
         self.spell_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.spell)
         self.insert_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.insert)
         self.history_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.history)
+        corrupt_chapter = bool(in_editor and getattr(self.editor_page, '_chapter_corrupt', False))
+        self.ai_button.setEnabled(bool(ai_enabled and not corrupt_chapter))
+        self.spell_button.setEnabled(not corrupt_chapter)
+        self.insert_button.setEnabled(not corrupt_chapter)
         if hasattr(self, 'delete_chapter_button'):
             total = sum(len(sec.chapters) for sec in self.editor_page.book.sections) if self.editor_page.book else 0
             self.delete_chapter_button.setEnabled(bool(in_editor and self.editor_page.chapter and not self.editor_page.preview_live_book and total > 1))
