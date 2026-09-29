@@ -268,27 +268,64 @@ class CharactersPage(QWidget):
         return any(texts)
 
     def pending_editor_snapshot(self):
-        """Capture an unsaved *new-character* draft before same-book reload.
+        """Capture any unsaved character form before a same-book reload.
 
-        Existing characters already have an authoritative stored counterpart; a
-        future merge policy can treat field-level edits separately. The reviewed
-        data-loss path concerns the in-memory new-character draft, which has no
-        disk representation at all and therefore must be kept intact.
+        Both a new draft and edits to an existing character live only in widgets
+        until Opslaan is pressed.  A reload caused by a conflict elsewhere in
+        Planning must therefore preserve the candidate when characters.json did
+        not change externally.
         """
-        if self._draft is None or not self.detail.is_new or self.detail.character is None:
+        if self.detail.character is None or self.canvas.currentWidget() is not self.detail:
             return None
         candidate = self.detail._collect()
-        return copy.deepcopy(candidate) if candidate is not None else None
+        if candidate is None:
+            return None
+        if self.detail.is_new:
+            if not self._draft_has_content():
+                return None
+            return {'character': copy.deepcopy(candidate), 'is_new': True}
+        stored = next((c for c in self.characters if c.id == candidate.id), None)
+        if stored is None or candidate == stored:
+            return None
+        return {'character': copy.deepcopy(candidate), 'is_new': False}
+
+    def characters_with_snapshot(self, snapshot):
+        """Return a serializable local character list including one pending form."""
+        if not snapshot:
+            return copy.deepcopy(self.characters)
+        candidate = copy.deepcopy(snapshot['character'])
+        if snapshot.get('is_new'):
+            return copy.deepcopy(self.characters) + [candidate]
+        result = []
+        found = False
+        for current in self.characters:
+            if current.id == candidate.id:
+                result.append(candidate); found = True
+            else:
+                result.append(copy.deepcopy(current))
+        if not found:
+            result.append(candidate)
+        return result
 
     def restore_editor_snapshot(self, snapshot):
         if snapshot is None:
             return
-        candidate = copy.deepcopy(snapshot)
+        candidate = copy.deepcopy(snapshot['character'])
+        is_new = bool(snapshot.get('is_new'))
         self.list.blockSignals(True)
-        self.list.clearSelection(); self.list.setCurrentRow(-1)
+        if is_new:
+            self.list.clearSelection(); self.list.setCurrentRow(-1)
+        else:
+            wanted = next((self.list.item(i) for i in range(self.list.count())
+                           if self.list.item(i).data(Qt.UserRole) == candidate.id), None)
+            if wanted is not None:
+                self.list.setCurrentItem(wanted)
+            else:
+                self.list.clearSelection(); self.list.setCurrentRow(-1)
         self.list.blockSignals(False)
-        self._draft = candidate
-        self.detail.set_character(candidate, self.characters + [candidate], is_new=True)
+        self._draft = candidate if is_new else None
+        visible_characters = self.characters + [candidate] if is_new else self.characters
+        self.detail.set_character(candidate, visible_characters, is_new=is_new)
         self.canvas.setCurrentWidget(self.detail)
 
     def save_pending(self):

@@ -37,7 +37,7 @@ def test_main_window_has_one_central_active_book_adoption_path():
     adopt = source[source.index('    def adopt_active_book'):source.index('    def _nav_button')]
     assert 'self._active_book = book' in adopt
     assert 'self.editor_page.adopt_live_book(book, preferred_chapter_id)' in adopt
-    assert 'self.planning_page.adopt_book(book, reload_kind=planning_reload_kind)' in adopt
+    assert 'self.planning_page.adopt_book(book, reload_kind=planning_reload_kind, changed_files=planning_changed_files)' in adopt
     assert 'self._replace_book_details_page(book)' in adopt
     assert 'self.export_page.set_book(book)' in adopt
 
@@ -47,7 +47,7 @@ def test_planning_conflict_uses_three_way_outcome_and_central_adoption():
     assert "return 'mine'" in planning
     assert "result='disk'" in planning
     assert "return 'failed'" in planning
-    assert 'self.main.adopt_active_book(latest, preferred_chapter_id, planning_reload_kind=kind)' in planning
+    assert 'planning_changed_files=exc.changed_files' in planning
 
     characters = _source('quietwriter/ui/planning/characters_page.py')
     outline = _source('quietwriter/ui/planning/outline_page.py')

@@ -25,6 +25,8 @@ from .book_memory_page import BookMemoryPage
 from .bookshelf import StartPage
 from .editor_page import EditorPage
 from .export_page import ExportPage
+from .media_manager_page import MediaManagerPage
+from .integrity_page import IntegrityPage
 from .persona_page import PersonaPage
 from .planning import PlanningPage
 from .settings_page import SettingsPage
@@ -57,7 +59,9 @@ class MainWindow(QMainWindow):
         self.trash = TrashPage(self)
         self.book_details_page = None
         self.export_page = ExportPage(self)
-        for page in (self.start, self.editor_page, self.planning_page, self.book_profile_page, self.book_memory_page, self.export_page, self.persona, self.settings_page, self.trash): self.stack.addWidget(page)
+        self.media_manager_page = MediaManagerPage(self)
+        self.integrity_page = IntegrityPage(self)
+        for page in (self.start, self.editor_page, self.planning_page, self.book_profile_page, self.book_memory_page, self.media_manager_page, self.integrity_page, self.export_page, self.persona, self.settings_page, self.trash): self.stack.addWidget(page)
         root.addWidget(self.rail); root.addWidget(self.stack, 1)
 
         self.nav_buttons = []
@@ -69,6 +73,8 @@ class MainWindow(QMainWindow):
         self.book_details_button = self._nav_button('edit', tr('nav.book_details', 'Boekdetails'), self.open_current_book_details)
         self.book_profile_button = self._nav_button('persona', tr('nav.book_profile', 'Boekprofiel'), self.show_book_profile)
         self.book_memory_button = self._nav_button('history', tr('nav.book_memory', 'Boekgeheugen'), self.show_book_memory)
+        self.media_button = self._nav_button('insert', tr('nav.media', 'Media'), self.show_media)
+        self.integrity_button = self._nav_button('history', tr('nav.integrity', 'Integriteit'), self.show_integrity)
         self.export_button = self._nav_button('export', tr('nav.export', 'Exporteren'), self.show_export)
         self.rail_layout.addStretch()
         self.persona_button = self._nav_button('persona', tr('nav.persona', 'Schrijverspersona'), self.show_persona)
@@ -117,7 +123,7 @@ class MainWindow(QMainWindow):
         """Return the single live Book object for the current workspace book."""
         return self._active_book
 
-    def adopt_active_book(self, book, preferred_chapter_id: str | None = None, *, planning_reload_kind: str | None = None):
+    def adopt_active_book(self, book, preferred_chapter_id: str | None = None, *, planning_reload_kind: str | None = None, planning_changed_files=None):
         """Adopt one freshly loaded live Book across all book-facing pages.
 
         Revision tracking is per book id, so allowing pages to keep older Book
@@ -130,25 +136,70 @@ class MainWindow(QMainWindow):
             return None
         self.library.track_book(book)
         self.editor_page.adopt_live_book(book, preferred_chapter_id)
-        self.planning_page.adopt_book(book, reload_kind=planning_reload_kind)
+        self.planning_page.adopt_book(book, reload_kind=planning_reload_kind, changed_files=planning_changed_files)
         self.book_profile_page.adopt_book(book)
         self.book_memory_page.adopt_book(book)
 
         details = self.book_details_page
         same_details_book = bool(details and details.book and details.book.id == book.id)
         if same_details_book and details.has_pending_changes():
-            # A same-book conflict/reload must not erase a form the user is
-            # currently editing. Keep the local fields and only rebind the
-            # authoritative live Book object underneath them.
-            details.adopt_book_preserving_form(book)
-            self.status.showMessage(
-                tr('book_details.external_preserved', 'Boek extern gewijzigd; je niet-opgeslagen boekgegevens zijn behouden.'),
-                5000,
-            )
+            # A same-book reload uses a three-way merge. Local-only form edits
+            # stay live; same-field conflicts keep disk authoritative and first
+            # preserve the full local form in Version History.
+            detail_conflicts = details.adopt_book_preserving_form(book)
+            if detail_conflicts:
+                message = tr(
+                    'book_details.external_conflict_preserved',
+                    'Boek extern gewijzigd; conflicterende lokale boekgegevens zijn apart bewaard in Versiegeschiedenis.'
+                )
+            else:
+                message = tr(
+                    'book_details.external_preserved',
+                    'Boek extern gewijzigd; je niet-opgeslagen boekgegevens zijn behouden.'
+                )
+            self.status.showMessage(message, 5000)
         else:
             self._replace_book_details_page(book)
+        self.media_manager_page.adopt_book(book)
+        self.integrity_page.adopt_book(book)
         self.export_page.set_book(book)
         return book
+
+
+    def preserve_local_and_close_future_book(self, book, *, file_overrides=None, state_book=None, context='wijzigingen'):
+        """Safely detach a book that became newer than this QuietWriter.
+
+        Every caller must first preserve the local UI state in History.  The
+        incompatible live manifest is never loaded or rewritten.  If creating
+        the recovery snapshot fails, the workspace deliberately stays open.
+        """
+        try:
+            if state_book is not None:
+                self.library.create_version_from_state(state_book, kind='conflict_local')
+            elif file_overrides:
+                self.library.create_version_with_file_overrides(book, file_overrides, kind='conflict_local')
+            else:
+                self.library.create_version_from_state(book, kind='conflict_local')
+        except Exception as exc:
+            QMessageBox.critical(
+                self, 'Lokale invoer niet veiliggesteld',
+                f'Je lokale {context} konden niet in Versiegeschiedenis worden bewaard. '
+                f'Het boek blijft open. Kopieer je invoer desnoods handmatig en probeer het opnieuw.\n\n{exc}'
+            )
+            return False
+        QMessageBox.warning(
+            self, 'Nieuwere QuietWriter nodig',
+            f'Dit boek gebruikt inmiddels een nieuwere QuietWriter-versie. Je lokale {context} zijn '
+            'bewaard in Versiegeschiedenis. Het boek wordt gesloten; werk QuietWriter bij voordat je verdergaat.'
+        )
+        self.force_return_to_bookshelf(book)
+        return True
+
+    def _save_book_details_if_pending(self):
+        page = self.book_details_page
+        if page is not None and page.has_pending_changes():
+            return page.save() is not False
+        return True
 
     def _nav_button(self, icon_name, label, fn, checkable=True):
         b = QPushButton()
@@ -242,6 +293,8 @@ class MainWindow(QMainWindow):
         self.book_details_button.setVisible(has_book)
         self.book_profile_button.setVisible(has_book)
         self.book_memory_button.setVisible(has_book)
+        self.media_button.setVisible(has_book)
+        self.integrity_button.setVisible(has_book)
         self.export_button.setVisible(has_book)
         self._sync_nav_selection()
         self.sync_tool_buttons()
@@ -252,13 +305,15 @@ class MainWindow(QMainWindow):
 
     def _sync_nav_selection(self):
         current = self.stack.currentWidget()
-        for b in (self.bookshelf_button, self.write_button, self.planning_button, self.book_details_button, self.book_profile_button, self.book_memory_button, self.export_button, self.persona_button, self.settings_button, self.trash_button): b.setChecked(False)
+        for b in (self.bookshelf_button, self.write_button, self.planning_button, self.book_details_button, self.book_profile_button, self.book_memory_button, self.media_button, self.integrity_button, self.export_button, self.persona_button, self.settings_button, self.trash_button): b.setChecked(False)
         if current is self.start: self.bookshelf_button.setChecked(True)
         elif current is self.editor_page: self.write_button.setChecked(True)
         elif current is self.planning_page: self.planning_button.setChecked(True)
         elif self.book_details_page is not None and current is self.book_details_page: self.book_details_button.setChecked(True)
         elif current is self.book_profile_page: self.book_profile_button.setChecked(True)
         elif current is self.book_memory_page: self.book_memory_button.setChecked(True)
+        elif current is self.media_manager_page: self.media_button.setChecked(True)
+        elif current is self.integrity_page: self.integrity_button.setChecked(True)
         elif current is self.export_page: self.export_button.setChecked(True)
         elif current is self.persona: self.persona_button.setChecked(True)
         elif current is self.settings_page: self.settings_button.setChecked(True)
@@ -282,10 +337,13 @@ class MainWindow(QMainWindow):
             return self.book_profile_page.save()
         if self.stack.currentWidget() is self.book_memory_page:
             return self.book_memory_page.save()
+        if self.stack.currentWidget() is self.persona and self.persona.dirty:
+            return self.persona.save()
         return True
 
     def show_editor(self):
         self._leave_settings_preview()
+        if not self._save_book_details_if_pending(): return
         if not self._save_planning_if_active(): return
         if self.stack.currentWidget() is self.editor_page:
             self._sync_nav_selection()
@@ -297,6 +355,7 @@ class MainWindow(QMainWindow):
 
     def show_planning(self):
         self._leave_settings_preview()
+        if not self._save_book_details_if_pending(): return
         if not self._save_planning_if_active(): return
         if not self.active_book():
             self.go_home(); return
@@ -309,6 +368,7 @@ class MainWindow(QMainWindow):
 
     def show_book_profile(self):
         self._leave_settings_preview()
+        if not self._save_book_details_if_pending(): return
         if not self.active_book():
             self.go_home(); return
         if not self._save_planning_if_active(): return
@@ -322,6 +382,7 @@ class MainWindow(QMainWindow):
 
     def show_book_memory(self):
         self._leave_settings_preview()
+        if not self._save_book_details_if_pending(): return
         if not self.active_book():
             self.go_home(); return
         if not self._save_planning_if_active(): return
@@ -333,8 +394,31 @@ class MainWindow(QMainWindow):
             return
         self.stack.setCurrentWidget(self.book_memory_page)
 
+    def show_media(self):
+        self._leave_settings_preview()
+        if not self._save_book_details_if_pending(): return
+        book = self.active_book()
+        if not book:
+            self.go_home(); return
+        if not self._save_planning_if_active(): return
+        if self.editor_page.save() is False: return
+        self.media_manager_page.set_book(book)
+        self.stack.setCurrentWidget(self.media_manager_page)
+
+    def show_integrity(self):
+        self._leave_settings_preview()
+        if not self._save_book_details_if_pending(): return
+        book = self.active_book()
+        if not book:
+            self.go_home(); return
+        if not self._save_planning_if_active(): return
+        if self.editor_page.save() is False: return
+        self.integrity_page.set_book(book)
+        self.stack.setCurrentWidget(self.integrity_page)
+
     def show_persona(self):
         self._leave_settings_preview()
+        if not self._save_book_details_if_pending(): return
         if not self._save_planning_if_active(): return
         if self.stack.currentWidget() is self.persona:
             self._sync_nav_selection()
@@ -344,6 +428,7 @@ class MainWindow(QMainWindow):
 
     def show_trash(self):
         self._leave_settings_preview()
+        if not self._save_book_details_if_pending(): return
         if not self._save_planning_if_active(): return
         if self.stack.currentWidget() is self.trash:
             self._sync_nav_selection()
@@ -351,10 +436,34 @@ class MainWindow(QMainWindow):
         self.trash.refresh()
         self.stack.setCurrentWidget(self.trash)
 
+    def force_return_to_bookshelf(self, book=None):
+        """Detach an incompatible book without invoking any save path."""
+        live = book or self.active_book()
+        if live is not None:
+            # Do not weaken revision protection while detaching. A future-format
+            # book is blocked against every later write until explicitly reopened.
+            self.library.block_book(live)
+        ep = self.editor_page
+        ep.autosave_timer.stop(); ep.book=None; ep.chapter=None; ep.dirty=False
+        ep.publication_editor.set_book(None); ep.content_stack.setCurrentWidget(ep.manuscript_content)
+        ep._chapter_word_counts={}; ep.tree.clear(); ep.chapter_title.clear(); ep.book_title_label.clear()
+        ep.editor.blockSignals(True); ep.editor.clear(); ep.editor.blockSignals(False); ep.right.hide()
+        if hasattr(ep, 'ai'): ep.ai.set_book(None)
+        self.planning_page.set_book(None, force=True)
+        if self.book_details_page is not None:
+            self.stack.removeWidget(self.book_details_page); self.book_details_page.deleteLater(); self.book_details_page=None
+        self.media_manager_page.set_book(None); self.integrity_page.set_book(None); self.export_page.set_book(None)
+        self.book_profile_page.set_book(None, force=True); self.book_memory_page.set_book(None, force=True)
+        self._active_book=None; self.start.refresh(); self.stack.setCurrentWidget(self.start)
+        for b in (self.write_button,self.planning_button,self.book_details_button,self.book_profile_button,self.book_memory_button,self.media_button,self.integrity_button,self.export_button): b.setVisible(False)
+        self._sync_nav_selection()
+
     def go_home(self):
         self._leave_settings_preview()
         if self.stack.currentWidget() is self.start and self.active_book() is None:
             self._sync_nav_selection()
+            return
+        if not self._save_book_details_if_pending():
             return
         if self.planning_page.save_pending() is False:
             return
@@ -367,6 +476,8 @@ class MainWindow(QMainWindow):
         self.planning_page.set_book(None)
         if self.book_details_page is not None:
             self.stack.removeWidget(self.book_details_page); self.book_details_page.deleteLater(); self.book_details_page = None
+        self.media_manager_page.set_book(None)
+        self.integrity_page.set_book(None)
         self.export_page.set_book(None)
         self.book_profile_page.set_book(None, force=True)
         self.book_memory_page.set_book(None, force=True)
@@ -378,6 +489,8 @@ class MainWindow(QMainWindow):
         self.book_details_button.setVisible(False)
         self.book_profile_button.setVisible(False)
         self.book_memory_button.setVisible(False)
+        self.media_button.setVisible(False)
+        self.integrity_button.setVisible(False)
         self.export_button.setVisible(False)
         self._sync_nav_selection()
 
@@ -418,6 +531,8 @@ class MainWindow(QMainWindow):
         self.book_details_button.setVisible(True)
         self.book_profile_button.setVisible(True)
         self.book_memory_button.setVisible(True)
+        self.media_button.setVisible(True)
+        self.integrity_button.setVisible(True)
         self.export_button.setVisible(True)
         self.stack.setCurrentWidget(self.editor_page)
         self._sync_nav_selection()
@@ -451,6 +566,7 @@ class MainWindow(QMainWindow):
 
     def show_export(self):
         self._leave_settings_preview()
+        if not self._save_book_details_if_pending(): return
         book = self.active_book()
         if not book:
             self.go_home(); return
@@ -503,7 +619,9 @@ class MainWindow(QMainWindow):
         self.editor_page.close_book()
         self._active_book = None
         self.start.refresh()
-        self.write_button.setVisible(False); self.planning_button.setVisible(False); self.book_details_button.setVisible(False); self.book_profile_button.setVisible(False); self.book_memory_button.setVisible(False); self.export_button.setVisible(False)
+        self.write_button.setVisible(False); self.planning_button.setVisible(False); self.book_details_button.setVisible(False); self.book_profile_button.setVisible(False); self.book_memory_button.setVisible(False); self.media_button.setVisible(False); self.integrity_button.setVisible(False); self.export_button.setVisible(False)
+        self.media_manager_page.set_book(None)
+        self.integrity_page.set_book(None)
         self.export_page.set_book(None)
         self.book_profile_page.set_book(None, force=True)
         self.book_memory_page.set_book(None, force=True)
@@ -671,14 +789,20 @@ class MainWindow(QMainWindow):
         return ep.editor.toPlainText(), f'hoofdstuk: {chapter.title}'
 
     def closeEvent(self, event):
-        if self.book_memory_page.dirty and self.book_memory_page.save() is False:
+        try:
+            if not self._save_book_details_if_pending():
+                event.ignore(); return
+            if self.persona.dirty and self.persona.save() is False:
+                event.ignore(); return
+            if self.book_memory_page.dirty and self.book_memory_page.save() is False:
+                event.ignore(); return
+            if self.book_profile_page.dirty and self.book_profile_page.save() is False:
+                event.ignore(); return
+            if self.planning_page.save_pending() is False:
+                event.ignore(); return
+        except Exception as exc:
             event.ignore()
-            return
-        if self.book_profile_page.dirty and self.book_profile_page.save() is False:
-            event.ignore()
-            return
-        if self.planning_page.save_pending() is False:
-            event.ignore()
+            QMessageBox.critical(self, 'Afsluiten gestopt', f'QuietWriter kon niet alle wijzigingen veilig opslaan. Het venster blijft open.\n\n{exc}')
             return
         # AI-workers moeten echt gestopt zijn voordat Qt widgets/QThreads vernietigt.
         # Anders kan Qt afsluiten met: QThread: Destroyed while thread is still running.
@@ -686,8 +810,13 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, 'AI is nog bezig', 'QuietWriter kon het lopende AI-verzoek nog niet veilig stoppen. Klik op “Stop AI” en probeer daarna opnieuw af te sluiten.')
             event.ignore()
             return
-        if self.editor_page.save() is False:
+        try:
+            if self.editor_page.save() is False:
+                event.ignore()
+                return
+        except Exception as exc:
             event.ignore()
+            QMessageBox.critical(self, 'Afsluiten gestopt', f'QuietWriter kon je laatste wijzigingen niet veilig opslaan. Het venster blijft open.\n\n{exc}')
             return
         # Window geometry/state blijft volledig bij Qt. De layout zelf houdt
         # minimum-size hints nu binnen de beschikbare viewport; er is dus geen

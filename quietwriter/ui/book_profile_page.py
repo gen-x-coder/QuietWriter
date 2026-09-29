@@ -10,7 +10,9 @@ from PySide6.QtWidgets import (
 
 from ..book_profile import SECTIONS, empty_book_profile, parse_book_profile, render_book_profile
 from ..i18n import tr
+from ..field_merge import merge_scalar_fields
 from ..revisions import ExternalModificationError, RevisionVerificationError
+from ..migrations import FutureBookFormatError
 
 
 class BookProfilePage(QWidget):
@@ -144,13 +146,17 @@ class BookProfilePage(QWidget):
         same_book = bool(self.book and book and self.book.id == book.id)
         if same_book and self.dirty:
             self._store_editor()
+            local_profile = deepcopy(self.profile)
             disk_profile = parse_book_profile(self.main.library.read_book_profile(book))
-            merged = {}
-            for section in SECTIONS:
-                key = section.key
-                local = self.profile.get(key, '')
-                baseline = self._loaded_profile.get(key, '')
-                merged[key] = local if local != baseline else disk_profile.get(key, '')
+            keys = [section.key for section in SECTIONS]
+            merged, conflicts = merge_scalar_fields(local_profile, self._loaded_profile, disk_profile, keys)
+            if conflicts:
+                # Preserve the complete local form before accepting the disk
+                # values for fields edited on both computers. This keeps the
+                # live book conflict-free without losing the user's draft.
+                self.main.library.create_version_with_file_overrides(
+                    book, {'ai/boekprofiel.md': render_book_profile(local_profile)}, kind='conflict_local'
+                )
             self.book = book
             self.profile = merged
             self._loaded_profile = deepcopy(disk_profile)
@@ -168,6 +174,16 @@ class BookProfilePage(QWidget):
             finally:
                 self._loading = False
             self._set_dirty(self.profile != disk_profile)
+            if conflicts:
+                QMessageBox.information(
+                    self,
+                    tr('book_profile.merge_conflict_title', 'Lokale invoer veilig bewaard'),
+                    tr(
+                        'book_profile.merge_conflict_text',
+                        'Dit boekprofiel is op twee plaatsen in dezelfde velden gewijzigd. '
+                        'De versie op schijf is voor die velden geladen; je lokale invoer staat apart in Versiegeschiedenis.'
+                    ),
+                )
             return True
         return self.set_book(book, force=True)
 
@@ -263,6 +279,9 @@ class BookProfilePage(QWidget):
                 self.book = latest
                 self._set_dirty(False)
             return True
+        except FutureBookFormatError:
+            ok = self.main.preserve_local_and_close_future_book(old_book, file_overrides={'ai/boekprofiel.md': local_text}, context='boekprofiel')
+            return False if ok else False
         except Exception as error:
             QMessageBox.critical(
                 self,

@@ -1,5 +1,117 @@
 # Changelog
 
+## 0.29.0 — Integriteit & herstel
+
+- Nieuwe pagina **Integriteit** voor het geopende boek.
+- De controle is volledig read-only: er wordt nooit automatisch gerepareerd.
+- Fouten en waarschuwingen worden per bestand getoond met een korte uitleg.
+- Herstel is alleen beschikbaar wanneer Versiegeschiedenis een geldige herstelkopie bevat.
+- Herstel gebruikt de bestaande transactionele backend en maakt eerst `pre_integrity_repair`.
+- Oudere boekformaten kunnen expliciet vanaf deze pagina worden gemigreerd; vooraf wordt een volledige herstelversie gemaakt.
+- Legacy boeken behouden hun oude formaat bij normaal openen/opslaan en worden dus niet langer stil naar formaat 2 geschreven vóór die expliciete migratie.
+- Nieuw `BookBlockedError` onderscheidt bewust geblokkeerde/losgekoppelde boeken van gewone schrijffouten.
+- Integriteit is aangesloten op de centrale live-book lifecycle, revisiebewaking en navigatie-saveguards.
+
+## 0.28.4 — Veilige detach en Boekdetails-conflictflow
+
+- Future-format loskoppelen blokkeert het oude boek nu tegen alle latere writes in plaats van de revisiebewaking te verwijderen.
+- Planning heeft een force-detach die geen `save_pending()` uitvoert en achtergebleven notes/personageconcepten opruimt.
+- Boekdetails verwerkt gewone externe wijzigingen via reload + bestaande drie-wegs merge en kan daardoor niet meer vastlopen op de saveguard.
+- Boekdetails gebruikt een expliciete MainWindow-referentie voor de future-format recoveryroute.
+- Nieuwe regressietests voor write-block/reopen-semantiek.
+- Pakketversie verhoogd naar 0.28.4.
+
+## 0.28.3 — Centrale future-format exit en Boekdetails-saveguard
+
+- Future-format conflicten vanuit Planning, Boekprofiel en Boekgeheugen gebruiken nu één centrale `preserve_local_and_close_future_book()`-route. De lokale invoer wordt eerst als `conflict_local` in Versiegeschiedenis veiliggesteld; pas daarna wordt het incompatibele boek zonder savepoging losgekoppeld.
+- Mislukt het maken van die recovery-snapshot, dan blijft het boek open en blijft de lokale invoer in de pagina staan. QuietWriter kiest ook hier fail-closed boven een geforceerde terugkeer naar de boekenplank.
+- Boekdetails heeft nu een echt boolean save-contract. Niet-opgeslagen metadata, waaronder synopsis, wordt vóór terugkeer naar de boekenplank, afsluiten en hoofdnavigatie opgeslagen; bij mislukken blijft de gebruiker op de huidige workspace.
+- Ook Boekdetails gebruikt de centrale future-format route en kan zijn actuele formulierstate als recovery-only Book in History bewaren zonder het toekomstige live manifest te muteren.
+- Nieuwe regressietests bewaken de centrale route, de drie Planning/AI-pagina-aansluitingen en de Boekdetails-guards.
+- Pakketversie verhoogd naar 0.28.3.
+
+## 0.28.2 — Schrijffouten en future-format UI-grens
+
+- Nieuwe `StorageWriteError` vormt één domeinfout voor veilige storage-writes. Blijvende locks en andere `OSError`s verlaten de storage niet meer als losse platformexcepties. De oorspronkelijke live file blijft ongewijzigd.
+- De manuscripteditor behandelt `StorageWriteError` als tijdelijk niet opgeslagen: `dirty` blijft waar, autosave probeert later opnieuw en navigatie/afsluiten stoppen omdat `save()` `False` retourneert.
+- `closeEvent()` heeft daarnaast een laatste fail-safe rond de editorsave: iedere onverwachte save-exceptie negeert het close-event en laat het venster open.
+- Conflict met een boek dat intussen door een nieuwere QuietWriter naar een toekomstig formaat is geschreven bewaart eerst de lokale hoofdstuktekst in `conflict_local`, toont een duidelijke update-melding en koppelt het incompatibele boek zonder verdere savepoging los. Dezelfde bescherming is toegevoegd voor openstaande publicatietekst.
+- `force_return_to_bookshelf()` is een expliciete no-save route en wordt alleen gebruikt nadat lokale conflictinhoud aantoonbaar in History is veiliggesteld. Dit voorkomt een oneindige conflictdialoog tegen een formaat dat deze versie niet kan laden.
+- `metadata` in `book.json` moet ontbreken, `null` of een JSON-object zijn. Audit en loader hanteren daarmee ook voor dit laatste veld hetzelfde structurele contract.
+- Byte-exact herstel gebruikt nu dezelfde retryende atomaire write-infrastructuur als tekst; een korte Windows/Dropbox-lock op een binair herstelbestand faalt niet meer direct.
+- `migrations.py` is opnieuw leesbaar uitgeschreven zodat validatie- en migratievoorwaarden afzonderlijk reviewbaar zijn.
+- Nieuwe regressietests dekken de domeinfout, behoud van originele bytes, metadata-validatie, binaire retry en broncontroles op de UI-failsafes.
+- Pakketversie verhoogd naar 0.28.2.
+
+## 0.28.1 — Integriteitsherstel na failure-injection review
+
+- `load_book()` valideert het boekformaat en de structurele velden die de loader werkelijk gebruikt. Toekomstige formaten worden vóór openen geweigerd; een oudere QuietWriter kan daardoor een later format 3+ niet stil als format 2 terugschrijven.
+- Onbekende top-level sleutels uit `book.json` worden in `Book.extra_manifest` bewaard en bij iedere normale manifestwrite teruggeschreven. Forward-compatible metadata verdwijnt dus niet meer door een gewone hoofdstuksave.
+- Audit en loader delen `validate_manifest_structure()`, zodat ontbrekende sectie-/hoofdstukvelden niet meer door de audit kunnen worden goedgekeurd terwijl openen daarna faalt.
+- Herstel uit History valideert kandidaten inhoudelijk: aux-JSON moet een object zijn, tekst moet geldige UTF-8 zijn en media moet exact de SHA-256 uit het live mediamanifest hebben. `pre_integrity_repair`-snapshots worden als herstelbron overgeslagen. Na de write wordt dezelfde regel opnieuw gecontroleerd voordat herstel als geslaagd geldt.
+- Gericht herstel schrijft alle bestandstypen byte-exact via een sibling tempbestand + `os.replace`; CRLF en andere byteverschillen worden niet genormaliseerd.
+- History sorteert deterministisch op `(created_at, id)`, waarbij de microseconden in de version-id de volgorde bepalen wanneer meerdere snapshots dezelfde seconde delen.
+- Dubbele hoofdstukbestanden worden na padnormalisatie en `casefold()` vergeleken, zodat `chapters/./x.md` en hoofdlettervarianten niet als verschillende koppelingen gelden.
+- Boekformaatwaarden accepteren alleen echte integers; `bool`, floats en numerieke strings worden geweigerd. Een migratie die niets hoeft te wijzigen maakt geen `pre_migration`-checkpoint.
+- `_safe_atomic_write_text()` valt na blijvende `PermissionError` niet langer terug op directe overschrijving. De operatie faalt liever met behoud van de oorspronkelijke bytes dan de live file bij crash/stroomuitval te kunnen afkappen.
+- `list_books()` houdt niet-openbare boeken als diagnose bij; de boekenplank meldt dat één of meer boeken niet konden worden geopend in plaats van ze volledig stil te laten verdwijnen.
+- Nieuwe 0.28.1-regressietests dekken alle zes reviewbevindingen plus no-op migratie en de aangescherpte atomiciteitsgarantie.
+- Pakketversie verhoogd naar 0.28.1.
+
+## 0.27.1 — Media Manager correctness na runtime-review
+
+- Herstelbare hoofdstukken in `trash/chapters/<book-id>/` tellen nu mee als actieve mediagebruikers. Hun image-paden worden geïnterpreteerd vanuit de oorspronkelijke hoofdstuklocatie en in Media getoond als **Prullenbak: <titel>**. Een asset die alleen in de prullenbak wordt gebruikt blijft daardoor beschermd totdat dat hoofdstuk definitief wordt verwijderd.
+- Een onleesbaar hoofdstuk in de prullenbak blokkeert cleanup conservatief, net als een onleesbare live of historische Markdownbron. QuietWriter concludeert nooit "ongebruikt" als herstelbare inhoud niet betrouwbaar kon worden geïnspecteerd.
+- De Media-pagina geeft bij batch-cleanup nu expliciet alleen de op dat moment `can_cleanup`-assets door. Daardoor kan één historisch onveilige ongebruikte afbeelding de veilige opruimbare subset niet meer blokkeren. De `MediaManager`-API zelf blijft bewust streng: wie een onveilig asset-id expliciet aanvraagt krijgt nog steeds `MediaCleanupError`.
+- `ExternalModificationError` heeft een eigen Media-flow. Bij een schone editor wordt de nieuwste diskversie centraal via `adopt_active_book()` overgenomen en de inventaris ververst. Zijn er niet-opgeslagen manuscript-/publicatiewijzigingen, dan gebruikt Media eerst de bestaande editor-conflictafhandeling zodat automatisch herladen nooit lokale tekst kan weggooien.
+- Nieuwe regressietests dekken trash-only gebruik + herstel, onleesbare prullenbakinhoud en het opruimen van een veilige subset naast een historisch onveilig asset.
+- Pakketversie naar 0.27.1 verhoogd.
+
+## 0.27.0 — Media Manager en veilige asset-cleanup
+
+- Nieuwe boekpagina **Media** met een tekstgerichte inventaris van book-local afbeeldingen en de huidige omslag. Per afbeelding worden status, oorspronkelijke bestandsnaam, afmetingen, bestandsgrootte, huidige verwijzingen en historische verwijzingen zichtbaar gemaakt zonder een nieuwe thumbnail-/galerijlaag.
+- Nieuwe `MediaManager`-laag scant alle Markdownbronnen binnen het boek, dus niet alleen hoofdstukken maar ook publicatie-, planning- en AI-Markdown. Daardoor kan een handmatig gebruikte asset niet als ongebruikt worden opgeruimd alleen omdat hij buiten het manuscript staat.
+- Integriteitsstatus onderscheidt **Gebruikt**, **Ongebruikt**, **Ontbreekt** en **Gewijzigd**. Bestanden die fysiek onder `assets/images/` staan maar niet in `assets/manifest.json` voorkomen worden apart als **Niet geregistreerd** getoond en in deze versie nooit automatisch verwijderd.
+- **Ongebruikte opruimen** is bewust conservatief: cleanup wordt geblokkeerd zodra één Markdownbron niet betrouwbaar kan worden gelezen, controleert de revision vóór én direct na het maken van het herstelpunt en verwijdert nooit een nog live gerefereerde asset.
+- Voor iedere cleanupbatch wordt exact één volledig `media_cleanup`-herstelpunt in Versiegeschiedenis gemaakt. Daarna wordt eerst het manifest atomisch bijgewerkt en pas daarna worden binaries best-effort verwijderd; een Windows-/sync-lock kan daardoor hooguit een zichtbaar niet-geregistreerd restbestand achterlaten, nooit een manifest dat naar een al verwijderde gebruikte afbeelding wijst.
+- History-aware cleanup controleert oude snapshots. Een live ongebruikte UUID-afbeelding mag worden verwijderd als iedere historische versie die hem gebruikt zijn eigen binary bevat. Ontbreekt die historische herstelkopie — ook in het conservatieve geval van onleesbare historische Markdown plus een manifestverwijzing — dan wordt cleanup geweigerd.
+- Omslagen worden in Media alleen gerapporteerd; wijzigen/verwijderen blijft in Boekdetails. Zo blijft coverownership buiten de inline-media-cleanup.
+- Nieuwe regressietests dekken gebruik/ongebruik, missing/modified, niet-geregistreerde bestanden, publicatie-Markdown, selectieve en batch-cleanup, revision-races, één herstelcheckpoint, herstel na cleanup en incomplete historische snapshots. Een headless Qt-test controleert daarnaast de Media-pagina wanneer PySide6 beschikbaar is.
+- Pakketversie naar 0.27.0 verhoogd.
+
+## 0.26.0 — EPUB-validatie en reader-navigatie
+
+- EPUB-export valideert voortaan het daadwerkelijk opgebouwde ZIP-archief vóór een bestaand exportbestand wordt vervangen. De interne controle bewaakt de verplichte ongecomprimeerde `mimetype`, `container.xml` → package-resolutie, EPUB 3 package/identifier, unieke manifest-items, spine-idrefs, precies één nav-resource en alle lokale XHTML-links, afbeeldingen en fragmenttargets.
+- Een mislukte interne EPUB-controle laat een eerder goed exportbestand ongemoeid; de tijdelijke mislukte export wordt verwijderd en de gewone exportfout-UX toont de concrete integriteitsfout.
+- Het EPUB-navigatiedocument bevat nu een minimale `landmarks`-navigatie. **Start lezen** (`bodymatter`) wijst naar het eerste echte hoofdstuk; wanneer de publicatiestructuur een zichtbare Inhoud-pagina bevat wordt die daarnaast als `toc`-landmark aangeboden. De bestaande volledige EPUB 3-ToC blijft ongewijzigd.
+- De Exporteren-pagina legt uit dat QuietWriter na EPUB-export de structuur/interne verwijzingen controleert en toont na succes **EPUB voltooid en intern gecontroleerd**. Deze ingebouwde controle is een productintegriteitsguard en pretendeert geen volledige vervanging van EPUBCheck te zijn.
+- Nieuwe regressietests dekken een geldige export, beide landmarksvarianten, detectie van een ontbrekend navigatiedoel en de garantie dat een validatiefout nooit een bestaand exportbestand overschrijft.
+- Pakketversie naar 0.26.0 verhoogd.
+
+## 0.25.2 — code-review ronde 6: regressiebewaking en laatste correctness-randen
+
+- De twee Qt AI-racetests uit 0.21.6/0.22.6 initialiseren `active_book()` nu vóór `AIPanel` wordt gemaakt en wisselen de actieve testboekreferentie vóór iedere `set_book()`. De productcode was al correct; de tests bewaken hun oorspronkelijke racecondities weer zodra PySide6 beschikbaar is.
+- PDF zet `QTextDocument.documentMargin` expliciet op 0. De eigen body-rechthoek bevat de paginamarges al; de standaard 4 px Qt-documentmarge kan daardoor geen lege laatste pagina met alleen running header/paginanummer meer veroorzaken.
+- Thinking-capabilitymetadata die tijdens startup al door Ollama is opgehaald, wordt meteen in dezelfde per-model runtimecache gezet als bij **Modellen ophalen**. Een bekende `thinking_can_disable = false` wordt dus ook zonder handmatige refresh gerespecteerd.
+- Boekprofiel, Boekgeheugen en Boekdetails gebruiken bij een same-book adopt een echte drie-wegs veldmerge: lokale-only edits blijven lokaal, disk-only edits volgen schijf en een veld dat aan beide kanten verschillend wijzigde houdt de schijfversie live. De volledige lokale invoer wordt in dat laatste geval eerst als `conflict_local` in Versiegeschiedenis veiliggesteld en zichtbaar gemeld.
+- De Markdown-escape voor vrije `##`-regels is volledig round-trip-safe gemaakt. Ook tekst die de gebruiker letterlijk als `\## ...`, `\\## ...`, enzovoort invoert behoudt exact hetzelfde aantal backslashes na opslaan en opnieuw openen.
+- `Library.manifest_text()` levert de canonieke `book.json`-weergave zonder live state te schrijven, zodat Boekdetails een herstelversie van lokale formulierwaarden kan maken zonder het actuele boek te muteren.
+- Nieuwe regressietests dekken de testfixturevolgorde, nul-documentmarge, startup thinking-cache, verliesvrije backslash/H2-roundtrip en de drie-wegs merge/recoverycontracten.
+- Pakketversie naar 0.25.2 verhoogd.
+
+## 0.25.1 — code-review ronde 5: PDF-, Planning- en profielintegriteit
+
+- PDF-typografie gebruikt nu dezelfde paintdevice/DPI als `QPdfWriter` vóór HTML-layout. CSS-puntgroottes worden daardoor niet meer met scherm-DPI (meestal 96) berekend en vervolgens op 144 dpi verkleind; 10,8 pt blijft daadwerkelijk circa 10,8 pt in de PDF.
+- PDF-afbeelding + onderschrift worden niet meer beschermd met de door Qt rich-text genegeerde CSS-regel `page-break-inside: avoid`. Na de eerste layout controleert QuietWriter de echte `QTextTable`-geometrie; tabellen die een paginagrens kruisen krijgen programmatisch `PageBreak_AlwaysBefore` en worden opnieuw gelayout.
+- Planning-conflicten bewaren dirty Notities of een geopend personageformulier alleen automatisch wanneer het bijbehorende `planning/notes.md` respectievelijk `planning/characters.json` niet extern gewijzigd is. Bij een echte dubbele wijziging blijft de schijfversie live en wordt de lokale invoer apart in Versiegeschiedenis veiliggesteld.
+- Niet-opgeslagen wijzigingen aan een bestaand personage worden nu net als een nieuw-personageconcept als pending formulierstate herkend. Bij een same-book reload zonder conflict op `characters.json` wordt het detailformulier met de lokale kandidaat opnieuw geopend.
+- Schrijverspersona, Boekprofiel en Boekgeheugen escapen veldregels die met `## ` beginnen als standaard Markdown (`\## ...`) en halen die escape bij het parsen terug weg. Vrije tussenkoppen en zelfs tekst die gelijk is aan een QuietWriter-rubriek kunnen daardoor niet meer naar een ander veld verschuiven of verdwijnen bij opslaan/heropenen.
+- Een dirty Schrijverspersona wordt bij navigeren en afsluiten via dezelfde save-guard verwerkt als Boekprofiel en Boekgeheugen; het venster kan niet meer sluiten nadat een mislukte persona-save.
+- Thinking-uit capabilitymetadata wordt per provider/model gecachet. Als de provider expliciet meldt dat thinking niet kan worden uitgeschakeld, stuurt de chat geen `think:false`/`reasoning.enabled=false` meer, ook niet wanneer de globale checkbox uit een eerder model aangevinkt bleef.
+- De twee oudere Qt-race-regressietests hebben weer een actuele fake `active_book()` en profiel/geheugen-readers, zodat ze op een PySide6-testomgeving opnieuw hun oorspronkelijke AI-isolatiegedrag controleren.
+- Nieuwe regressietests dekken `##`-roundtrips, PDF-DPI/keep-together-broncontract, conflict-aware Planning-preservation, bestaand-personage-drafts, persona-saveguards en thinking-capabilityguard.
+- Pakketversie naar 0.25.1 verhoogd.
+
 ## 0.25.0 — PDF-export MVP
 
 - De gereserveerde PDF-kaart op **Exporteren** is geactiveerd. QuietWriter maakt nu rechtstreeks met de bestaande PySide6/Qt-stack een vaste, gepagineerde PDF; er is geen nieuwe PDF-library of Windows-component toegevoegd.
@@ -8,7 +120,7 @@
 - De bestaande publicatiestructuur wordt meegenomen: titelpagina, copyright, epigraaf, vrije voor-/achterwerkonderdelen, eenvoudige inhoudslijst, secties en hoofdstukken. Hoofdstukken en publicatieonderdelen starten als vaste pagina-eenheden; een actieve titelpagina blijft vrij van running header/paginanummer.
 - Manuscriptopmaak en inline afbeeldingen worden rechtstreeks uit de immutable `ExportDocument`-snapshot gerenderd. Klein/Middel/Groot/Volledig, links/midden/rechts en korte links/rechts tekstomloop worden in PDF vertaald naar dezelfde intentie als EPUB.
 - De tweede losse PDF-spike toonde een Qt-randgeval bij **tekstomloop + lang onderschrift**. Productcode probeert dit niet met fragiele layouttrucs te repareren: lange onderschriften vallen in PDF automatisch terug op een normaal links/rechts afbeeldingsblok zonder omloop. Preflight meldt hoeveel afbeeldingen zo veilig worden teruggezet. EPUB behoudt zijn eigen floatgedrag.
-- Grote afbeeldingen/tabellen gebruiken `page-break-inside: avoid`, zodat Qt ze bij onvoldoende resterende ruimte als geheel naar de volgende pagina kan verplaatsen in plaats van ze af te snijden.
+- Grote afbeeldingen/tabellen kregen in 0.25.0 een CSS `page-break-inside: avoid`-hint. Code-review ronde 5 toonde aan dat Qt rich-text deze CSS-eigenschap negeert; 0.25.1 vervangt dit door een expliciete layout-/page-break-pass.
 - Nieuwe regressietests dekken PDF-instellingen, PDF als echte exportkeuze, pure HTML-opbouw, veilige onderschriftfallback en de Qt-loze importeerbaarheid van de exportlaag.
 - Pakketversie naar 0.25.0 verhoogd.
 
@@ -706,3 +818,15 @@
 ## 0.12.1
 
 Zie eerdere release voor de technische UI-refactor en reviewfixes.
+
+## 0.28.0 — Integriteitscontrole, gericht herstel en migratiebasis
+
+- Nieuwe read-only `BookIntegrityChecker` controleert `book.json`, hoofdstukstructuur/paden, UTF-8, Planning/Publicatie-JSON en AI-tekstbestanden zonder corrupte data stil als leeg te behandelen.
+- Mediacontrole verifieert manifestvorm, veilige book-local paden, ontbrekende binaries en SHA-256-integriteit.
+- Integriteitsproblemen hebben stabiele codes, severity en `recoverable`-metadata zodat een latere UI geen foutteksten hoeft te parsen.
+- Gericht bestandsherstel kan een ontbrekend/beschadigd hoofdstuk of hulpbestand terughalen uit de nieuwste bruikbare History-kopie. Vóór iedere write ontstaat precies één volledige `pre_integrity_repair`-snapshot en de gewone external-change guard blijft gelden.
+- `book.json` wordt bewust niet via gericht bestandsherstel vervangen: het manifest bepaalt de identiteit/structuur van het boek en vereist herstel op boekniveau.
+- Nieuwe expliciete migratielaag met `CURRENT_BOOK_FORMAT = 2`, pure opeenvolgende migratiestappen, weigering van onbekende toekomstige formaten en behoud van onbekende velden.
+- Migraties gebeuren niet stil bij openen. `Library.migrate_book_format()` maakt eerst een volledige `pre_migration`-snapshot en migreert daarna `book.json` atomisch.
+- Failure-injectiontests dekken onder meer half JSON, ontbrekende hoofdstukken, corrupte hulpdata, mediachecks, onveilige paden, future-format refusal, migratiecheckpoint, herstelcheckpoint, externe wijzigingen en mislukte migratiewrites.
+- Pakketversie verhoogd naar 0.28.0.

@@ -499,7 +499,15 @@ class AIPanel(QWidget):
         self.messages.append(ConversationStore.entry('user', prompt, {'pieces': context.pieces, 'scope': self.context.currentText()}))
         self._active_user_index=len(self.messages)-1
         self.current_assistant=''; self._final_started=False; self._thinking_text=''
-        thinking_disabled = bool(self.main.settings.value('ai_disable_thinking', False, bool))
+        thinking_requested = bool(self.main.settings.value('ai_disable_thinking', False, bool))
+        provider_name = str(getattr(provider, 'name', '') or '')
+        capability = str(self.main.settings.value(
+            f'ai_thinking_can_disable/{provider_name}/{model}', 'unknown'
+        ) or 'unknown').lower()
+        # A checked but disabled UI control must never force an unsupported
+        # provider parameter. Unknown/capability-only models may still receive
+        # the best-effort request exactly as before.
+        thinking_disabled = thinking_requested and capability != 'false'
         self._render_chat(streaming_placeholder=True); self._start_thinking('AI werkt' if thinking_disabled else 'Denken')
 
         # Eenvoudige, directe chatflow. Geen tokenberekeningen, geen automatische

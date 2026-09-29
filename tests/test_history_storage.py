@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from quietwriter.storage import Library, _safe_atomic_write_text
+from quietwriter.storage import Library, StorageWriteError, _safe_atomic_write_text
 import quietwriter.storage as storage
 
 
@@ -27,13 +27,15 @@ class SafeWriteTests(unittest.TestCase):
             self.assertEqual(path.read_text(encoding='utf-8'), 'new')
             self.assertGreaterEqual(calls['n'], 3)
 
-    def test_direct_overwrite_fallback_when_replace_remains_blocked(self):
+    def test_persistent_replace_lock_preserves_original_bytes(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / 'book.json'
             path.write_text('old', encoding='utf-8')
             with patch.object(storage.os, 'replace', side_effect=PermissionError(5, 'blocked')):
-                _safe_atomic_write_text(path, 'fallback', replace_retries=1)
-            self.assertEqual(path.read_text(encoding='utf-8'), 'fallback')
+                with self.assertRaises(StorageWriteError):
+                    _safe_atomic_write_text(path, 'fallback', replace_retries=1)
+            self.assertEqual(path.read_bytes(), b'old')
+            self.assertFalse(list(Path(td).glob('*.tmp')))
 
 
 class HistoryTests(unittest.TestCase):

@@ -17,54 +17,58 @@ from .book_profile import default_book_profile_markdown
 from .book_memory import default_book_memory_markdown
 
 
-def _safe_atomic_write_text(path: Path, text: str, encoding: str = 'utf-8', replace_retries: int = 8):
-    """Write text robustly on Windows/Dropbox.
+class BookBlockedError(RuntimeError):
+    """A detached/incompatible book is deliberately closed for writes."""
 
-    First writes to a unique sibling temp file and retries os.replace for transient
-    sharing violations. If Windows keeps denying rename/delete access to the
-    destination (common with sync/indexing software), it falls back to a direct
-    overwrite with fsync. The temp file is always cleaned up.
-    """
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=str(path.parent))
-    tmp = Path(tmp_name)
+
+class StorageWriteError(OSError):
+    def __init__(self, path: Path, cause: OSError):
+        self.path = Path(path); self.cause = cause
+        super().__init__(f'Kan {self.path} niet veilig opslaan: {cause}')
+
+
+def _safe_atomic_write_text(path: Path, text: str, encoding: str = 'utf-8', replace_retries: int = 8):
+    """Atomically write text; transient sharing violations are retried."""
+    path = Path(path); tmp = None
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=str(path.parent)); tmp=Path(tmp_name)
         with os.fdopen(fd, 'w', encoding=encoding, newline='') as f:
-            f.write(text)
-            f.flush()
-            os.fsync(f.fileno())
-        delay = 0.04
-        last_exc = None
+            f.write(text); f.flush(); os.fsync(f.fileno())
+        delay=0.04; last_exc=None
         for _ in range(max(1, replace_retries)):
-            try:
-                os.replace(tmp, path)
-                return
+            try: os.replace(tmp, path); return
             except PermissionError as exc:
-                last_exc = exc
-                time.sleep(delay)
-                delay = min(delay * 1.8, 0.45)
-        # Some sync tools temporarily disallow replacing/removing the destination
-        # while still permitting an ordinary overwrite. Keep this as a controlled
-        # fallback after the atomic path has been exhausted.
-        for _ in range(5):
-            try:
-                with path.open('w', encoding=encoding, newline='') as f:
-                    f.write(text)
-                    f.flush()
-                    os.fsync(f.fileno())
-                return
-            except PermissionError as exc:
-                last_exc = exc
-                time.sleep(delay)
-                delay = min(delay * 1.6, 0.55)
-        raise last_exc or PermissionError(f'Kan {path} niet opslaan.')
+                last_exc=exc; time.sleep(delay); delay=min(delay*1.8,0.45)
+        raise last_exc or PermissionError(f'Kan {path} niet atomair opslaan.')
+    except StorageWriteError: raise
+    except OSError as exc: raise StorageWriteError(path, exc) from exc
     finally:
         try:
-            if tmp.exists():
-                tmp.unlink()
-        except OSError:
-            pass
+            if tmp is not None and tmp.exists(): tmp.unlink()
+        except OSError: pass
+
+
+def _safe_atomic_write_bytes(path: Path, data: bytes, replace_retries: int = 8):
+    """Byte-exact sibling-temp write with the same lock/retry contract as text."""
+    path=Path(path); tmp=None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd,tmp_name=tempfile.mkstemp(prefix=path.name+'.',suffix='.tmp',dir=str(path.parent)); tmp=Path(tmp_name)
+        with os.fdopen(fd,'wb') as f:
+            f.write(data); f.flush(); os.fsync(f.fileno())
+        delay=0.04; last_exc=None
+        for _ in range(max(1,replace_retries)):
+            try: os.replace(tmp,path); return
+            except PermissionError as exc:
+                last_exc=exc; time.sleep(delay); delay=min(delay*1.8,0.45)
+        raise last_exc or PermissionError(f'Kan {path} niet atomair opslaan.')
+    except StorageWriteError: raise
+    except OSError as exc: raise StorageWriteError(path,exc) from exc
+    finally:
+        try:
+            if tmp is not None and tmp.exists(): tmp.unlink()
+        except OSError: pass
 
 
 def slugify(value: str) -> str:
@@ -92,8 +96,11 @@ class Book:
     id: str
     title: str
     path: Path
+    format_version: int = 2
     sections: list[Section] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
+    # Unknown top-level manifest keys are retained verbatim for forward-compatible round trips.
+    extra_manifest: dict = field(default_factory=dict)
 
     @property
     def manifest_path(self) -> Path:
@@ -119,6 +126,8 @@ class Library:
         # Revisions are kept in memory only. Nothing is locked on disk, so a
         # crash can never leave a stale workspace lock behind.
         self._tracked_revisions: dict[str, BookRevision] = {}
+        self._blocked_book_ids: set[str] = set()
+        self.last_list_errors: list[dict] = []
         for d in [self.books_dir, self.covers_dir, self.archive_dir, self.trash_dir,
                   self.persona_dir, self.dict_dir, self.cache_dir]:
             d.mkdir(parents=True, exist_ok=True)
@@ -135,15 +144,24 @@ class Library:
     def track_book(self, book: Book) -> BookRevision:
         revision = self.capture_revision(book)
         self._tracked_revisions[book.id] = revision
+        # Explicitly reopening/retracking a book clears a detach write-block.
+        self._blocked_book_ids.discard(book.id)
         return revision
 
     def untrack_book(self, book: Book):
         self._tracked_revisions.pop(book.id, None)
+        self._blocked_book_ids.discard(book.id)
+
+    def block_book(self, book: Book):
+        """Fail closed for a detached/incompatible book until it is explicitly reopened."""
+        self._blocked_book_ids.add(book.id)
 
     def tracked_revision(self, book: Book) -> BookRevision | None:
         return self._tracked_revisions.get(book.id)
 
     def verify_book_unchanged(self, book: Book) -> BookRevision:
+        if book.id in self._blocked_book_ids:
+            raise BookBlockedError('Dit boek is losgekoppeld en geblokkeerd voor verdere schrijfacties. Open het boek opnieuw voordat je wijzigingen aanbrengt.')
         current = self.capture_revision(book)
         expected = self._tracked_revisions.get(book.id)
         if expected is not None:
@@ -159,27 +177,41 @@ class Library:
         if book.id in self._tracked_revisions:
             self.refresh_book_revision(book)
 
-    def _write_manifest_unchecked(self, book: Book):
-        book.metadata.setdefault('slug', slugify(book.title))
-        data = {
-            'format': 2,
+    def manifest_text(self, book: Book) -> str:
+        """Return the canonical book.json representation without writing live state."""
+        metadata = dict(book.metadata or {})
+        metadata.setdefault('slug', slugify(book.title))
+        data = copy.deepcopy(book.extra_manifest or {})
+        data.update({
+            'format': int(book.format_version),
             'id': book.id,
             'title': book.title,
-            'metadata': book.metadata,
+            'metadata': metadata,
             'sections': [
                 {'id': section.id, 'title': section.title, 'chapters': [vars(chapter) for chapter in section.chapters]}
                 for section in book.sections
             ],
-        }
-        _safe_atomic_write_text(book.manifest_path, json.dumps(data, ensure_ascii=False, indent=2))
+        })
+        return json.dumps(data, ensure_ascii=False, indent=2)
+
+    def _write_manifest_unchecked(self, book: Book):
+        book.metadata.setdefault('slug', slugify(book.title))
+        _safe_atomic_write_text(book.manifest_path, self.manifest_text(book))
 
     def list_books(self) -> list[Book]:
         books = []
+        self.last_list_errors = []
         for manifest in self.books_dir.glob('*/book.json'):
             try:
                 books.append(self.load_book(manifest.parent))
-            except Exception:
-                continue
+            except Exception as exc:
+                title = manifest.parent.name
+                try:
+                    raw = json.loads(manifest.read_text(encoding='utf-8'))
+                    if isinstance(raw, dict) and isinstance(raw.get('title'), str): title = raw['title']
+                except Exception:
+                    pass
+                self.last_list_errors.append({'path': manifest.parent, 'title': title, 'error': exc})
         return books
 
     def book_activity(self, book: Book) -> float:
@@ -249,6 +281,8 @@ class Library:
 
     def load_book(self, folder: Path) -> Book:
         data = json.loads((Path(folder) / 'book.json').read_text(encoding='utf-8'))
+        from .migrations import detected_book_format, validate_manifest_structure
+        validate_manifest_structure(data, allow_legacy=True)
         sections = []
         for s in data.get('sections', []):
             chapters = [Chapter(id=c['id'], title=c['title'], file=c['file']) for c in s.get('chapters', [])]
@@ -288,7 +322,34 @@ class Library:
                         metadata['cover_file'] = candidate.name
                         break
         metadata.setdefault('last_used', 0)
-        return Book(id=data['id'], title=data['title'], path=Path(folder), sections=sections, metadata=metadata)
+        known = {'format', 'id', 'title', 'metadata', 'sections'}
+        extra_manifest = {k: copy.deepcopy(v) for k, v in data.items() if k not in known}
+        return Book(id=data['id'], title=data['title'], path=Path(folder), format_version=detected_book_format(data), sections=sections, metadata=metadata, extra_manifest=extra_manifest)
+
+    def migrate_book_format(self, book: Book):
+        """Explicitly migrate book.json with a complete rollback snapshot.
+
+        Opening a book never performs a silent migration. Callers can audit first
+        and invoke this operation deliberately.
+        """
+        from .migrations import migrate_manifest_data, migrate_manifest_file
+        self.verify_book_unchanged(book)
+        current_data = json.loads(book.manifest_path.read_text(encoding='utf-8'))
+        _, preview = migrate_manifest_data(current_data)
+        if not preview.changed:
+            return book, preview, None
+        checkpoint = self.create_version(book, kind='pre_migration')
+        self.verify_book_unchanged(book)
+        try:
+            result = migrate_manifest_file(book.manifest_path)
+            migrated = self.load_book(book.path)
+            self.refresh_book_revision(migrated)
+            return migrated, result, checkpoint['id']
+        except Exception:
+            # migrate_manifest_file is atomic, so a failed write leaves the live
+            # manifest untouched. Keep the checkpoint as an additional recovery
+            # source instead of attempting a second live write here.
+            raise
 
     def save_manifest(self, book: Book):
         self.verify_book_unchanged(book)
@@ -594,7 +655,8 @@ class Library:
         (target / 'chapters').mkdir(parents=True, exist_ok=True)
         snapshot = Book(
             id=book.id, title=book.title, path=target,
-            sections=copy.deepcopy(book.sections), metadata=copy.deepcopy(book.metadata),
+            format_version=book.format_version, sections=copy.deepcopy(book.sections), metadata=copy.deepcopy(book.metadata),
+            extra_manifest=copy.deepcopy(book.extra_manifest),
         )
         for section in snapshot.sections:
             for chapter in section.chapters:
@@ -671,7 +733,7 @@ class Library:
                 'kind': meta.get('kind', 'manual'), 'starred': bool(meta.get('starred', False)),
                 'title': title, 'words': words, 'chapters': chapter_count,
             })
-        rows.sort(key=lambda r: r['created_at'], reverse=True)
+        rows.sort(key=lambda r: (r['created_at'], r['id']), reverse=True)
         return rows
 
     def set_version_starred(self, book: Book, version_id: str, starred: bool):
@@ -742,7 +804,8 @@ class Library:
 
         restored = Book(
             id=snapshot.id, title=snapshot.title, path=live_book.path,
-            sections=copy.deepcopy(snapshot.sections), metadata=copy.deepcopy(snapshot.metadata),
+            format_version=snapshot.format_version, sections=copy.deepcopy(snapshot.sections), metadata=copy.deepcopy(snapshot.metadata),
+            extra_manifest=copy.deepcopy(snapshot.extra_manifest),
         )
         restored.metadata['last_used'] = datetime.now().timestamp()
         self._write_manifest_unchecked(restored)

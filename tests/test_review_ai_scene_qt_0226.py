@@ -62,9 +62,16 @@ def test_same_book_adopt_does_not_cancel_active_ai_request(app):
 
         main = SimpleNamespace(
             settings=FakeSettings(),
-            library=SimpleNamespace(read_persona=lambda: 'persona'),
+            library=SimpleNamespace(
+                read_persona=lambda: 'persona',
+                read_book_profile=lambda _book: '',
+                read_book_memory=lambda _book: '',
+            ),
         )
+        _active = {'book': None}
+        main.active_book = lambda: _active['book']
         panel = AIPanel(main)
+        _active['book'] = book_v1
         panel.set_book(book_v1)
         provider = BlockingProvider()
         context = SimpleNamespace(label='test', pieces=['Testcontext'], text='context')
@@ -72,6 +79,7 @@ def test_same_book_adopt_does_not_cancel_active_ai_request(app):
 
         generation = panel._book_generation
         worker = panel.worker
+        _active['book'] = book_v2
         panel.set_book(book_v2)
 
         assert panel._book_generation == generation
