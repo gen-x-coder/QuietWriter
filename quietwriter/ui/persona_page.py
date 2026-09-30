@@ -98,7 +98,7 @@ class PersonaPage(QWidget):
         title = QLabel(tr('persona.title', 'Schrijverspersona')); title.setObjectName('title')
         info = QLabel(tr(
             'persona.info',
-            'Je persona geldt voor al je boeken en wordt automatisch als stijl- en beoordelingskader aan AI meegegeven.'
+            'Je schrijverspersona geldt voor al je boeken en beschrijft jouw algemene schrijfstijl en voorkeuren. QuietWriter gebruikt deze alleen als globale context voor AI-assistentie.'
         ))
         info.setObjectName('muted'); info.setWordWrap(True)
         title_box.addWidget(title); title_box.addWidget(info)

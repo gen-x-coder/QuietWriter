@@ -47,7 +47,7 @@ def test_planning_notes_corruption_is_preserved_in_main_preflight_and_not_restor
     main = Path('quietwriter/ui/main_window.py').read_text(encoding='utf-8')
     prepare = block(main, '    def _prepare_active_book_adoption', '    def preserve_local_and_close_future_book')
     assert 'planning_notes_corrupt = False' in prepare
-    assert "{'planning/notes.md': notes_page.editor.toPlainText()}" in prepare
+    assert "{'planning/notes.md': notes_page.editor.source_text()}" in prepare
     assert "kind='conflict_local'" in prepare
     assert "'planning_notes_corrupt_preserved': planning_notes_corrupt_preserved" in prepare
 

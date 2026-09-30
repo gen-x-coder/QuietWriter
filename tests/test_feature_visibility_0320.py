@@ -10,26 +10,25 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_ai_switch_controls_all_ai_surfaces_without_deleting_sources():
     main = (ROOT / 'quietwriter' / 'ui' / 'main_window.py').read_text(encoding='utf-8')
     settings = (ROOT / 'quietwriter' / 'ui' / 'settings_page.py').read_text(encoding='utf-8')
-    assert "ai_enabled = self.settings.value('ai_enabled', True, bool)" in main
-    assert 'self.persona_button.setVisible(ai_enabled)' in main
-    assert 'self.book_profile_button.setVisible(has_book and ai_enabled)' in main
-    assert 'self.book_memory_button.setVisible(has_book and ai_enabled)' in main
-    assert "self.settings.setValue('ai_enabled', self.ai_enabled.isChecked())" in settings
-    # Feature switching is visibility-only: no source deletion belongs here.
-    feature = main[main.index('    def _apply_feature_visibility'):main.index('    def _apply_ai_visibility')]
-    assert 'unlink(' not in feature
-    assert 'write_text(' not in feature
+    rail = (ROOT / 'quietwriter' / 'ui' / 'rail_model.py').read_text(encoding='utf-8')
+    assert "RailItemSpec('persona', 'program', requires_ai=True)" in rail
+    assert "RailItemSpec('book_memory', 'ai_context', requires_book=True, requires_ai=True)" in rail
+    assert "RailItemSpec('book_profile', 'ai_context', requires_book=True, requires_ai=True)" in rail
+    assert "'ai_enabled': self.ai_enabled.isChecked()" in settings
+    render = main[main.index('    def _render_rail'):main.index('    def _render_feature_buttons')]
+    assert 'unlink(' not in render
+    assert 'write_text(' not in render
 
 
 def test_advanced_options_are_default_on_and_only_gate_integrity_for_now():
     main = (ROOT / 'quietwriter' / 'ui' / 'main_window.py').read_text(encoding='utf-8')
     settings = (ROOT / 'quietwriter' / 'ui' / 'settings_page.py').read_text(encoding='utf-8')
+    rail = (ROOT / 'quietwriter' / 'ui' / 'rail_model.py').read_text(encoding='utf-8')
     assert "settings.value('advanced_options', True, bool)" in settings
-    assert "self.settings.setValue('advanced_options', self.advanced_options.isChecked())" in settings
-    assert "advanced = self.settings.value('advanced_options', True, bool)" in main
-    assert 'self.integrity_button.setVisible(has_book and advanced)' in main
-    assert 'self.integrity_gap.setVisible(self.rail_expanded and has_book and advanced)' in main
-
+    assert "'advanced_options': self.advanced_options.isChecked()" in settings
+    assert "RailItemSpec('integrity', 'current_book', requires_book=True, requires_advanced=True)" in rail
+    assert 'requires_advanced=True' not in rail.split("RailItemSpec('integrity'", 1)[0]
+    assert "advanced=self.settings.value('advanced_options', True, bool)" not in main  # effective state owns reads
 
 def test_disabling_spelling_forces_immediate_rehighlight_and_hides_tool():
     editor = (ROOT / 'quietwriter' / 'ui' / 'editor_page.py').read_text(encoding='utf-8')

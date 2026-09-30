@@ -8,7 +8,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QHBoxLayout, QInputDialog, QMainWindow,
-    QLabel, QMessageBox, QPushButton, QStatusBar, QVBoxLayout, QWidget
+    QLabel, QMessageBox, QPushButton, QScrollArea, QStatusBar, QVBoxLayout, QWidget
 )
 
 from .current_page_stack import CurrentPageStack
@@ -31,6 +31,7 @@ from .persona_page import PersonaPage
 from .planning import PlanningPage
 from .settings_page import SettingsPage
 from .trash_page import TrashPage
+from .rail_model import RailState, build_rail_view, fallback_destination
 
 class MainWindow(QMainWindow):
     def __init__(self, settings, library, models):
@@ -43,10 +44,21 @@ class MainWindow(QMainWindow):
         self.status = QStatusBar(); self.setStatusBar(self.status)
         self.setWindowTitle(APP_NAME); self.setWindowIcon(icon('books')); self.resize(1280, 720)
         self.rail_expanded = self.settings.value('nav_expanded', False, bool)
+        self._feature_visibility_preview = None
 
         wrap = QWidget(); self.setCentralWidget(wrap); root = QHBoxLayout(wrap); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
         self.rail = QFrame(); self.rail.setObjectName('toolrail')
-        self.rail_layout = QVBoxLayout(self.rail); self.rail_layout.setContentsMargins(7,10,7,10); self.rail_layout.setSpacing(6)
+        self.rail_shell_layout = QVBoxLayout(self.rail)
+        self.rail_shell_layout.setContentsMargins(5, 10, 5, 10)
+        self.rail_shell_layout.setSpacing(4)
+        self.rail_scroll = QScrollArea(); self.rail_scroll.setObjectName('navScroll')
+        self.rail_scroll.setWidgetResizable(True); self.rail_scroll.setFrameShape(QFrame.NoFrame)
+        self.rail_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.rail_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.rail_content = QWidget(); self.rail_content.setObjectName('navScrollContent')
+        self.rail_layout = QVBoxLayout(self.rail_content)
+        self.rail_layout.setContentsMargins(0, 2, 0, 2); self.rail_layout.setSpacing(6)
+        self.rail_scroll.setWidget(self.rail_content)
 
         self.stack = CurrentPageStack()
         self.start = StartPage(library)
@@ -66,26 +78,34 @@ class MainWindow(QMainWindow):
 
         self.nav_buttons = []
         self.nav_group_labels = []
-        self.menu_button = self._nav_button('menu', tr('nav.menu', 'Menu'), self.toggle_nav, checkable=False)
-        self.rail_layout.addSpacing(4)
-        self.library_group_label = self._nav_group(tr('nav.group.library', 'BIBLIOTHEEK'))
-        self.bookshelf_button = self._nav_button('shelf', tr('nav.bookshelf', 'Boekenplank'), self.go_home)
-        self.book_group_label = self._nav_group(tr('nav.group.current_book', 'HUIDIG BOEK'))
-        self.write_button = self._nav_button('books', tr('nav.contents', 'Inhoud'), self.show_editor)
-        self.planning_button = self._nav_button('planning', tr('nav.planning', 'Planning'), self.show_planning)
-        self.book_memory_button = self._nav_button('memory', tr('nav.book_memory', 'Boekgeheugen'), self.show_book_memory)
-        self.book_profile_button = self._nav_button('book-profile', tr('nav.book_profile', 'Boekprofiel'), self.show_book_profile)
-        self.media_button = self._nav_button('insert', tr('nav.media', 'Media'), self.show_media)
-        self.book_details_button = self._nav_button('edit', tr('nav.book_details', 'Boekdetails'), self.open_current_book_details)
-        self.export_button = self._nav_button('export', tr('nav.export', 'Exporteren'), self.show_export)
-        self.integrity_gap = QWidget(); self.integrity_gap.setFixedHeight(6); self.rail_layout.addWidget(self.integrity_gap)
-        self.integrity_button = self._nav_button('shield', tr('nav.integrity', 'Integriteit'), self.show_integrity)
+        self._rail_item_widgets = {}
+        self._rail_group_widgets = {}
+        self.menu_button = self._nav_button(
+            'menu', tr('nav.menu', 'Menu'), self.toggle_nav, checkable=False,
+            layout=self.rail_shell_layout,
+        )
+        self.rail_shell_layout.addWidget(self.rail_scroll, 1)
+
+        self.library_group_label = self._register_nav_group('library', tr('nav.group.library', 'BIBLIOTHEEK'))
+        self.bookshelf_button = self._register_nav_item('bookshelf', 'shelf', tr('nav.bookshelf', 'Boekenplank'), self.go_home)
+
+        self.book_group_label = self._register_nav_group('current_book', tr('nav.group.current_book', 'HUIDIG BOEK'))
+        self.write_button = self._register_nav_item('contents', 'books', tr('nav.contents', 'Inhoud'), self.show_editor)
+        self.planning_button = self._register_nav_item('planning', 'planning', tr('nav.planning', 'Planning'), self.show_planning)
+        self.media_button = self._register_nav_item('media', 'insert', tr('nav.media', 'Media'), self.show_media)
+        self.book_details_button = self._register_nav_item('book_details', 'edit', tr('nav.book_details', 'Boekdetails'), self.open_current_book_details)
+        self.export_button = self._register_nav_item('export', 'export', tr('nav.export', 'Exporteren'), self.show_export)
+        self.integrity_button = self._register_nav_item('integrity', 'shield', tr('nav.integrity', 'Integriteit'), self.show_integrity)
+
+        self.ai_context_group_label = self._register_nav_group('ai_context', tr('nav.group.ai_context', 'AI-CONTEXT'))
+        self.book_memory_button = self._register_nav_item('book_memory', 'memory', tr('nav.book_memory', 'Boekgeheugen'), self.show_book_memory)
+        self.book_profile_button = self._register_nav_item('book_profile', 'book-profile', tr('nav.book_profile', 'Boekprofiel'), self.show_book_profile)
+
+        self.program_group_label = self._register_nav_group('program', tr('nav.group.program', 'PROGRAMMA'))
+        self.persona_button = self._register_nav_item('persona', 'persona', tr('nav.persona', 'Schrijverspersona'), self.show_persona)
+        self.settings_button = self._register_nav_item('settings', 'settings', tr('nav.settings', 'Instellingen'), self.open_settings)
+        self.trash_button = self._register_nav_item('trash', 'trash', tr('nav.trash', 'Prullenbak'), self.show_trash)
         self.rail_layout.addStretch()
-        self.writing_group_label = self._nav_group(tr('nav.group.writing', 'SCHRIJVEN'))
-        self.persona_button = self._nav_button('persona', tr('nav.persona', 'Schrijverspersona'), self.show_persona)
-        self.program_group_label = self._nav_group(tr('nav.group.program', 'PROGRAMMA'))
-        self.settings_button = self._nav_button('settings', tr('nav.settings', 'Instellingen'), self.open_settings)
-        self.trash_button = self._nav_button('trash', tr('nav.trash', 'Prullenbak'), self.show_trash)
 
         # Rechter gereedschapsrail. De functie-iconen openen/sluiten hun eigen paneel.
         # Een aparte 'rechterpaneel tonen/verbergen'-knop is daardoor overbodig.
@@ -238,7 +258,7 @@ class MainWindow(QMainWindow):
             )
             if same_planning_book and notes_page.dirty:
                 self.library.create_version_with_file_overrides(
-                    book, {'planning/notes.md': notes_page.editor.toPlainText()}, kind='conflict_local'
+                    book, {'planning/notes.md': notes_page.editor.source_text()}, kind='conflict_local'
                 )
                 planning_notes_corrupt_preserved = True
         self.editor_page.publication_store.load(book)
@@ -296,21 +316,30 @@ class MainWindow(QMainWindow):
         self.nav_group_labels.append(heading)
         return heading
 
-    def _nav_button(self, icon_name, label, fn, checkable=True):
+    def _register_nav_group(self, key, label):
+        heading = self._nav_group(label)
+        heading.setProperty('railGroupKey', key)
+        self._rail_group_widgets[key] = heading
+        return heading
+
+    def _nav_button(self, icon_name, label, fn, checkable=True, *, layout=None):
         b = QPushButton()
         b.setObjectName('navButton')
         b.setProperty('iconName', icon_name); b.setIcon(icon(icon_name)); b.setIconSize(QSize(22,22))
         b.setToolTip(label); b.setAccessibleName(label); b.setCheckable(checkable)
         # De hoofdrail gedraagt zich als navigatie, niet als een set toggles.
-        # Een reeds actieve bestemming kan daarom niet door een tweede klik
-        # visueel worden uitgezet. Actieknoppen (Instellingen/Boekdetails/Menu)
-        # blijven niet-checkable.
         if checkable:
             b.setAutoExclusive(True)
         b.clicked.connect(fn)
         b.setProperty('navLabel', label)
-        self.rail_layout.addWidget(b); self.nav_buttons.append(b)
+        (layout or self.rail_layout).addWidget(b); self.nav_buttons.append(b)
         return b
+
+    def _register_nav_item(self, key, icon_name, label, fn, checkable=True):
+        button = self._nav_button(icon_name, label, fn, checkable=checkable)
+        button.setProperty('railItemKey', key)
+        self._rail_item_widgets[key] = button
+        return button
 
     def _configure_rail_tab_order(self):
         for buttons in (self.nav_buttons, self.tool_buttons):
@@ -319,26 +348,17 @@ class MainWindow(QMainWindow):
 
     def _apply_nav_width(self, animate=False):
         target = 218 if self.rail_expanded else 64
+        button_width = 194 if self.rail_expanded else 48
         for b in self.nav_buttons:
             label = b.property('navLabel') or ''
             b.setText(('  ' + label) if self.rail_expanded else '')
             b.setFixedHeight(48)
-            if self.rail_expanded:
-                b.setMinimumWidth(198); b.setMaximumWidth(198)
-            else:
-                b.setFixedWidth(48)
-        ai_enabled = self.settings.value('ai_enabled', True, bool)
-        advanced = self.settings.value('advanced_options', True, bool)
-        has_book = self.active_book() is not None
+            b.setMinimumWidth(button_width); b.setMaximumWidth(button_width)
         for heading in self.nav_group_labels:
-            visible = self.rail_expanded
-            if heading is self.book_group_label:
-                visible = visible and has_book
-            elif heading is self.writing_group_label:
-                visible = visible and ai_enabled
-            heading.setVisible(visible)
-        self.integrity_gap.setVisible(self.rail_expanded and has_book and advanced)
+            # Group visibility itself is controlled only by _render_rail().
+            heading.setProperty('railExpanded', self.rail_expanded)
         self.menu_button.setToolTip(tr('nav.collapse', 'Menu inklappen') if self.rail_expanded else tr('nav.expand', 'Menu uitklappen'))
+        self._render_rail(self._effective_rail_state())
         if not animate:
             self.rail.setMinimumWidth(target); self.rail.setMaximumWidth(target)
             return
@@ -562,7 +582,7 @@ class MainWindow(QMainWindow):
         self.media_manager_page.set_book(None); self.integrity_page.set_book(None); self.export_page.set_book(None)
         self.book_profile_page.set_book(None, force=True); self.book_memory_page.set_book(None, force=True)
         self._active_book=None; self.start.refresh(); self.stack.setCurrentWidget(self.start)
-        for b in (self.write_button,self.planning_button,self.book_details_button,self.book_profile_button,self.book_memory_button,self.media_button,self.integrity_button,self.export_button): b.setVisible(False)
+        self._apply_feature_visibility()
         self._sync_nav_selection()
 
     def go_home(self):
@@ -591,14 +611,7 @@ class MainWindow(QMainWindow):
         self._active_book = None
         self.start.refresh()
         self.stack.setCurrentWidget(self.start)
-        self.write_button.setVisible(False)
-        self.planning_button.setVisible(False)
-        self.book_details_button.setVisible(False)
-        self.book_profile_button.setVisible(False)
-        self.book_memory_button.setVisible(False)
-        self.media_button.setVisible(False)
-        self.integrity_button.setVisible(False)
-        self.export_button.setVisible(False)
+        self._apply_feature_visibility()
         self._sync_nav_selection()
 
     def new_book(self):
@@ -633,11 +646,6 @@ class MainWindow(QMainWindow):
             return
         self.book_profile_page.set_book(live, force=True)
         self.book_memory_page.set_book(live, force=True)
-        self.write_button.setVisible(True)
-        self.planning_button.setVisible(True)
-        self.book_details_button.setVisible(True)
-        self.media_button.setVisible(True)
-        self.export_button.setVisible(True)
         self._apply_feature_visibility()
         self.stack.setCurrentWidget(self.editor_page)
         self._sync_nav_selection()
@@ -724,7 +732,7 @@ class MainWindow(QMainWindow):
         self.editor_page.close_book()
         self._active_book = None
         self.start.refresh()
-        self.write_button.setVisible(False); self.planning_button.setVisible(False); self.book_details_button.setVisible(False); self.book_profile_button.setVisible(False); self.book_memory_button.setVisible(False); self.media_button.setVisible(False); self.integrity_button.setVisible(False); self.export_button.setVisible(False)
+        self._apply_feature_visibility()
         self._apply_nav_width(False)
         self.media_manager_page.set_book(None)
         self.integrity_page.set_book(None)
@@ -821,42 +829,138 @@ class MainWindow(QMainWindow):
             target = self.editor_page if self.active_book() else self.start
         self.stack.setCurrentWidget(target)
 
-    def _apply_feature_visibility(self):
-        """Apply user-facing feature switches without touching persisted content."""
+    def _effective_rail_state(self, *, ai_enabled=None, advanced=None):
+        """Return the effective state for rendering, including Settings preview."""
+        preview = self._feature_visibility_preview or {}
+        if ai_enabled is None:
+            ai_enabled = preview.get('ai_enabled', self.settings.value('ai_enabled', True, bool))
+        if advanced is None:
+            advanced = preview.get('advanced', self.settings.value('advanced_options', True, bool))
+        return RailState(
+            has_book=self.active_book() is not None,
+            ai_enabled=bool(ai_enabled),
+            advanced_enabled=bool(advanced),
+        )
+
+    def _render_rail(self, state: RailState):
+        """Pure left-rail renderer: visibility only, no navigation or side effects."""
+        view = build_rail_view(state)
+        for key, button in self._rail_item_widgets.items():
+            button.setVisible(view.is_item_visible(key))
+        for key, heading in self._rail_group_widgets.items():
+            heading.setVisible(self.rail_expanded and view.is_group_visible(key))
+        return view
+
+    def _render_feature_buttons(self, *, ai_enabled=None, spell_enabled=None):
+        """Pure visibility renderer for editor feature buttons."""
         if not hasattr(self, 'ai_button'):
             return
-        ai_enabled = self.settings.value('ai_enabled', True, bool)
-        spell_enabled = self.settings.value('spell_enabled', True, bool)
-        advanced = self.settings.value('advanced_options', True, bool)
-        has_book = self.active_book() is not None
+        if ai_enabled is None:
+            preview = self._feature_visibility_preview or {}
+            ai_enabled = preview.get('ai_enabled', self.settings.value('ai_enabled', True, bool))
+        if spell_enabled is None:
+            spell_enabled = self.settings.value('spell_enabled', True, bool)
+        self.ai_button.setVisible(bool(ai_enabled))
+        self.spell_button.setVisible(bool(spell_enabled))
 
-        self.ai_button.setVisible(ai_enabled)
-        self.spell_button.setVisible(spell_enabled)
-        self.persona_button.setVisible(ai_enabled)
-        self.book_profile_button.setVisible(has_book and ai_enabled)
-        self.book_memory_button.setVisible(has_book and ai_enabled)
-        self.integrity_button.setVisible(has_book and advanced)
-        self.integrity_gap.setVisible(self.rail_expanded and has_book and advanced)
-        if hasattr(self, 'writing_group_label'):
-            self.writing_group_label.setVisible(self.rail_expanded and ai_enabled)
-        if hasattr(self, 'book_group_label'):
-            self.book_group_label.setVisible(self.rail_expanded and has_book)
+    def _page_key(self, page):
+        mapping = {
+            self.start: 'bookshelf',
+            self.editor_page: 'contents',
+            self.planning_page: 'planning',
+            self.media_manager_page: 'media',
+            self.export_page: 'export',
+            self.integrity_page: 'integrity',
+            self.book_memory_page: 'book_memory',
+            self.book_profile_page: 'book_profile',
+            self.persona: 'persona',
+            self.settings_page: 'settings',
+            self.trash: 'trash',
+        }
+        if self.book_details_page is not None:
+            mapping[self.book_details_page] = 'book_details'
+        return mapping.get(page)
 
-        hidden_right = ((not ai_enabled and self.editor_page.right.currentWidget() is self.editor_page.ai)
-                        or (not spell_enabled and self.editor_page.right.currentWidget() is self.editor_page.spell))
-        if hidden_right:
-            self.editor_page._remember_panel_widths()
-            self.editor_page.right.setCurrentWidget(self.editor_page.search)
-            self.editor_page.right.hide()
+    def _page_for_key(self, key):
+        mapping = {
+            'bookshelf': self.start,
+            'contents': self.editor_page,
+            'planning': self.planning_page,
+            'media': self.media_manager_page,
+            'export': self.export_page,
+            'integrity': self.integrity_page,
+            'book_memory': self.book_memory_page,
+            'book_profile': self.book_profile_page,
+            'persona': self.persona,
+            'settings': self.settings_page,
+            'trash': self.trash,
+        }
+        if self.book_details_page is not None:
+            mapping['book_details'] = self.book_details_page
+        return mapping.get(key)
 
-        # Settings may have been opened from a page that has just been hidden.
-        # Returning from Settings should then go to the manuscript, not to an
-        # invisible destination.
+    def _apply_committed_navigation_effects(self, state: RailState, *, spell_enabled=None):
+        """Apply non-rendering effects only after a committed state transition.
+
+        Preview never calls this method. It owns redirects and panel closing so
+        the renderer remains a side-effect-free projection of effective state.
+        """
+        if spell_enabled is None:
+            spell_enabled = self.settings.value('spell_enabled', True, bool)
+
+        if hasattr(self.editor_page, 'right'):
+            hidden_right = (
+                (not state.ai_enabled and self.editor_page.right.currentWidget() is self.editor_page.ai)
+                or (not bool(spell_enabled) and self.editor_page.right.currentWidget() is self.editor_page.spell)
+            )
+            if hidden_right:
+                self.editor_page._remember_panel_widths()
+                self.editor_page.right.setCurrentWidget(self.editor_page.search)
+                self.editor_page.right.hide()
+
         return_page = getattr(self, '_settings_return_page', None)
-        if (not ai_enabled and return_page in (self.persona, self.book_profile_page, self.book_memory_page)) \
-                or (not advanced and return_page is self.integrity_page):
-            self._settings_return_page = self.editor_page if has_book else self.start
-        self._apply_nav_width(False)
+        return_key = self._page_key(return_page)
+        if return_key is not None:
+            target_key = fallback_destination(return_key, state)
+            if target_key != return_key:
+                self._settings_return_page = self._page_for_key(target_key)
+
+        current = self.stack.currentWidget()
+        current_key = self._page_key(current)
+        if current_key is not None and current is not self.settings_page:
+            target_key = fallback_destination(current_key, state)
+            if target_key != current_key:
+                target = self._page_for_key(target_key)
+                if target is not None:
+                    self.stack.setCurrentWidget(target)
+
+    def _set_feature_visibility(self, *, ai_enabled=None, spell_enabled=None, advanced=None, adjust_return=True):
+        """Compatibility wrapper around the 0.33 state → model → render pipeline."""
+        state = self._effective_rail_state(ai_enabled=ai_enabled, advanced=advanced)
+        self._render_rail(state)
+        self._render_feature_buttons(ai_enabled=state.ai_enabled, spell_enabled=spell_enabled)
+        if adjust_return:
+            self._apply_committed_navigation_effects(state, spell_enabled=spell_enabled)
+        return state
+
+    def _apply_feature_visibility(self):
+        """Render committed feature switches without preview side effects."""
+        self._feature_visibility_preview = None
+        state = self._effective_rail_state()
+        self._render_rail(state)
+        self._render_feature_buttons(ai_enabled=state.ai_enabled)
+        return state
+
+    def preview_feature_visibility(self, *, ai_enabled=None, advanced=None):
+        """Preview only the effective UI state; never redirect or close panels."""
+        self._feature_visibility_preview = {
+            'ai_enabled': bool(ai_enabled),
+            'advanced': bool(advanced),
+        }
+        state = self._effective_rail_state(ai_enabled=ai_enabled, advanced=advanced)
+        self._render_rail(state)
+        self._render_feature_buttons(ai_enabled=state.ai_enabled)
+        return state
 
     # Compatibility name retained for older tests/plugins.
     def _apply_ai_visibility(self):
@@ -876,7 +980,10 @@ class MainWindow(QMainWindow):
             self.editor_page._sync_undo_redo()
             self.planning_page.notes_page.editor.reset_undo_history()
         self.editor_page.load_dictionary_from_settings()
-        self._apply_feature_visibility()
+        state = self._apply_feature_visibility()
+        self._apply_committed_navigation_effects(
+            state, spell_enabled=self.settings.value('spell_enabled', True, bool)
+        )
         self.editor_page.ai.apply_settings()
         if self.settings.value('workspace') != old_root:
             QMessageBox.information(self,'Werkmap gewijzigd','De nieuwe werkmap wordt gebruikt nadat de applicatie opnieuw is gestart.')

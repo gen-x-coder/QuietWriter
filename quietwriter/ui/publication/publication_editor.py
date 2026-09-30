@@ -33,7 +33,7 @@ class SimpleStructuredPage(QWidget):
 
 class FreeTextPage(QWidget):
     def __init__(self, parent=None):
-        super().__init__(parent); self.key=None; self.dirty=False; self.corrupt=False
+        super().__init__(parent); self.key=None; self.dirty=False; self.corrupt=False; self._clean_text=''
         root=QVBoxLayout(self); root.setContentsMargins(30,24,30,24); root.setSpacing(10)
         top=QHBoxLayout(); self.title=QLabel(''); self.title.setObjectName('title'); top.addWidget(self.title); top.addStretch()
         self.save_button=QPushButton(tr('common.save', 'Opslaan')); self.save_button.setObjectName('primaryButton'); self.save_button.setEnabled(False); top.addWidget(self.save_button); root.addLayout(top)
@@ -44,6 +44,8 @@ class FreeTextPage(QWidget):
     def _changed(self):
         if self.corrupt:
             return
+        if self.editor.source_text() == self._clean_text:
+            self.dirty=False; self.save_button.setEnabled(False); self.timer.stop(); return
         self.dirty=True; self.save_button.setEnabled(True); self.timer.start()
 
     def set_text(self,key,label,text, *, corrupt=False):
@@ -53,7 +55,7 @@ class FreeTextPage(QWidget):
             self.editor.setPlainText(tr('publication.text.corrupt', 'Dit publicatiebestand is beschadigd en kan niet als UTF-8 worden gelezen.\n\nOpen Integriteit om het te controleren en zo mogelijk te herstellen.'))
         else:
             self.editor.setPlainText(text)
-        self.editor.setReadOnly(self.corrupt); self.editor.blockSignals(False); self.dirty=False; self.save_button.setEnabled(False)
+        self.editor.setReadOnly(self.corrupt); self.editor.blockSignals(False); self._clean_text=self.editor.source_text(); self.dirty=False; self.save_button.setEnabled(False)
 
 
 class PublicationEditor(QWidget):
@@ -177,12 +179,12 @@ class PublicationEditor(QWidget):
         if self.free_text.corrupt:
             return True
         if not self.free_text.dirty:return True
-        text = self.free_text.editor.toPlainText()
+        text = self.free_text.editor.source_text()
         result = self.owner.persist_publication_change(
             f'publication/texts/{self.key}.md', text, lambda book: self.store.save_text(book,self.key,text)
         )
         if result == 'mine':
-            self.book = self.owner.book; self.free_text.dirty=False; self.free_text.save_button.setEnabled(False); label=tr(f'publication.item.{self.key}', definition['label']); self.main.status.showMessage(tr('publication.saved', '{label} opgeslagen.', label=label),2200); return True
+            self.book = self.owner.book; self.free_text._clean_text=self.free_text.editor.source_text(); self.free_text.dirty=False; self.free_text.save_button.setEnabled(False); label=tr(f'publication.item.{self.key}', definition['label']); self.main.status.showMessage(tr('publication.saved', '{label} opgeslagen.', label=label),2200); return True
         if result == 'disk':
             self.book = self.owner.book; self.free_text.set_text(self.key,tr(f'publication.item.{self.key}', definition['label']),self.store.load_text(self.book,self.key)); return True
         return False

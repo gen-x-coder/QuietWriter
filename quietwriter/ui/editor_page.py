@@ -49,6 +49,7 @@ class EditorPage(QWidget):
         self.main = main
         self.media_store = MediaStore(main.library)
         self.book = None; self.chapter = None; self.dirty = False; self._chapter_corrupt = False
+        self._clean_text = ''
         self._editing_image_block: int | None = None
         self._editing_image_reference_path: str | None = None
         self._chapter_word_counts = {}
@@ -114,7 +115,6 @@ class EditorPage(QWidget):
         self.dictionary.load_persistent_ignored(self.main.library.dict_dir / 'altijd_negeren.txt')
         self.highlighter = self.editor.presentation_highlighter
         self.highlighter.set_dictionary(self.dictionary)
-        self.load_dictionary_from_settings()
         self.publication_store = PublicationStore(self.main.library)
         self.manuscript_content = QWidget(); manuscript_layout = QVBoxLayout(self.manuscript_content); manuscript_layout.setContentsMargins(0,0,0,0); manuscript_layout.setSpacing(0)
         manuscript_layout.addWidget(self.chapter_title); manuscript_layout.addWidget(self.editor)
@@ -127,6 +127,7 @@ class EditorPage(QWidget):
 
         self.right = CurrentPageStack(); self.right.setObjectName('panel'); self.right.setMinimumWidth(300)
         self.search = SearchPanel(); self.ai = AIPanel(main); self.spell = SpellPanel(self); self.insert = InsertPanel(); self.history = HistoryPanel(self)
+        self.load_dictionary_from_settings()
         self.editor.selectionChanged.connect(self.ai.refresh_quick_actions)
         self.right.addWidget(self.search); self.right.addWidget(self.ai); self.right.addWidget(self.spell); self.right.addWidget(self.insert); self.right.addWidget(self.history)
         # Escape closes only the temporary right-side editor tool and returns
@@ -886,6 +887,10 @@ class EditorPage(QWidget):
         _, c = self.find_chapter_in_book(cid)
         if c: self.open_chapter(c)
 
+    def _editor_source_text(self):
+        """Compatibility wrapper for the shared persistent editor source."""
+        return self.editor.source_text()
+
     def _set_editor_chapter(self, chapter):
         self.content_stack.setCurrentWidget(self.manuscript_content)
         self.chapter = chapter
@@ -901,6 +906,7 @@ class EditorPage(QWidget):
                 'Het bestand is alleen-lezen om overschrijven te voorkomen. Open Integriteit om het te controleren en zo mogelijk te herstellen.'
             )
             self.editor.setPlainText(text)
+            self._clean_text = self._editor_source_text()
             self.editor.setReadOnly(True)
             self.chapter_title.setReadOnly(True)
             self.editor.blockSignals(False)
@@ -913,6 +919,7 @@ class EditorPage(QWidget):
             return
         self._chapter_corrupt = False
         self.editor.setPlainText(text)
+        self._clean_text = self._editor_source_text()
         if not self.preview_live_book:
             self.editor.setReadOnly(False)
             self.chapter_title.setReadOnly(False)
@@ -951,7 +958,21 @@ class EditorPage(QWidget):
     def on_text_changed(self):
         if self.preview_live_book or self._chapter_corrupt:
             return
-        self.dirty = True; self.autosave_status.setText('Niet opgeslagen')
+        # QSyntaxHighlighter.rehighlight() and other presentation-only passes can
+        # emit textChanged even though the manuscript source text is identical.
+        # Dirty state must describe source changes only: otherwise Settings or a
+        # spelling action can trigger an unnecessary autosave and even a false
+        # two-computer conflict.
+        current_text = self._editor_source_text()
+        if current_text == self._clean_text:
+            self.dirty = False
+            self.autosave_timer.stop()
+            self.autosave_status.setText('● Opgeslagen')
+            self._schedule_undo_redo_sync()
+            self.update_counts()
+            return
+        self.dirty = True
+        self.autosave_status.setText('Niet opgeslagen')
         self._schedule_undo_redo_sync()
         self.update_counts()
         self.autosave_timer.start()
@@ -1031,7 +1052,7 @@ class EditorPage(QWidget):
             if publication_pending:
                 QMessageBox.warning(
                     self,
-                    tr('structure_conflict.pending_title', 'Structuuractie niet uitgevoerd'),
+                    tr('structure_conflict.pending_title', 'Actie niet uitgevoerd'),
                     tr(
                         'structure_conflict.pending_text',
                         'Het boek is extern gewijzigd en deze publicatieweergave bevat nog niet-opgeslagen wijzigingen. '
@@ -1039,7 +1060,7 @@ class EditorPage(QWidget):
                     ),
                 )
                 self.main.status.showMessage(
-                    tr('structure_conflict.retry_after_save', 'Structuuractie niet uitgevoerd · rond eerst de publicatiewijzigingen af'),
+                    tr('structure_conflict.retry_after_save', 'Actie niet uitgevoerd · rond eerst de publicatiewijzigingen af'),
                     6000,
                 )
                 return False
@@ -1094,7 +1115,7 @@ class EditorPage(QWidget):
         old_book = self.book
         old_chapter = self.chapter
         chapter_id = old_chapter.id
-        local_text = self.editor.toPlainText()
+        local_text = self._editor_source_text()
 
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Warning)
@@ -1215,13 +1236,15 @@ class EditorPage(QWidget):
         if not (self.book and self.chapter and self.dirty):
             return True
         try:
-            self.main.library.save_chapter(self.book, self.chapter, self.editor.toPlainText())
+            source_text = self._editor_source_text()
+            self.main.library.save_chapter(self.book, self.chapter, source_text)
         except ExternalModificationError as exc:
             return self._resolve_external_change(exc)
         except RevisionVerificationError as exc:
             return self._handle_verification_error(exc)
         except StorageWriteError as exc:
             return self._handle_storage_write_error(exc)
+        self._clean_text = source_text
         self.dirty = False
         self.main.search_index.rebuild_book(self.book)
         self.autosave_status.setText('● Opgeslagen · zojuist')
@@ -1394,7 +1417,7 @@ class EditorPage(QWidget):
         if not self.book or not self.chapter or self.preview_live_book or self._chapter_corrupt:
             return
         cursor = self.editor.textCursor()
-        text = self.editor.toPlainText()
+        text = self._editor_source_text()
         new_text, new_pos = build_scene_break_text(text, cursor.position())
         if new_text == text:
             return
@@ -1551,7 +1574,7 @@ class EditorPage(QWidget):
         ):
             return
 
-        text = self.editor.toPlainText()
+        text = self._editor_source_text()
         start = block.position()
         end = start + len(block.text())
         left = text[:start].rstrip('\n')
@@ -1601,7 +1624,7 @@ class EditorPage(QWidget):
             reference, alt_text, caption, width=width, align=align, wrap=wrap
         )
         cursor = self.editor.textCursor()
-        text = self.editor.toPlainText()
+        text = self._editor_source_text()
         new_text, new_pos = insert_image_block(text, cursor.position(), block)
         cursor.beginEditBlock()
         cursor.select(QTextCursor.Document)
@@ -1840,6 +1863,7 @@ class EditorPage(QWidget):
         self.content_stack.setCurrentWidget(self.manuscript_content)
         self._chapter_word_counts = {}
         self.dirty = False
+        self._clean_text = ''
         self.tree.clear()
         self.chapter_title.clear()
         self.book_title_label.clear()
@@ -1877,7 +1901,7 @@ class EditorPage(QWidget):
         skipped=[]
         for ch in self._chapters_in_scope():
             try:
-                text=self.editor.toPlainText() if self.chapter and ch.id==self.chapter.id else self.main.library.read_chapter(self.book,ch)
+                text=self._editor_source_text() if self.chapter and ch.id==self.chapter.id else self.main.library.read_chapter(self.book,ch)
             except UnicodeDecodeError:
                 skipped.append(ch.title)
                 continue
@@ -1931,7 +1955,7 @@ class EditorPage(QWidget):
         cur=self.editor.textCursor()
         selected=cur.selectedText()
         good = selected == q if self.search.case_sensitive.isChecked() else selected.casefold()==q.casefold()
-        source = self.editor.toPlainText()
+        source = self._editor_source_text()
         safe_range = is_searchable_range(source, cur.selectionStart(), cur.selectionEnd())
         if not good or not safe_range:
             self.search_next(); return
@@ -1954,7 +1978,7 @@ class EditorPage(QWidget):
         skipped=[]
         for ch in chapters:
             try:
-                text=self.editor.toPlainText() if self.chapter and ch.id==self.chapter.id else self.main.library.read_chapter(self.book,ch)
+                text=self._editor_source_text() if self.chapter and ch.id==self.chapter.id else self.main.library.read_chapter(self.book,ch)
             except UnicodeDecodeError:
                 skipped.append(ch.title)
                 continue

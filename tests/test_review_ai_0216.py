@@ -55,8 +55,8 @@ def test_provider_models_are_saved_per_provider_not_cross_assigned():
     start = source.index('    def save_settings(self):')
     end = source.index('    def begin_session(self):', start)
     block = source[start:end]
-    assert "self.settings.setValue('ollama_model', self._ai_model_drafts.get('ollama', ''))" in block
-    assert "self.settings.setValue('openrouter_model', self._ai_model_drafts.get('openrouter', ''))" in block
+    assert "values['ollama_model'] = self._ai_model_drafts.get('ollama', '')" in block
+    assert "values['openrouter_model'] = self._ai_model_drafts.get('openrouter', '')" in block
 
 
 def test_context_has_stale_section_and_read_error_guards():

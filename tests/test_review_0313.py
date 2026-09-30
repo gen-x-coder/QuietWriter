@@ -127,7 +127,6 @@ def test_editor_spell_follow_uses_contents_change_instead_of_revision_skip_by_so
     assert '_spell_last_revision' not in source
 
 
-def test_integrity_gap_visibility_tracks_book_mode_by_source():
-    source = Path('quietwriter/ui/main_window.py').read_text(encoding='utf-8')
-    assert "advanced = self.settings.value('advanced_options', True, bool)" in source
-    assert 'self.integrity_gap.setVisible(self.rail_expanded and has_book and advanced)' in source
+def test_integrity_visibility_tracks_book_and_advanced_state_by_source():
+    source = Path('quietwriter/ui/rail_model.py').read_text(encoding='utf-8')
+    assert "RailItemSpec('integrity', 'current_book', requires_book=True, requires_advanced=True)" in source
