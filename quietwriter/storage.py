@@ -46,7 +46,7 @@ def _guard_existing_json(path: Path):
         return
     _guard_existing_utf8(path)
     try:
-        value = json.loads(path.read_text(encoding='utf-8'))
+        value = json.loads(path.read_text(encoding='utf-8-sig'))
     except json.JSONDecodeError as exc:
         raise CorruptSourceError(path) from exc
     if not isinstance(value, dict):
@@ -868,8 +868,32 @@ class Library:
                         pass
         return self.load_book(live_book.path)
 
+    def _guard_future_planning_before_restore(self, book: Book):
+        """Never roll a live newer Planning schema back through History."""
+        # Local import avoids a module cycle: planning_validation depends on
+        # CorruptSourceError from this module. Corrupt/invalid v1 data may still
+        # be intentionally restored; only a *newer valid format marker* blocks
+        # the whole restore.
+        from .planning_validation import FuturePlanningFormatError, validate_planning_payload
+
+        planning_root = book.path / 'planning'
+        for kind, filename in (('scenes', 'outline.json'), ('characters', 'characters.json')):
+            path = planning_root / filename
+            if not path.exists():
+                continue
+            try:
+                value = json.loads(path.read_text(encoding='utf-8-sig'))
+                validate_planning_payload(kind, value, path)
+            except FuturePlanningFormatError:
+                raise
+            except Exception:
+                # History remains a valid explicit repair path for genuinely
+                # corrupt/old-format Planning; those cases are not newer data.
+                continue
+
     def restore_version(self, book: Book, version_id: str) -> Book:
         """Restore a snapshot with an automatic rollback checkpoint."""
+        self._guard_future_planning_before_restore(book)
         self.verify_book_unchanged(book)
         snapshot = self.load_version(book, version_id)
         safety = self.create_version(book, kind='pre_restore')

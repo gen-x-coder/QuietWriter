@@ -8,6 +8,8 @@ from ...planning_storage import PlanningStore
 from ...revisions import ExternalModificationError, RevisionVerificationError
 from ...migrations import FutureBookFormatError
 from ...i18n import tr
+from ...storage import CorruptSourceError
+from ...planning_validation import FuturePlanningFormatError
 from .characters_page import CharactersPage
 from .outline_page import OutlinePage
 from .notes_page import NotesPage
@@ -31,7 +33,12 @@ class PlanningPage(QWidget):
         title=QLabel(tr('planning.title', 'Planning')); title.setObjectName('title')
         info=QLabel(tr('planning.info', 'Werk hier de personages, scènes en vrije notities van dit boek uit. Planning helpt je het verhaal te structureren zonder de manuscripttekst zelf te veranderen.'))
         info.setObjectName('muted'); info.setWordWrap(True)
-        header_layout.addWidget(title); header_layout.addWidget(info)
+        self._source_errors = {}
+        self.source_warning = QLabel('')
+        self.source_warning.setObjectName('syncWarning')
+        self.source_warning.setWordWrap(True)
+        self.source_warning.hide()
+        header_layout.addWidget(title); header_layout.addWidget(info); header_layout.addWidget(self.source_warning)
         root.addWidget(header)
         body=QHBoxLayout(); body.setContentsMargins(0,0,0,0); body.setSpacing(0)
         side=QFrame(); side.setObjectName('planningSidebar'); side.setFixedWidth(PLANNING_PANEL_WIDTH)
@@ -55,6 +62,40 @@ class PlanningPage(QWidget):
         self.pages.setCurrentIndex(index)
         for i,b in enumerate(self.buttons): b.setChecked(i==index)
 
+    def _refresh_source_warning(self):
+        if not self._source_errors:
+            self.source_warning.clear()
+            self.source_warning.hide()
+            return
+        files = []
+        if 'characters' in self._source_errors:
+            files.append('planning/characters.json')
+        if 'scenes' in self._source_errors:
+            files.append('planning/outline.json')
+        future = any(isinstance(error, FuturePlanningFormatError) for error in self._source_errors.values())
+        if future:
+            text = tr(
+                'planning.newer_sources',
+                'Een deel van Planning is gemaakt met een nieuwere QuietWriter ({files}). Dit onderdeel is alleen-lezen. Werk QuietWriter bij; herstel het bestand niet naar een oudere versie.',
+                files=', '.join(files),
+            )
+        else:
+            text = tr(
+                'planning.corrupt_sources',
+                'Een deel van Planning kan niet betrouwbaar worden gelezen ({files}). Het betreffende onderdeel is alleen-lezen. Herstel het bestand via Integriteit.',
+                files=', '.join(files),
+            )
+        self.source_warning.setText(text)
+        self.source_warning.show()
+
+    def set_source_error(self, kind, error):
+        self._source_errors[kind] = error
+        self._refresh_source_warning()
+
+    def clear_source_error(self, kind):
+        self._source_errors.pop(kind, None)
+        self._refresh_source_warning()
+
     def set_book(self,book, *, force=False):
         # A forced detach is used only after all local planning state has already
         # been preserved in a conflict_local History snapshot. It must never run
@@ -63,6 +104,8 @@ class PlanningPage(QWidget):
             if self.save_pending() is False:
                 return False
         self.book=book
+        self._source_errors = {}
+        self._refresh_source_warning()
         enabled=book is not None; self.setEnabled(enabled)
         if not enabled:
             if force:
@@ -95,6 +138,8 @@ class PlanningPage(QWidget):
                 pending_character = self.characters_page.pending_editor_snapshot()
 
         self.book = book
+        self._source_errors = {}
+        self._refresh_source_warning()
         enabled = book is not None; self.setEnabled(enabled)
         if not enabled:
             return True

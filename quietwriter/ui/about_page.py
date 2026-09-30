@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from .. import APP_NAME, __version__
 from ..font_catalog import bundled_fonts
 from ..i18n import tr
+from ..icon_theme import themed_svg_pixmap
 
 
 class LicenseCard(QFrame):
@@ -87,12 +88,11 @@ class AboutPage(QWidget):
         hero_layout.setContentsMargins(24, 22, 24, 22)
         hero_layout.setSpacing(5)
 
-        eyebrow = QLabel(APP_NAME.upper())
-        eyebrow.setObjectName('aboutEyebrow')
-        hero_layout.addWidget(eyebrow)
-        title = QLabel(APP_NAME)
-        title.setObjectName('aboutHeroTitle')
-        hero_layout.addWidget(title)
+        self.wordmark = QLabel()
+        self.wordmark.setObjectName('aboutWordmark')
+        self.wordmark.setAccessibleName(APP_NAME)
+        self.wordmark.setPixmap(themed_svg_pixmap('quietwriter-wordmark', 360))
+        hero_layout.addWidget(self.wordmark, 0, Qt.AlignLeft)
         tagline = QLabel(tr('about.tagline', 'Rustig schrijven. Heldere boeken.'))
         tagline.setObjectName('aboutHeroTagline')
         hero_layout.addWidget(tagline)
@@ -169,3 +169,6 @@ class AboutPage(QWidget):
             layout.addWidget(card)
 
         layout.addStretch(1)
+
+    def refresh_branding(self, theme_name: str | None = None):
+        self.wordmark.setPixmap(themed_svg_pixmap('quietwriter-wordmark', 360, theme_name=theme_name))

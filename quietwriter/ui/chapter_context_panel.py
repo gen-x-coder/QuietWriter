@@ -8,6 +8,8 @@ from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QScrollArea, QVBoxLay
 from ..chapter_context import build_chapter_context
 from ..i18n import tr
 from ..planning_storage import PlanningStore
+from ..storage import CorruptSourceError
+from ..planning_validation import FuturePlanningFormatError
 
 
 class ChapterContextPanel(QWidget):
@@ -78,13 +80,16 @@ class ChapterContextPanel(QWidget):
             item = layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
                 widget.deleteLater()
 
     @staticmethod
     def _validate_json(path):
         if not path.exists():
             return
-        json.loads(path.read_text(encoding='utf-8'))
+        value = json.loads(path.read_text(encoding='utf-8-sig'))
+        if not isinstance(value, dict):
+            raise ValueError('verwacht JSON-object')
 
     def refresh(self, book, chapter_id: str | None, *, available: bool = True):
         if not available or book is None or not chapter_id:
@@ -100,7 +105,17 @@ class ChapterContextPanel(QWidget):
             scenes = self.store.load_scenes(book)
             characters = self.store.load_characters(book)
             context = build_chapter_context(chapter_id, scenes, characters)
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        except FuturePlanningFormatError:
+            self._clear_rows()
+            self.scroll.hide()
+            self.message.setText(tr(
+                'chapter_context.newer',
+                'De opgeslagen Planning is gemaakt met een nieuwere QuietWriter. Werk QuietWriter bij om deze Planning te bekijken.'
+            ))
+            self.message.show()
+            self.open_button.setEnabled(True)
+            return
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError, CorruptSourceError):
             self._clear_rows()
             self.scroll.hide()
             self.message.setText(tr(
@@ -131,14 +146,22 @@ class ChapterContextPanel(QWidget):
             char_names = QLabel(', '.join(context.character_names))
             char_names.setWordWrap(True)
             self.content_layout.insertWidget(self.content_layout.count() - 1, char_names)
+
         scene_heading = QLabel(tr('chapter_context.scenes_heading', 'Scènes'))
         scene_heading.setObjectName('subsectionTitle')
         self.content_layout.insertWidget(self.content_layout.count() - 1, scene_heading)
+
         for scene in context.scenes:
+            card = QFrame()
+            card.setObjectName('chapterContextSceneCard')
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(10, 9, 10, 9)
+            card_layout.setSpacing(5)
+
             heading = QLabel(scene.title or tr('chapter_context.scene', 'Scène'))
             heading.setObjectName('subsectionTitle')
             heading.setWordWrap(True)
-            self.content_layout.insertWidget(self.content_layout.count() - 1, heading)
+            card_layout.addWidget(heading)
 
             details = []
             if scene.status:
@@ -149,11 +172,28 @@ class ChapterContextPanel(QWidget):
                 meta = QLabel(' · '.join(details))
                 meta.setObjectName('muted')
                 meta.setWordWrap(True)
-                self.content_layout.insertWidget(self.content_layout.count() - 1, meta)
+                card_layout.addWidget(meta)
+
             if scene.synopsis:
                 synopsis = QLabel(scene.synopsis)
                 synopsis.setWordWrap(True)
-                self.content_layout.insertWidget(self.content_layout.count() - 1, synopsis)
+                card_layout.addWidget(synopsis)
+
+            for label, value in (
+                (tr('chapter_context.goal', 'Doel'), scene.goal),
+                (tr('chapter_context.conflict', 'Conflict'), scene.conflict),
+                (tr('chapter_context.outcome', 'Uitkomst'), scene.outcome),
+                (tr('chapter_context.notes', 'Notities'), scene.notes),
+            ):
+                if not value:
+                    continue
+                field_label = QLabel(label)
+                field_label.setObjectName('contextFieldLabel')
+                card_layout.addWidget(field_label)
+                field_value = QLabel(value)
+                field_value.setWordWrap(True)
+                card_layout.addWidget(field_value)
+
             if scene.character_names:
                 chars = QLabel(tr(
                     'chapter_context.characters',
@@ -161,4 +201,7 @@ class ChapterContextPanel(QWidget):
                 ))
                 chars.setObjectName('muted')
                 chars.setWordWrap(True)
-                self.content_layout.insertWidget(self.content_layout.count() - 1, chars)
+                card_layout.addWidget(chars)
+
+            self.content_layout.insertWidget(self.content_layout.count() - 1, card)
+

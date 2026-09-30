@@ -5,7 +5,7 @@ from PySide6.QtCore import (
     Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve,
     QParallelAnimationGroup
 )
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QFileDialog, QFrame, QHBoxLayout, QInputDialog, QMainWindow,
     QLabel, QMessageBox, QPushButton, QScrollArea, QStatusBar, QVBoxLayout, QWidget
@@ -13,12 +13,14 @@ from PySide6.QtWidgets import (
 
 from .current_page_stack import CurrentPageStack
 from .. import APP_NAME
-from ..icon_theme import icon, set_icon_theme
+from ..icon_theme import app_icon_path, icon, set_icon_theme
 from ..i18n import tr
 from ..search import BookSearchIndex
 from ..themes import THEMES, stylesheet
 from ..typography import typography_from_values
 from ..manuscript_markup import ManuscriptStyle
+from ..storage import CorruptSourceError
+from ..planning_validation import FuturePlanningFormatError
 from .book_details import BookDetailsPage
 from .book_profile_page import BookProfilePage
 from .book_memory_page import BookMemoryPage
@@ -42,7 +44,10 @@ class MainWindow(QMainWindow):
         set_icon_theme(self._active_theme)
         self.search_index = BookSearchIndex(library.cache_dir / 'book_search.db')
         self.status = QStatusBar(); self.setStatusBar(self.status)
-        self.setWindowTitle(APP_NAME); self.setWindowIcon(icon('books')); self.resize(1280, 720)
+        self._document_status_text = ''
+        self._restoring_document_status = False
+        self.status.messageChanged.connect(self._status_message_changed)
+        self.setWindowTitle(APP_NAME); self.setWindowIcon(QIcon(str(app_icon_path()))); self.resize(1280, 720)
         self.rail_expanded = self.settings.value('nav_expanded', False, bool)
         self._feature_visibility_preview = None
 
@@ -116,6 +121,9 @@ class MainWindow(QMainWindow):
         self.settings_button = self._register_nav_item('settings', 'settings', tr('nav.settings', 'Instellingen'), self.open_settings, layout=self.program_layout)
         self.trash_button = self._register_nav_item('trash', 'trash', tr('nav.trash', 'Prullenbak'), self.show_trash, layout=self.program_layout)
         self.rail_shell_layout.addWidget(self.program_host, 0)
+        self.rail_scroll.verticalScrollBar().rangeChanged.connect(
+            lambda *_: self._refresh_program_separator_visibility()
+        )
 
         # Rechter gereedschapsrail. De functie-iconen openen/sluiten hun eigen paneel.
         # Een aparte 'rechterpaneel tonen/verbergen'-knop is daardoor overbodig.
@@ -255,8 +263,14 @@ class MainWindow(QMainWindow):
             details_plan = details.prepare_adoption(book)
         # Planning/publication/export loaders are intentionally tolerant of corrupt
         # UTF-8 now; calling them here also catches unrelated preparation failures.
-        self.planning_page.store.load_characters(book)
-        self.planning_page.store.load_scenes(book)
+        # Structurally corrupt Planning JSON is a supported read-only state.
+        # Do not block opening the whole book; the Planning page and chapter
+        # context surface the error and Integriteit can restore the source.
+        for loader in (self.planning_page.store.load_characters, self.planning_page.store.load_scenes):
+            try:
+                loader(book)
+            except (CorruptSourceError, FuturePlanningFormatError):
+                pass
         planning_notes_corrupt = False
         planning_notes_corrupt_preserved = False
         try:
@@ -357,8 +371,8 @@ class MainWindow(QMainWindow):
     def _register_nav_separator(self, before_group, *, layout=None):
         separator = QFrame()
         separator.setObjectName('navGroupSeparator')
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFixedHeight(1)
+        separator.setFrameShape(QFrame.NoFrame)
+        separator.setFixedHeight(2)
         (layout or self.rail_layout).addWidget(separator)
         self._rail_separator_widgets[before_group] = separator
         return separator
@@ -426,6 +440,36 @@ class MainWindow(QMainWindow):
         self.settings.setValue('toolrail_expanded', self.toolrail_expanded)
         self._apply_toolrail_width(animate=True)
 
+    def set_document_status(self, text: str):
+        self._document_status_text = str(text or '')
+        editor_page = getattr(self, 'editor_page', None)
+        if self._document_status_text and hasattr(self, 'stack') and editor_page is not None and self.stack.currentWidget() is editor_page:
+            self.status.showMessage(self._document_status_text)
+
+    def clear_document_status(self):
+        self._document_status_text = ''
+        self.status.clearMessage()
+
+    def _status_message_changed(self, message: str):
+        if message or not self._document_status_text or self._restoring_document_status:
+            return
+        editor_page = getattr(self, 'editor_page', None)
+        if not hasattr(self, 'stack') or editor_page is None or self.stack.currentWidget() is not editor_page:
+            return
+        QTimer.singleShot(0, self._restore_document_status)
+
+    def _restore_document_status(self):
+        if self._restoring_document_status or not self._document_status_text:
+            return
+        editor_page = getattr(self, 'editor_page', None)
+        if editor_page is None or self.stack.currentWidget() is not editor_page or self.status.currentMessage():
+            return
+        self._restoring_document_status = True
+        try:
+            self.status.showMessage(self._document_status_text)
+        finally:
+            self._restoring_document_status = False
+
     def _mode_changed(self, idx):
         in_editor = self.stack.currentWidget() is self.editor_page
         # History preview is an editor-only, read-only view. As soon as the user
@@ -437,6 +481,10 @@ class MainWindow(QMainWindow):
         self.toolrail.setVisible(in_editor)
         if in_editor and hasattr(self.editor_page, 'chapter_context'):
             self.editor_page.refresh_chapter_context()
+            if self.editor_page.chapter is not None:
+                self.editor_page.update_counts()
+        elif not in_editor:
+            self.clear_document_status()
         has_book = self.active_book() is not None
         self._apply_feature_visibility()
         self._sync_nav_selection()
@@ -797,6 +845,9 @@ class MainWindow(QMainWindow):
             self.editor_page.ai.apply_theme(theme_name)
         if hasattr(self, 'editor_page') and hasattr(self.editor_page, 'editor'):
             self.editor_page.editor.schedule_formatting(immediate=True)
+        about = getattr(getattr(self, 'settings_page', None), 'about_page', None)
+        if about is not None and hasattr(about, 'refresh_branding'):
+            about.refresh_branding(theme_name)
 
     def _refresh_theme_icons(self, theme_name: str | None = None):
         theme_name = theme_name or self._active_theme
@@ -892,8 +943,33 @@ class MainWindow(QMainWindow):
         for key, separator in self._rail_separator_widgets.items():
             index = group_order.index(key)
             has_visible_before = any(group in visible_groups for group in group_order[:index])
-            separator.setVisible((not self.rail_expanded) and key in visible_groups and has_visible_before)
+            visible = (not self.rail_expanded) and key in visible_groups and has_visible_before
+            if key == 'program':
+                # PROGRAMMA staat al vast onderaan. Op ruime schermen voegt een
+                # extra lijn weinig toe; wanneer het middendeel moet scrollen
+                # blijft de scheiding juist nuttig in de ingeklapte rail.
+                visible = visible and self._program_separator_needed()
+            separator.setVisible(visible)
         return view
+
+    def _program_separator_needed(self):
+        return self.rail_scroll.verticalScrollBar().maximum() > 0
+
+    def _refresh_program_separator_visibility(self):
+        separator = self._rail_separator_widgets.get('program')
+        if separator is None:
+            return
+        view = build_rail_view(self._effective_rail_state())
+        group_order = [group.key for group in RAIL_GROUPS]
+        visible_groups = set(view.visible_groups)
+        index = group_order.index('program')
+        has_visible_before = any(group in visible_groups for group in group_order[:index])
+        separator.setVisible(
+            (not self.rail_expanded)
+            and 'program' in visible_groups
+            and has_visible_before
+            and self._program_separator_needed()
+        )
 
     def _render_feature_buttons(self, *, ai_enabled=None, spell_enabled=None):
         """Pure visibility renderer for editor feature buttons."""

@@ -1,5 +1,25 @@
 # QuietWriter roadmap
 
+## Naar 1.0 — actief vanaf 0.35
+
+De featurefase is afgesloten. Vanaf 0.35 geldt één harde regel: alleen werk dat QuietWriter **stabiel, begrijpelijk of distribueerbaar** maakt blijft in de 1.0-lijn; nieuwe AI-functies en andere uitbreidingen gaan naar v2. Het volledige afvinkplan staat in `PLAN_1_0.md`.
+
+**0.35 — releasefundament**
+- Crashvangnet naar lokale per-computer opslag, Qt-logging en zichtbare foutmelding.
+- Definitieve branding: app-/taakbalkicoon, woordmerk op splash en Over.
+- Vertaalcontrole, licentie-inventaris, first-run ontwerp en CI op Ubuntu/Windows.
+
+**0.36 — Windows en verpakking**
+- Portable PyInstaller-onedir build, first-run wizard en eerste Windows-testmatrix.
+
+**0.37 — praktijkgebruik**
+- Echte oude boeken, groot boek, Dropbox/OneDrive, compacte documentatie en dagelijkse praktijktests.
+
+**1.0.0-rc1 → 1.0.0**
+- Feature freeze, alleen bugs, 2–3 weken dagelijks schrijven en geen bekende dataverliesbug.
+
+## Historische roadmap
+
 ## Afgerond
 
 - Editorbasis: hoofdstukken/secties, drag-and-drop hoofdstukken, zoeken/vervangen en spellingscontrole.
@@ -422,6 +442,20 @@ Deze volgorde vervangt de oudere voorlopige nummering waarin 0.32 direct voor Pl
 - Verweesde koppelingen worden stil overgeslagen.
 - Railselectie en programmatic navigation zijn tegelijk gehard: één selectiekring voor alle railgroepen en automatisch scrollen naar de actieve railknop.
 
+**0.34.1 — tweede slice gebouwd voor review**
+- Teststrategie opgeschoond: actuele regressies standaard in `tests/current/`; historische reviewtests bewaard in `tests/legacy/` en alleen nog expliciet gedraaid.
+- Planning-JSON met een geldige maar onbruikbare structuur is fail-closed zonder het hele boek te blokkeren; Integriteit kan het probleem tonen/herstellen.
+- **In dit hoofdstuk** toont nu ook Doel, Conflict, Uitkomst en Notities uit de opgeslagen scène.
+- Paneelhiërarchie, statusbalktelling en ingeklapte railseparators zijn visueel gecorrigeerd.
+- Nog steeds geen automatische AI-context of nieuwe Planning-schemafields.
+
+
+**0.34.2 — status/integriteitsveiligheid en testbalans**
+- Boek- en hoofdstukwoordtelling samengebracht in één vaste statusbalk; geen losse boektelling meer onder de hoofdstukboom.
+- Planning-formaat van een nieuwere QuietWriter is expliciet niet-herstelbaar: openen blijft mogelijk, bewerken niet, en de gebruiker krijgt de instructie QuietWriter bij te werken.
+- Eén gedeelde Planning-validator voor opslag en Integriteit, vóór verdere schema- of AI-contextuitbreiding.
+- Kernregressies terug in `tests/current`; volledige `tests/legacy` is verplicht bij minor-releases.
+
 **Vervolg binnen 0.34**
 - Na runtime-review: transparant tonen welke Planning-informatie expliciet als AI-context gebruikt zou worden; pas daarna daadwerkelijk toevoegen.
 - Planning-integriteit uitbreiden met verwijzingen naar verdwenen hoofdstukken/personages waar dat nog niet wordt afgedekt.
@@ -435,3 +469,55 @@ Deze volgorde vervangt de oudere voorlopige nummering waarin 0.32 direct voor Pl
 - **0.32.6:** vrije publicatietekst krijgt dezelfde echte dirty-baseline als hoofdstukken en Planning-notities; Qt-reviewtests worden gehard tegen onverwachte modale dialogen en de startupstructuur krijgt een AST-vangnet.
 
 - **0.32.7:** test-hardening: generieke unreachable-codecontrole en suitebrede QMessageBox-guard; geen productgedrag gewijzigd. Hiermee is de 0.32-polishreeks functioneel afgerond wanneer reviewronde 33 groen is.
+
+
+**0.34.3 — Planning-routes sluiten en visuele afwerking**
+- AI Planning-context degradeert veilig bij corrupte/nieuwere Planning en blokkeert geen AI-vraag.
+- History-herstel mag nieuwere Planning nooit terugrollen; update-instructie in plaats van gedeeltelijk herstel.
+- Ingeklapte railseparator duidelijker (2 px), contextlabels links uitgelijnd en correcte enkelvoudsvorm `1 woord`.
+- Hierna kan 0.34 verder met transparante Planning→AI-context, zonder eerst nieuwe schemafields toe te voegen.
+
+**0.34.4 — Planning→AI-context eerst zichtbaar, nog niet automatisch**
+- Het AI-contextblok benoemt de drie vaste contextlagen en toont daarnaast welke opgeslagen Planning bij het actieve hoofdstuk hoort.
+- De hoofdstukplanning wordt als preview met exacte tekst inspecteerbaar via **Context bekijken**, maar wordt in 0.34.4 nog niet automatisch aan een AI-vraag toegevoegd.
+- Hiermee kan inhoud, omvang en UX van de context eerst worden beoordeeld voordat het promptcontract verandert.
+- Planning-contextfouten gebruiken een expliciete foutstatus; BOM-gecodeerde Planning blijft veilig herkenbaar als corrupt of nieuwer.
+- Volgende slice: pas na runtime-/gebruikersreview beslissen of en hoe de zichtbare hoofdstukplanning expliciet kan worden ingeschakeld voor AI.
+
+
+**0.34.5 — handmatige Planning-context weer bereikbaar en raildetail**
+- Herstel de bestaande handmatige Planning-contextknop via de echte open-book-route voordat automatische hoofdstukcontext wordt overwogen.
+- Houd preview-only hoofdstukplanning gescheiden van geselecteerde Planning-context die werkelijk naar AI gaat.
+- Maak foutredenen structureel en compact in de UI.
+- Divider vóór vast PROGRAMMA alleen tonen wanneer de ingeklapte middenrail werkelijk moet scrollen.
+
+
+## 0.34.6 — afronding AI Planning-context
+
+- Koude-startstatus van Planning-context expliciet correct.
+- Foutcontext in gesprekken zelfstandig begrijpelijk.
+- Hoofdstukplanning blijft preview-only; automatische Planning→AI-koppeling volgt pas in een volgende slice.
+
+
+## 0.34.7 — expliciete hoofdstukplanning voor AI
+
+- De in 0.34.4–0.34.6 inspecteerbare hoofdstukplanning kan nu bewust worden meegestuurd met AI via **Planning van dit hoofdstuk gebruiken**.
+- Automatische hoofdstukplanning en handmatig geselecteerde Planning-context blijven zichtbaar en technisch gescheiden.
+- Alleen opgeslagen, betrouwbaar leesbare Planning van het actieve hoofdstuk wordt gebruikt; fout/nieuwere bron degradeert naar geen hoofdstukplanning en blokkeert AI niet.
+- Volgende slice: beoordelen of verdere automatische herkenning of verfijning echt schrijverswaarde toevoegt; geen schema-uitbreiding zonder apart ontwerp.
+
+
+### 0.34.8 — expliciete toestemming hoofdstukplanning
+Status: geïmplementeerd. Nieuwe gebruikers/contextinstellingen starten uit; bestaande keuze blijft behouden. Contextbudget/lengtegrens volgt later.
+
+
+### 0.34.9 — opt-in afronding
+- [x] Begrepen-route voor standaard-uit hoofdstukplanning.
+- [x] Qt-runtimechecks expliciet bij externe review.
+- [ ] Contextbudget/lengtegrens later; geen stille afkapping in 0.34.x.
+
+### 0.34.10 — testinfrastructuur en opt-in-polish
+- [x] Automatische `qt`-marker voor echte PySide6-tests; `pytest -m qt` is de betrouwbare snelle Qt-run.
+- [x] Compactere privacytekst bij de opt-in voor hoofdstukplanning.
+- [x] Geen productlogica gewijzigd; kandidaat om 0.34 af te sluiten na groene externe PySide6-review.
+

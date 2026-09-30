@@ -6,13 +6,13 @@ from PySide6.QtCore import QThread, Signal, Qt, QTimer
 from PySide6.QtGui import QTextCursor, QTextDocument, QIcon, QPalette, QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox, QPushButton,
-    QTextEdit, QTextBrowser, QMessageBox, QFrame, QDialog, QDialogButtonBox
+    QTextEdit, QTextBrowser, QMessageBox, QFrame, QDialog, QDialogButtonBox, QCheckBox
 )
 from .providers import ProviderFactory
 from .context import ContextBuilder
 from .conversations import ConversationStore
 from .memory_suggestions import extract_memory_suggestions, proposal_instruction
-from .planning_context import PlanningSelection, build_planning_context
+from .planning_context import PlanningSelection, build_planning_context_result, chapter_planning_preview
 from .prompting import build_system_prompt
 from .quick_actions import QUICK_ACTIONS, QUICK_ACTION_BY_KEY
 from ..book_memory import SECTIONS
@@ -142,6 +142,34 @@ class AIPanel(QWidget):
         self.context = QComboBox(); self.context.addItems(['Huidig hoofdstuk', 'Huidige sectie', 'Hele boek']); self.context.currentTextChanged.connect(self._refresh_idle_context_summary)
         context_select_row.addWidget(self.context, 1)
         context_lay.addLayout(context_select_row)
+        self.fixed_context_info = QLabel('Altijd meegestuurd: Schrijverspersona · Boekprofiel · Boekgeheugen')
+        self.fixed_context_info.setObjectName('muted'); self.fixed_context_info.setWordWrap(True)
+        context_lay.addWidget(self.fixed_context_info)
+        self.chapter_planning_info = QLabel()
+        self.chapter_planning_info.setObjectName('muted'); self.chapter_planning_info.setWordWrap(True)
+        context_lay.addWidget(self.chapter_planning_info)
+        self.chapter_planning_notice_row = QWidget()
+        notice_lay = QHBoxLayout(self.chapter_planning_notice_row)
+        notice_lay.setContentsMargins(0, 0, 0, 0)
+        notice_lay.setSpacing(6)
+        self.chapter_planning_notice = QLabel(
+            'Nieuw: hoofdstukplanning kan meegaan met AI-vragen. Staat standaard uit. '
+            'Bij een externe provider verlaten deze gegevens je computer.'
+        )
+        self.chapter_planning_notice.setObjectName('muted')
+        self.chapter_planning_notice.setWordWrap(True)
+        self.chapter_planning_notice_ack = QPushButton('Begrepen')
+        self.chapter_planning_notice_ack.clicked.connect(self._acknowledge_chapter_planning_notice)
+        notice_lay.addWidget(self.chapter_planning_notice, 1)
+        notice_lay.addWidget(self.chapter_planning_notice_ack, 0, Qt.AlignTop)
+        contains = getattr(self.main.settings, 'contains', None)
+        self._chapter_planning_preference_set = bool(contains('ai_use_chapter_planning')) if callable(contains) else False
+        self.chapter_planning_notice_row.setVisible(not self._chapter_planning_preference_set)
+        context_lay.addWidget(self.chapter_planning_notice_row)
+        self.chapter_planning_check = QCheckBox('Planning van dit hoofdstuk gebruiken')
+        self.chapter_planning_check.setChecked(bool(self.main.settings.value('ai_use_chapter_planning', False, bool)))
+        self.chapter_planning_check.toggled.connect(self._chapter_planning_toggled)
+        context_lay.addWidget(self.chapter_planning_check)
         context_actions = QHBoxLayout()
         self.planning_context_button = QPushButton('Planning-context…'); self.planning_context_button.clicked.connect(self._choose_planning_context)
         self.context_view_button = QPushButton('Context bekijken'); self.context_view_button.clicked.connect(self._show_context_dialog)
@@ -182,6 +210,7 @@ class AIPanel(QWidget):
         tools.addWidget(self.context_toggle); tools.addWidget(self.quick_toggle); tools.addStretch()
         lay.addLayout(tools)
         self._refresh_idle_context_summary()
+        self._update_busy_buttons()
 
     def is_busy(self) -> bool:
         return bool(self.worker and self.worker.isRunning())
@@ -236,7 +265,10 @@ class AIPanel(QWidget):
         self.action_button.setEnabled(True)
         self._set_action_state(busy)
         self.clear_button.setEnabled(not busy)
-        self.planning_context_button.setEnabled(not busy and bool(self.main.active_book()))
+        has_book = self.store is not None
+        self.planning_context_button.setEnabled(not busy and has_book)
+        preview = self._chapter_planning_preview() if has_book else None
+        self.chapter_planning_check.setEnabled(bool(preview and preview.text and not preview.error and not busy))
         self.refresh_quick_actions()
 
     def set_book(self, book):
@@ -291,18 +323,76 @@ class AIPanel(QWidget):
             self._planning_selection = dialog.selection()
             self._refresh_idle_context_summary()
 
+    def _planning_context_result(self):
+        return build_planning_context_result(self.main.library, self.main.active_book(), self._planning_selection)
+
     def _planning_context(self):
-        return build_planning_context(self.main.library, self.main.active_book(), self._planning_selection)
+        result = self._planning_context_result()
+        return result.text, result.labels
+
+    def _active_live_chapter_id(self):
+        page = getattr(self.main, 'editor_page', None)
+        if page is None or not page.chapter_context_available():
+            return None
+        chapter = getattr(page, 'chapter', None)
+        return getattr(chapter, 'id', None) if chapter is not None else None
+
+    def _chapter_planning_preview(self):
+        return chapter_planning_preview(
+            self.main.library, self.main.active_book(), self._active_live_chapter_id()
+        )
+
+
+    def _acknowledge_chapter_planning_notice(self):
+        self.main.settings.setValue('ai_use_chapter_planning', False)
+        self._chapter_planning_preference_set = True
+        if hasattr(self, 'chapter_planning_notice_row'):
+            self.chapter_planning_notice_row.hide()
+        self._refresh_idle_context_summary()
+
+    def _chapter_planning_toggled(self, checked: bool):
+        self.main.settings.setValue('ai_use_chapter_planning', bool(checked))
+        self._chapter_planning_preference_set = True
+        if hasattr(self, 'chapter_planning_notice_row'):
+            self.chapter_planning_notice_row.hide()
+        self._refresh_idle_context_summary()
+
+    def _active_chapter_planning_text(self) -> str:
+        preview = self._chapter_planning_preview()
+        if preview.error or not preview.text or not self.chapter_planning_check.isChecked():
+            return ''
+        return preview.text
+
+    def refresh_context_summary(self):
+        self._refresh_idle_context_summary()
 
     def _refresh_idle_context_summary(self, *_args):
-        _text, labels = self._planning_context()
+        result = self._planning_context_result()
+        labels = result.labels
         mode = self.context.currentText()
         custom = mode != 'Huidig hoofdstuk' or bool(labels)
-        self.context_toggle.setText('Context · aangepast' if custom else 'Context')
+        if result.error:
+            self.context_toggle.setText('Context · Planning niet beschikbaar')
+        else:
+            self.context_toggle.setText('Context · aangepast' if custom else 'Context')
         details = [mode]
-        if labels:
-            details.append('Planning: ' + ', '.join(labels))
+        if result.error:
+            details.append(result.error)
+        elif labels:
+            details.append('Planning-context: ' + ', '.join(labels))
         self.context_toggle.setToolTip(' · '.join(details))
+
+        preview = self._chapter_planning_preview()
+        available = bool(preview.text and not preview.error)
+        self.chapter_planning_check.setEnabled(available and not self.is_busy())
+        if preview.error:
+            self.chapter_planning_info.setText('Planning van dit hoofdstuk: niet beschikbaar — ' + preview.error)
+        elif preview.labels and preview.text:
+            label_text = ' · '.join(preview.labels)
+            status = 'wordt meegestuurd' if self.chapter_planning_check.isChecked() else 'niet meegestuurd'
+            self.chapter_planning_info.setText(f'Planning van dit hoofdstuk: {label_text} · {status}')
+        else:
+            self.chapter_planning_info.setText('Planning van dit hoofdstuk: geen gekoppelde scènes')
 
     def _toggle_context_controls(self, checked=False):
         visible = bool(checked)
@@ -324,18 +414,36 @@ class AIPanel(QWidget):
         if expanded:
             self.context_panel.hide(); self.context_toggle.setChecked(False)
 
+
+    @staticmethod
+    def _compact_planning_display(text: str) -> str:
+        """Keep Planning previews readable without changing prompt text."""
+        return (text or '').replace('\n\n- ', '\n- ')
+
     def _show_context_dialog(self):
         builder = ContextBuilder(self.main)
         context = builder.build(self.context.currentText())
-        planning_text, planning_labels = self._planning_context()
+        planning = self._planning_context_result()
+        chapter_preview = self._chapter_planning_preview()
         lines = [
             'Vaste context: Schrijverspersona · Boekprofiel · Boekgeheugen',
             f'Manuscriptcontext: {context.label}',
         ]
-        if planning_labels:
-            lines.extend(['', 'Geselecteerde Planning-context:', planning_text])
+        if planning.error:
+            lines.extend(['', planning.error])
+        elif planning.labels:
+            lines.extend(['', 'Geselecteerde Planning-context:', self._compact_planning_display(planning.text)])
         else:
             lines.extend(['', 'Planning-context: niet geselecteerd'])
+
+        chapter_status = 'wordt meegestuurd' if (self.chapter_planning_check.isChecked() and chapter_preview.text and not chapter_preview.error) else 'wordt niet meegestuurd'
+        lines.extend(['', f'Planning van huidig hoofdstuk — {chapter_status}:'])
+        if chapter_preview.error:
+            lines.append(chapter_preview.error)
+        elif chapter_preview.text:
+            lines.append(self._compact_planning_display(chapter_preview.text))
+        else:
+            lines.append('[geen gekoppelde scènes]')
         dialog = QDialog(self)
         dialog.setWindowTitle('AI-context bekijken')
         dialog.resize(620, 460)
@@ -471,14 +579,19 @@ class AIPanel(QWidget):
 
         builder = ContextBuilder(self.main)
         manuscript_context = builder.build(self.context.currentText())
-        planning_text, planning_labels = self._planning_context()
-        if planning_labels:
-            manuscript_context.pieces.append('Planning: ' + ', '.join(planning_labels))
+        planning = self._planning_context_result()
+        if planning.error:
+            manuscript_context.pieces.append('Planning niet beschikbaar — ' + planning.error)
+        elif planning.labels:
+            manuscript_context.pieces.append('Planning: ' + ', '.join(planning.labels))
+        chapter_planning_text = self._active_chapter_planning_text()
+        if chapter_planning_text:
+            manuscript_context.pieces.append('Planning van huidig hoofdstuk: meegestuurd')
         self.input.clear()
-        self._continue_send(provider, model, prompt, manuscript_context, planning_text)
+        self._continue_send(provider, model, prompt, manuscript_context, planning.text, chapter_planning_text)
 
 
-    def _continue_send(self, provider, model: str, prompt: str, context, planning_text: str = ''):
+    def _continue_send(self, provider, model: str, prompt: str, context, planning_text: str = '', chapter_planning_text: str = ''):
         self._active_context = context
         self._refresh_idle_context_summary()
         persona=self.main.library.read_persona()
@@ -492,6 +605,7 @@ class AIPanel(QWidget):
             book_profile=book_profile,
             book_memory=book_memory,
             planning_text=planning_text,
+            chapter_planning_text=chapter_planning_text,
             context_label=context.label,
             context_text=context_text,
         )
@@ -512,7 +626,7 @@ class AIPanel(QWidget):
 
         # Eenvoudige, directe chatflow. Geen tokenberekeningen, geen automatische
         # contextvensters en geen provider-specifieke tuning. QuietWriter stuurt
-        # alleen persona + boekprofiel + boekgeheugen + optionele gerichte Planning-context + gekozen manuscriptcontext + een beperkte recente chat
+        # alleen persona + boekprofiel + boekgeheugen + optionele hoofdstukplanning + optionele gerichte Planning-context + gekozen manuscriptcontext + een beperkte recente chat
         # naar het geselecteerde model. De provider/modelruntime bepaalt de context.
         recent=[{'role':m['role'],'content':m['content']} for m in self.messages[-6:] if m.get('role') in {'user','assistant'}]
         messages=[{'role':'system','content':system_prompt}] + recent

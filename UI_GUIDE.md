@@ -164,6 +164,9 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 - Manuscript beschrijft wat daadwerkelijk geschreven is; Planning beschrijft wat bedoeld/gepland is; Boekgeheugen bevat blijvende afspraken/kennis. AI moet een verschil tussen deze bronnen zichtbaar benoemen en niet stil samenvoegen.
 - Een geselecteerd personage mag relaties bij naam noemen om het profiel begrijpelijk te maken, maar niet-geselecteerde personages krijgen geen volledig profiel.
 - Een geselecteerde scène bevat alleen de bestaande gestructureerde Planning-velden; QuietWriter dupliceert die informatie niet naar `memory.md`.
+- Vanaf 0.34.4 toont het AI-contextblok daarnaast een **preview van de opgeslagen Planning van het actieve hoofdstuk**. Deze preview is transparantie, geen impliciete opt-in: zolang de UI expliciet **nog niet automatisch meegestuurd** meldt, mag deze hoofdstukplanning niet in `send()` of de systeemprompt terechtkomen.
+- **Context bekijken** toont voor deze preview exact de tekst die later eventueel als context kan worden gebruikt. De preview moet dus uit dezelfde opgeslagen Planning worden opgebouwd als **In dit hoofdstuk**, niet uit onopgeslagen Planning-state.
+- Beschikbaarheid/fouten zijn een expliciete status in het model en mogen niet worden afgeleid uit Nederlandse displaytekst. Dit is vereist voor toekomstige vertaling en voorkomt dubbele prefixen in contextmetadata.
 
 ## AI-snelacties (0.23.8)
 
@@ -316,3 +319,60 @@ Tekstprompts voor hoofdstukken en secties gebruiken QuietWriter's eigen `prompt_
 - De inhoud is alleen-lezen en beschrijft uitsluitend opgeslagen Planning. Bewerken gebeurt via **Planning openen**.
 - Bij een niet-regulier hoofdstuk of onbetrouwbare bron verdwijnt de actie of verschijnt een korte rustige foutmelding; de editor zelf mag nooit worden geblokkeerd.
 - Linkernavigatie heeft altijd precies één geselecteerd item. Verschillende layout-containers mogen nooit aparte selectie-eilanden vormen.
+
+
+## Statusbalk en documenttellingen
+- Boek- en hoofdstukwoordtelling horen op één vaste plek: de statusbalk.
+- Bij een gewoon hoofdstuk: `Boek: x woorden · Hoofdstuk n van m: y woorden`.
+- Geen duplicaat van de boektelling onder de hoofdstukboom.
+- Tijdelijke meldingen mogen de documentstatus tijdelijk vervangen; daarna keert de telling terug.
+
+## Nieuwere bronformaten
+- Een bron die geldig is maar door een **nieuwere QuietWriter** is geschreven, is geen gewone corruptie.
+- Zulke data blijft byte-identiek, alleen-lezen en mag nooit als herstelbaar naar een oudere versie worden aangeboden.
+- De UI zegt expliciet dat QuietWriter moet worden bijgewerkt.
+
+
+## Planning-veiligheid over alle routes (0.34.3)
+- Een nieuwere Planning-versie mag niet alleen via Integriteit, maar via **geen enkele** herstel- of AI-route worden teruggezet of als gewone corruptie behandeld.
+- History-herstel wordt volledig geweigerd zolang live Planning een nieuwer schema gebruikt; geen gedeeltelijke snapshotrestore.
+- Als geselecteerde Planning-context niet betrouwbaar leesbaar is, gaat een AI-vraag zonder Planning-context door en toont de UI zichtbaar waarom die context ontbreekt.
+- De Planning-contextdialoog mag een bestaande selectie niet stil leegmaken wanneer de bron tijdelijk onbeschikbaar is.
+
+## Ingeklapte railgroepen
+- Groepsseparators moeten subtiel maar daadwerkelijk waarneembaar zijn in lichte én donkere thema's. Vanaf 0.34.3 is de thematische separator 2 px hoog.
+- Scènetitels en veldlabels in **In dit hoofdstuk** gebruiken geen automatische QLabel-inspringing; kop en waarde delen dezelfde linkerrand.
+
+
+## Responsieve scheiding vast PROGRAMMA
+- PROGRAMMA blijft een vast anker onderaan. In uitgeklapte toestand is de groepskop voldoende en staat er geen divider.
+- In ingeklapte toestand is een divider vóór PROGRAMMA alleen nodig wanneer het scrollende middendeel daadwerkelijk overflow heeft; op ruime schermen blijft die extra lijn weg voor meer rust.
+- De overige groepsseparators in het scrollende deel blijven zichtbaar volgens het railmodel.
+
+## AI Planning-context: beschikbaarheid en fouttekst
+- Een geladen boek maakt de handmatige **Planning-context…**-actie beschikbaar, ook tijdens de transactionele open/adopt-volgorde vóór `MainWindow.active_book()` definitief is gezet.
+- Foutobjecten leveren een reden, geen samengestelde UI-labeltekst. De UI bepaalt zelf waar `Planning-context niet beschikbaar` of vergelijkbare contexttekst wordt geplaatst.
+- Contextpreview mag visueel compact zijn; de daadwerkelijke prompttekst van expliciet geselecteerde Planning-context mag daardoor niet stil veranderen.
+
+
+## AI-context: Planning van het huidige hoofdstuk
+- Hoofdstukplanning wordt nooit stil meegestuurd: het AI-contextpaneel toont een expliciete schakelaar **Planning van dit hoofdstuk gebruiken**.
+- De zichtbare status (`wordt meegestuurd` / `niet meegestuurd`) moet exact overeenkomen met het daadwerkelijke promptgedrag.
+- **Context bekijken** toont dezelfde opgeslagen tekst die daadwerkelijk naar de provider gaat wanneer de schakelaar aan staat.
+- Automatische hoofdstukplanning en handmatig geselecteerde **Planning-context…** zijn verschillende bronnen en blijven in de prompt afzonderlijk gelabeld.
+- Bij corrupte, nieuwere of ontbrekende Planning wordt de hoofdstukschakelaar uitgeschakeld voor die toestand; de AI-vraag blijft bruikbaar zonder Planning.
+
+
+### AI-context: nieuwe gegevenscategorieën
+Nieuwe categorieën gegevens die naar een AI-provider kunnen worden gestuurd, worden niet stil bij bestaande gebruikers aangezet. De interface maakt zichtbaar wat wordt meegestuurd en biedt een expliciete keuze.
+
+
+## AI-context: eerste toestemming
+
+Nieuwe hoofdstukplanning wordt niet stil geactiveerd. Zolang `ai_use_chapter_planning` nog niet expliciet bestaat, blijft de schakelaar uit en staat er een rustige toelichting. De gebruiker kan **Begrepen** kiezen om bewust uit te blijven; daarmee wordt `False` opgeslagen en verdwijnt de melding. Aanvinken geldt eveneens als expliciete keuze.
+
+## AI-context opt-inmelding (0.34.10)
+- Houd privacyuitleg kort genoeg om het contextpaneel niet onnodig hoog te maken.
+- Essentie: hoofdstukplanning is nieuw, staat standaard uit en kan bij een externe provider de computer verlaten.
+- **Begrepen** bevestigt bewust uit blijven; de checkbox blijft de expliciete keuze om context wel mee te sturen.
+

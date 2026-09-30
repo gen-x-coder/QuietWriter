@@ -7,16 +7,21 @@ import sys
 import tempfile
 import threading
 import traceback
+from typing import Callable
 
 
 _LOG_HANDLE = None
+_LOG_PATH: Path | None = None
+_ERROR_NOTIFIER: Callable[[str, str], None] | None = None
 _ORIGINAL_EXCEPTHOOK = sys.excepthook
 _ORIGINAL_THREADING_EXCEPTHOOK = getattr(threading, 'excepthook', None)
+_ORIGINAL_QT_MESSAGE_HANDLER = None
+_QT_HANDLER_INSTALLED = False
 _MAX_LOG_BYTES = 2 * 1024 * 1024
 
 
 def _rotate_if_needed(log_path: Path, max_bytes: int = _MAX_LOG_BYTES) -> None:
-    """Keep one bounded previous crash log; rotation itself must never abort startup."""
+    """Keep one bounded previous log; rotation itself must never abort startup."""
     try:
         if not log_path.exists() or log_path.stat().st_size < max_bytes:
             return
@@ -51,28 +56,101 @@ def _open_crash_log(preferred_path: Path):
     try:
         return _open_append_handle(preferred_path)
     except (OSError, PermissionError):
-        fallback = Path(tempfile.gettempdir()) / 'QuietWriter' / 'crash.log'
+        fallback = Path(tempfile.gettempdir()) / 'QuietWriter' / 'logs' / 'crash.log'
         try:
             return _open_append_handle(fallback)
         except (OSError, PermissionError):
             return None, preferred_path
 
 
-def enable_crash_logging(log_path: Path) -> Path:
-    """Enable best-effort crash logging without ever making startup depend on it.
+def current_log_path() -> Path | None:
+    return _LOG_PATH
 
-    The preferred workspace log is used when possible. If that location cannot
-    be created/opened, QuietWriter falls back to the OS temporary directory. If
-    even that fails, startup simply continues with the normal Python hooks.
+
+def set_error_notifier(callback: Callable[[str, str], None] | None) -> None:
+    """Set the UI notification callback used for uncaught Python errors.
+
+    The callback receives ``(short_message, details)``. It may be called from a
+    worker thread, so GUI clients should bridge this through a Qt signal.
     """
-    global _LOG_HANDLE
+    global _ERROR_NOTIFIER
+    _ERROR_NOTIFIER = callback
+
+
+def _write(text: str) -> None:
+    try:
+        if _LOG_HANDLE is not None:
+            _LOG_HANDLE.write(text)
+            _LOG_HANDLE.flush()
+    except Exception:
+        pass
+
+
+def _notify(short_message: str, details: str) -> None:
+    callback = _ERROR_NOTIFIER
+    if callback is None:
+        return
+    try:
+        callback(short_message, details)
+    except Exception:
+        # The crash reporter must never cause a second crash.
+        pass
+
+
+def _install_qt_message_handler() -> None:
+    """Mirror Qt's own warnings/errors into the same local log file."""
+    global _ORIGINAL_QT_MESSAGE_HANDLER, _QT_HANDLER_INSTALLED
+    if _QT_HANDLER_INSTALLED:
+        return
+    try:
+        from PySide6.QtCore import QtMsgType, qInstallMessageHandler
+    except Exception:
+        return
+
+    labels = {
+        QtMsgType.QtDebugMsg: 'DEBUG',
+        QtMsgType.QtInfoMsg: 'INFO',
+        QtMsgType.QtWarningMsg: 'WARNING',
+        QtMsgType.QtCriticalMsg: 'CRITICAL',
+        QtMsgType.QtFatalMsg: 'FATAL',
+    }
+
+    def qt_message_handler(msg_type, context, message):
+        label = labels.get(msg_type, 'QT')
+        source = ''
+        try:
+            if context is not None and getattr(context, 'file', None):
+                source = f" {context.file}:{getattr(context, 'line', 0)}"
+        except Exception:
+            source = ''
+        _write(f'[{datetime.now().isoformat(timespec="seconds")}] Qt {label}{source}: {message}\n')
+        previous = _ORIGINAL_QT_MESSAGE_HANDLER
+        if previous is not None:
+            try:
+                previous(msg_type, context, message)
+            except Exception:
+                pass
+
+    try:
+        _ORIGINAL_QT_MESSAGE_HANDLER = qInstallMessageHandler(qt_message_handler)
+        _QT_HANDLER_INSTALLED = True
+    except Exception:
+        _ORIGINAL_QT_MESSAGE_HANDLER = None
+        _QT_HANDLER_INSTALLED = False
+_QT_HANDLER_INSTALLED = False
+
+
+def enable_crash_logging(log_path: Path) -> Path:
+    """Enable best-effort local crash logging without making startup depend on it."""
+    global _LOG_HANDLE, _LOG_PATH
 
     handle, actual_path = _open_crash_log(Path(log_path))
+    _LOG_PATH = actual_path
     if handle is None:
         return actual_path
 
     # This function normally runs once, but keeping it safe for repeated calls
-    # makes tests and future workspace switching predictable.
+    # makes tests predictable.
     if _LOG_HANDLE is not None and _LOG_HANDLE is not handle:
         try:
             faulthandler.disable()
@@ -91,8 +169,6 @@ def enable_crash_logging(log_path: Path) -> Path:
         )
         _LOG_HANDLE.flush()
     except Exception:
-        # A log destination can disappear between open() and the first write
-        # (network drive/sync mount). Logging remains optional.
         try:
             _LOG_HANDLE.close()
         except Exception:
@@ -103,39 +179,45 @@ def enable_crash_logging(log_path: Path) -> Path:
     try:
         faulthandler.enable(_LOG_HANDLE, all_threads=True)
     except Exception as exc:
-        try:
-            _LOG_HANDLE.write(f'faulthandler kon niet worden geactiveerd: {exc!r}\n')
-        except Exception:
-            pass
+        _write(f'faulthandler kon niet worden geactiveerd: {exc!r}\n')
 
     def exception_hook(exc_type, exc_value, exc_tb):
+        stamp = datetime.now().isoformat(timespec='seconds')
+        _write(f'\n--- Onverwerkte Python-exception {stamp} ---\n')
         try:
             if _LOG_HANDLE is not None:
-                _LOG_HANDLE.write(f'\n--- Onverwerkte Python-exception {datetime.now().isoformat(timespec="seconds")} ---\n')
                 traceback.print_exception(exc_type, exc_value, exc_tb, file=_LOG_HANDLE)
                 _LOG_HANDLE.flush()
         except Exception:
             pass
-        finally:
+        details = ''.join(traceback.format_exception_only(exc_type, exc_value)).strip()
+        _notify('Er ging iets mis in QuietWriter.', details)
+        try:
             _ORIGINAL_EXCEPTHOOK(exc_type, exc_value, exc_tb)
+        except Exception:
+            pass
 
     sys.excepthook = exception_hook
 
     if _ORIGINAL_THREADING_EXCEPTHOOK is not None:
         def thread_exception_hook(args):
+            stamp = datetime.now().isoformat(timespec='seconds')
+            name = getattr(args.thread, 'name', 'thread')
+            _write(f'\n--- Onverwerkte thread-exception {stamp} ({name}) ---\n')
             try:
                 if _LOG_HANDLE is not None:
-                    _LOG_HANDLE.write(
-                        f'\n--- Onverwerkte thread-exception {datetime.now().isoformat(timespec="seconds")} '
-                        f'({getattr(args.thread, "name", "thread")}) ---\n'
-                    )
                     traceback.print_exception(args.exc_type, args.exc_value, args.exc_traceback, file=_LOG_HANDLE)
                     _LOG_HANDLE.flush()
             except Exception:
                 pass
-            finally:
+            details = ''.join(traceback.format_exception_only(args.exc_type, args.exc_value)).strip()
+            _notify('Er ging iets mis in een achtergrondtaak.', details)
+            try:
                 _ORIGINAL_THREADING_EXCEPTHOOK(args)
+            except Exception:
+                pass
 
         threading.excepthook = thread_exception_hook
 
+    _install_qt_message_handler()
     return actual_path

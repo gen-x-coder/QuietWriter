@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
 from ..current_page_stack import CurrentPageStack
 from ..dialogs import confirm
 from ...planning_models import Character, Relation
+from ...storage import CorruptSourceError
+from ...planning_validation import FuturePlanningFormatError
 from ...i18n import tr
 
 
@@ -182,7 +184,17 @@ class CharactersPage(QWidget):
 
     def load(self):
         self._draft = None
-        self.characters = self.owner.store.load_characters(self.owner.book) if self.owner.book else []
+        try:
+            self.characters = self.owner.store.load_characters(self.owner.book) if self.owner.book else []
+        except (CorruptSourceError, FuturePlanningFormatError) as exc:
+            self.characters = []
+            self.owner.set_source_error('characters', exc)
+            self.setEnabled(False)
+            self.refresh_list()
+            self.close_detail()
+            return
+        self.owner.clear_source_error('characters')
+        self.setEnabled(True)
         self.refresh_list()
         self.close_detail()
 

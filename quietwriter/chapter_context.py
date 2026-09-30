@@ -13,6 +13,10 @@ class ChapterSceneContext:
     status: str
     location: str
     character_names: tuple[str, ...]
+    goal: str
+    conflict: str
+    outcome: str
+    notes: str
 
 
 @dataclass(frozen=True)
@@ -51,6 +55,10 @@ def build_chapter_context(chapter_id: str, scenes: list[Scene], characters: list
                 status=scene.status,
                 location=scene.location,
                 character_names=tuple(names),
+                goal=scene.goal,
+                conflict=scene.conflict,
+                outcome=scene.outcome,
+                notes=scene.notes,
             )
         )
 

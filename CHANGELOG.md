@@ -1,3 +1,103 @@
+# Changelog
+
+## 0.35.0 — releasefundament I
+
+- Start van de 1.0-releasefase; AI en overige featurebouw zijn buiten bugfixes bevroren.
+- Definitieve QuietWriter-branding toegevoegd: multi-size Windows-icoon, AppUserModelID en thema-gekleurde woordmerken op splash en Over.
+- Crashlog verhuisd van de werkmap naar lokale appdata per computer; Qt-berichten worden mee gelogd en onverwachte Python/threadfouten kunnen een niet-modale melding met logknop tonen.
+- GitHub Actions toegevoegd voor current/legacy en Qt-runs op Ubuntu en Windows.
+- First-run ontwerp voor 0.36 en het gezamenlijke `PLAN_1_0.md` opgenomen.
+
+## 0.34.10
+
+- De opt-inmelding voor hoofdstukplanning is compacter gemaakt: minder regels, dezelfde privacyboodschap en dezelfde knop **Begrepen**.
+- Qt-tests krijgen automatisch de marker `qt` wanneer ze de `app`-fixture gebruiken of PySide6 importeren; `pytest -m qt` vervangt daarmee de onvolledige naamfilter `-k qt`.
+- `pytest.ini` registreert de `qt`-marker expliciet en `tests/README.md` beschrijft de verplichte reviewruns.
+- Geen wijziging aan AI-promptgedrag, Planning-schema of opslag.
+
+## 0.34.9
+
+- Opt-inmelding voor hoofdstukplanning heeft nu een knop **Begrepen**; daarmee kan de gebruiker bewust uit blijven zonder de checkbox aan/uit te hoeven zetten.
+- De instellingcontrole gebruikt een robuuste `contains`-fallback, zodat AI-runtimefakes en lichte testdoubles niet onnodig aan QSettings gekoppeld zijn.
+- Qt-test voor de opt-inmelding controleert de widgetstatus correct, zonder `isVisible()` op een gesloten contextpaneel.
+- Reviewproces: echte Qt-runs staan vanaf deze release expliciet als door Claude uit te voeren in de reviewnotes.
+
+## 0.34.8
+
+- Hoofdstukplanning naar AI is voor bestaande gebruikers nu expliciete opt-in: ontbrekende instelling betekent standaard uit.
+- Het AI-contextpaneel legt rustig uit dat deze nieuwe context kan worden meegestuurd en dat externe providers gegevens buiten de computer ontvangen.
+- Bestaande expliciete voorkeuren blijven behouden.
+- Nog geen contextlengtelimiet; truncatie wordt later als aparte context-budgetfunctie ontworpen.
+
+# 0.34.7
+
+## Hoofdstukplanning expliciet naar AI-context
+
+- Het AI-contextpaneel heeft een expliciete schakelaar **Planning van dit hoofdstuk gebruiken**. De voorkeur wordt bewaard in QSettings (`ai_use_chapter_planning`) en staat standaard aan.
+- Alleen bruikbare opgeslagen Planning van het actieve hoofdstuk kan automatisch meegaan. Geen scènes, corrupte Planning of een nieuwere Planning-versie schakelt de actie uit zonder de voorkeur te wissen.
+- De samenvatting zegt voortaan eerlijk **wordt meegestuurd** of **niet meegestuurd**. **Context bekijken** toont dezelfde exacte hoofdstukplanning en dezelfde actuele status.
+- De systeemprompt houdt automatische hoofdstukplanning en handmatig geselecteerde **Planning-context…** als twee aparte secties. Manuscripttekst blijft leidend wanneer de uitgewerkte tekst afwijkt van het plan.
+- Terug naar de Boekenplank gebruikt het geladen AI-store-object als enige bron voor de interne boekstatus; Planning-contextacties staan dan ook intern uit.
+- Geen Planning-schemawijziging, geen automatische herkenning en geen writes naar Planning.
+
+# 0.34.6
+
+## AI-context begintoestand en foutcontext
+
+- `Planning-context…` krijgt bij koude start direct de juiste uitgeschakelde toestand; na het openen van een boek wordt de knop via de bestaande `set_book()`-route actief.
+- De contexttekst die bij een Planning-fout in het gesprek wordt opgeslagen is weer zelfstandig begrijpelijk: `Planning niet beschikbaar — …`.
+- Geen nieuwe Planning- of AI-contextlogica; hoofdstukplanning blijft preview-only.
+
+## 0.34.5 — Planning-contextknop herstellen en responsieve PROGRAMMA-scheiding
+
+- De bestaande knop **Planning-context…** wordt na het openen van een boek weer direct actief. De knop baseert zich op het al geladen AI-boek/store en niet uitsluitend op `MainWindow.active_book()`, dat tijdens transactionele adopt pas later wordt gecommit.
+- Foutredenen voor Planning-context bevatten niet langer zelf de prefix `Planning-context niet beschikbaar`; de UI voegt de context toe. Daardoor verdwijnen dubbele formuleringen en blijft de foutstatus vertaalbaar/structureel.
+- **Context bekijken** toont Planning-velden compacter: opeenvolgende veldregels krijgen geen lege regel meer, zonder de prompttekst voor daadwerkelijk geselecteerde Planning-context te wijzigen.
+- De divider vóór het vaste **PROGRAMMA**-blok is responsief: in een ingeklapte rail op ruime schermen verdwijnt hij, omdat PROGRAMMA al duidelijk onderaan staat; zodra het middendeel moet scrollen blijft de scheiding zichtbaar als extra oriëntatiehulp.
+- Geen automatische hoofdstukplanning naar AI en geen schemawijziging in deze release.
+
+## 0.34.4 — transparante hoofdstukplanning vóór automatische AI-context
+
+- Het AI-contextblok toont nu expliciet welke context altijd wordt meegestuurd: Schrijverspersona, Boekprofiel en Boekgeheugen.
+- Voor het actieve manuscript-hoofdstuk toont het AI-contextblok een samenvatting van de opgeslagen Planning (`x scènes · y personages`) met de expliciete melding **nog niet automatisch meegestuurd**.
+- **Context bekijken** toont de exacte opgeslagen hoofdstukplanning zoals die in een volgende slice als AI-context zou kunnen worden gebruikt. 0.34.4 verandert de AI-prompt nog niet.
+- De preview gebruikt dezelfde opgeslagen Planning als **In dit hoofdstuk** en bevat titel, status, locatie, synopsis, doel, conflict, uitkomst, notities en gekoppelde personages.
+- AI Planning-contextfouten hebben nu een expliciet `error`-veld in plaats van herkenning via Nederlandse labeltekst; foutmeldingen krijgen daardoor geen dubbele `Planning: Planning-context ...`-prefix.
+- Planning-JSON met een UTF-8-BOM wordt via `utf-8-sig` correct als Planning gelezen. Ook een nieuwere Planning-versie met BOM blijft dus herkenbaar als **nieuwer** en wordt niet per ongeluk als gewone corruptie behandeld.
+- Geen Planning-schemawijziging en geen automatische Planning→AI-koppeling in deze release.
+
+## 0.34.3 — Planning-context fail-safe, History-guard en zichtbaardere railgroepen
+
+- De ingeklapte railseparator is 2 px hoog in plaats van 1 px, met dezelfde thematische borderkleur: duidelijker zichtbaar zonder de rail zwaarder te maken.
+- `In dit hoofdstuk` zet expliciet `qproperty-indent: 0` op scènetitels en veldlabels, zodat koppen en waarden links uitlijnen.
+- De statusbalk gebruikt correct enkelvoud: `1 woord` in plaats van `1 woorden`, zowel voor boek- als hoofdstuktelling.
+- De bestaande AI-functie **Planning-context** faalt niet meer stil bij corrupte of nieuwere Planning. Keuzevenster en contextstatus tonen een korte reden; een AI-vraag gaat zonder Planning-context door.
+- **Versiegeschiedenis → Deze versie herstellen** weigert een herstel zolang live Planning door een nieuwere QuietWriter is geschreven. Er wordt niets gedeeltelijk teruggezet; de gebruiker krijgt de instructie QuietWriter bij te werken.
+- Nieuwe actuele regressies bewaken beide Planning-routes, Unicode/visuele contracten en de History-guard.
+
+## 0.34.2 — statusbalk samenvoegen, Planning-versies veilig onderscheiden en tests aanscherpen
+
+- De losse telling **Boek bevat … woorden** onder de hoofdstukboom is verwijderd. De vaste statusbalk toont nu boek- en hoofdstuktelling samen: `Boek: x woorden · Hoofdstuk n van m: y woorden`.
+- Planning-validatie is gecentraliseerd in `planning_validation.py`; `PlanningStore` en Integriteit gebruiken dezelfde structuurregels.
+- Planning-data met een **nieuwere formaatversie** krijgt een eigen `FuturePlanningFormatError`. Het boek blijft open en Planning blijft alleen-lezen, maar Integriteit markeert dit als `aux_json_newer` en **niet herstelbaar** met de instructie QuietWriter bij te werken.
+- `In dit hoofdstuk` onderscheidt nieuwere Planning-data van beschadigde Planning en adviseert bij een nieuwere versie om QuietWriter bij te werken.
+- De separator-Qt-test meet voortaan de 1px inhoudslijn in plaats van de widgethoogte inclusief marge.
+- Zeven regressiebestanden voor veel teruggekomen kernrisico's zijn teruggeplaatst in `tests/current/`: transactionele adoptie, onleesbare bronnen met lokale invoer, Planning-notities/false-dirty, exportconflicten, History-preview en exportcorrectheid.
+- De verouderde Planning-character-fake in `tests/legacy/` is bijgewerkt. Legacy is opnieuw groen behalve de twee bekende ontbrekende fontresources.
+- Releasebeleid vastgelegd: volledige legacy-suite verplicht bij elke nieuwe minor-release.
+
+## 0.34.1 — Planning-bronhardening en vollediger hoofdstukcontext
+
+- De testsuite is opgesplitst in `tests/current/` en `tests/legacy/`: `pytest` draait voortaan alleen de compacte actuele suite; historische regressies blijven apart uitvoerbaar.
+- Geldige JSON met een ongeldige Planning-structuur (`scenes`/`characters` geen lijst, `character_ids`/`relations` geen lijst, onbekende Planning-versie) blokkeert het openen van het boek niet meer. Het betreffende Planning-onderdeel wordt alleen-lezen en verwijst naar Integriteit.
+- Integriteit controleert nu ook de structuur van `planning/outline.json` en `planning/characters.json`, niet alleen of het geldige JSON-objecten zijn.
+- **In dit hoofdstuk** toont naast titel/synopsis/status/locatie/personages nu ook opgeslagen **Doel, Conflict, Uitkomst en Notities** per scène wanneer ingevuld.
+- Scènes in het rechterpaneel hebben een duidelijke kaartstructuur en zichtbare subkoppen; `subsectionTitle` en contextveldlabels hebben nu echte themastijlen.
+- De hoofdstuk-/woordentelling in de statusbalk is een blijvende editorstatus: tijdelijke meldingen mogen hem vervangen, maar na afloop komt de telling terug.
+- Ingeklapte railseparators zijn echte 1px vlakken met de gewone borderkleur in plaats van een nauwelijks zichtbare HLine.
+- `ChapterContextPanel` verbergt oude widgets vóór `deleteLater()`, zodat headless/uitgestelde eventloops geen overlappende oude context laten zien.
+- Nieuwe NL/EN locale-keys voor het hoofdstukcontextpaneel en de Planning-bronwaarschuwing.
+
 ## 0.34.0 — Planning tijdens schrijven: eerste slice
 
 - Nieuwe rechterpaneelfunctie **In dit hoofdstuk** toont alleen-lezen de opgeslagen Planning voor het actieve manuscript-hoofdstuk.

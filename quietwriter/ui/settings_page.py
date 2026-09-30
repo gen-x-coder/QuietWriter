@@ -262,9 +262,9 @@ class SettingsPage(QWidget):
         self._add_settings_category(nav_lay, tr('settings.spelling', 'Spelling'), spelling)
 
         # Over volgt direct op Spelling; de vrije ruimte blijft onder de laatste categorie.
-        about = AboutPage(self)
+        self.about_page = AboutPage(self)
         self.about_index = self.pages.count()
-        self._add_settings_category(nav_lay, tr('settings.about', 'Over'), about)
+        self._add_settings_category(nav_lay, tr('settings.about', 'Over'), self.about_page)
         nav_lay.addStretch(1)
 
         self._populate_models()
