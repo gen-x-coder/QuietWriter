@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 
 from .. import APP_NAME, __version__
 from ..i18n import tr
+from ..icon_theme import themed_svg_pixmap
 
 
 class Splash(QDialog):
@@ -40,9 +41,11 @@ class Splash(QDialog):
         lay.setContentsMargins(38, 34, 38, 28)
         lay.setSpacing(0)
 
-        title = QLabel(APP_NAME)
-        title.setObjectName('splashTitle')
-        lay.addWidget(title)
+        self.wordmark = QLabel()
+        self.wordmark.setObjectName('splashWordmark')
+        self.wordmark.setAccessibleName(APP_NAME)
+        self.wordmark.setPixmap(themed_svg_pixmap('quietwriter-wordmark', 300))
+        lay.addWidget(self.wordmark, 0, Qt.AlignLeft)
 
         tagline = QLabel(tr('splash.tagline', 'Rustig schrijven. Heldere boeken.'))
         tagline.setObjectName('splashTagline')

@@ -1,4 +1,5 @@
 import importlib.util
+from pathlib import Path
 
 import pytest
 
@@ -51,3 +52,27 @@ def fail_on_unexpected_modal_dialog(monkeypatch):
 
     yield
     assert not calls, 'Unexpected modal dialogs during Qt event processing: ' + '; '.join(calls)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Mark tests that exercise real PySide6/Qt runtime as ``qt``.
+
+    File names are intentionally irrelevant: a test is marked when its module
+    imports PySide6 or when it uses the shared ``app`` fixture. This keeps
+    ``pytest -m qt`` complete as Qt coverage grows.
+    """
+    qt_marker = pytest.mark.qt
+    for item in items:
+        if 'qt' in item.keywords:
+            continue
+        uses_app_fixture = 'app' in getattr(item, 'fixturenames', ())
+        module = getattr(item, 'module', None)
+        module_file = Path(getattr(module, '__file__', '') or '')
+        imports_pyside = False
+        if module_file.is_file():
+            try:
+                imports_pyside = 'PySide6' in module_file.read_text(encoding='utf-8', errors='ignore')
+            except OSError:
+                pass
+        if uses_app_fixture or imports_pyside:
+            item.add_marker(qt_marker)

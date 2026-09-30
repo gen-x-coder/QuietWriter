@@ -27,6 +27,7 @@ from ..media.markup import (
 from ..media.store import MediaStore, MediaError
 from ..revisions import ExternalModificationError, RevisionVerificationError
 from ..migrations import FutureBookFormatError
+from ..planning_validation import FuturePlanningFormatError
 from ..publication_models import FRONT_MATTER, BACK_MATTER
 from ..publication_storage import PublicationStore
 from ..spell_engine import WordDictionary
@@ -76,8 +77,7 @@ class EditorPage(QWidget):
         self.add_content_button = QPushButton(tr('editor.add', '+ Toevoegen')); self.add_content_button.setObjectName('secondaryButton'); self.add_content_button.clicked.connect(self.add_menu)
         head.addWidget(title); head.addStretch(); head.addWidget(self.add_content_button)
         self.tree = ManuscriptTree(); self.tree.setObjectName('manuscriptTree'); self.tree.itemClicked.connect(self.tree_clicked); self.tree.keyboardActivated.connect(self.tree_keyboard_activated); self.tree.chapterDropped.connect(self.move_chapter); self.tree.dragStarted.connect(self._on_tree_drag_started); self.tree.dragFinished.connect(self._on_tree_drag_finished); self.tree.setContextMenuPolicy(Qt.CustomContextMenu); self.tree.customContextMenuRequested.connect(self.tree_context_menu)
-        self.book_words = QLabel('Boek bevat 0 woorden'); self.book_words.setObjectName('muted')
-        ml.addLayout(head); ml.addWidget(self.tree); ml.addWidget(self.book_words)
+        ml.addLayout(head); ml.addWidget(self.tree)
 
         self.center = QWidget(); cl = QVBoxLayout(self.center); cl.setContentsMargins(0,0,0,0); cl.setSpacing(0)
         self.history_banner = QFrame(); self.history_banner.setObjectName('historyBanner'); hb = QHBoxLayout(self.history_banner); hb.setContentsMargins(14,8,14,8)
@@ -494,7 +494,7 @@ class EditorPage(QWidget):
         if hasattr(self.main, 'toolrail'):
             self.main.toolrail.hide()
         self.autosave_status.setText('')
-        self.main.status.clearMessage()
+        self.main.clear_document_status()
 
     def open_publication_item(self, key):
         if not self.book or self.preview_live_book:
@@ -1320,15 +1320,20 @@ class EditorPage(QWidget):
         if self.chapter:
             self._chapter_word_counts[self.chapter.id] = words
         total = sum(self._chapter_word_counts.values()) if self.book else 0
-        self.book_words.setText('Boek bevat ' + f'{total:,}'.replace(',', '.') + ' woorden')
         chapter_index = 0; chapter_total = 0
         if self.book:
             flat = [c for sec in self.book.sections for c in sec.chapters]
             chapter_total = len(flat)
             if self.chapter:
                 chapter_index = next((i+1 for i,c in enumerate(flat) if c.id == self.chapter.id), 0)
-        prefix = f'Hoofdstuk {chapter_index} van {chapter_total} · ' if chapter_total else ''
-        self.main.status.showMessage(prefix + f'{words:,}'.replace(',', '.') + ' woorden')
+        book_word_label = 'woord' if total == 1 else 'woorden'
+        chapter_word_label = 'woord' if words == 1 else 'woorden'
+        book_text = f'Boek: {total:,}'.replace(',', '.') + f' {book_word_label}'
+        if chapter_total and self.chapter:
+            chapter_text = f'Hoofdstuk {chapter_index} van {chapter_total}: {words:,}'.replace(',', '.') + f' {chapter_word_label}'
+            self.main.set_document_status(book_text + ' · ' + chapter_text)
+        else:
+            self.main.set_document_status(book_text if self.book else '')
 
     def add_menu(self):
         """Toon een rustige flyout voor nieuwe manuscriptonderdelen.
@@ -1819,6 +1824,18 @@ class EditorPage(QWidget):
                 ),
             )
             return
+        except FuturePlanningFormatError as exc:
+            self.exit_history_preview(reload_latest=False)
+            QMessageBox.warning(
+                self,
+                tr('history.restore_future_planning_title', 'Versie niet hersteld'),
+                tr(
+                    'history.restore_future_planning_text',
+                    'Planning is gemaakt met een nieuwere QuietWriter en is niet teruggezet. Werk QuietWriter bij voordat je deze versie herstelt.\n\n{error}',
+                    error=exc,
+                ),
+            )
+            return
         except RevisionVerificationError as exc:
             self.exit_history_preview(reload_latest=False)
             QMessageBox.warning(
@@ -1875,11 +1892,10 @@ class EditorPage(QWidget):
         self.book_title_label.clear()
         self.editor.blockSignals(True); self.editor.clear(); self.editor.blockSignals(False)
         self._sync_undo_redo()
-        self.book_words.setText('Boek bevat 0 woorden')
         self.right.hide()
         if hasattr(self, 'ai'): self.ai.set_book(None)
         self._set_spell_active(False)
-        self.main.status.clearMessage()
+        self.main.clear_document_status()
         return True
 
     def _chapters_in_scope(self):
@@ -2153,6 +2169,8 @@ class EditorPage(QWidget):
         if not available and self.right.isVisible() and self.right.currentWidget() is self.chapter_context:
             self._remember_panel_widths()
             self.right.hide()
+        if hasattr(self.ai, 'refresh_context_summary'):
+            self.ai.refresh_context_summary()
         if hasattr(self.main, 'sync_tool_buttons'):
             self.main.sync_tool_buttons()
 

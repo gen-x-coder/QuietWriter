@@ -32,3 +32,9 @@ Planning dichter bij het manuscript brengen zonder een tweede bron van waarheid 
 - geen AI-voorstellen;
 - geen automatische uitbreiding van AI-prompts met Planning;
 - geen Planning-integriteitsrepair.
+
+## Aanvulling 0.34.1
+- Het viewmodel van een scène bevat naast titel/synopsis/status/locatie/personages ook de bestaande velden doel, conflict, uitkomst en notities. Dit zijn uitsluitend views op bestaande Planning-data.
+- Structureel ongeldige Planning-JSON is een ondersteunde read-only foutstaat. Het boek zelf blijft open; het contextpaneel toont een korte leesfout en Integriteit rapporteert de bron als herstelbaar.
+- Syntax/UTF-8-fouten behouden het historische fail-closed savecontract; 0.34.1 verandert geen Planning-bestandsformaat.
+- AI-context blijft buiten scope: de zichtbare context wordt nog niet automatisch naar een AI-provider gestuurd.

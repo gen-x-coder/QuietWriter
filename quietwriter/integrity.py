@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from .migrations import CURRENT_BOOK_FORMAT, FutureBookFormatError, MigrationError, detected_book_format, validate_manifest_structure
-from .storage import _safe_atomic_write_text, _safe_atomic_write_bytes
+from .storage import _safe_atomic_write_text, _safe_atomic_write_bytes, CorruptSourceError
+from .planning_validation import FuturePlanningFormatError, validate_planning_payload
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ def _safe_relative(value: str) -> bool:
 
 
 def _read_json(path: Path):
-    return json.loads(path.read_text(encoding='utf-8'))
+    return json.loads(path.read_text(encoding='utf-8-sig'))
 
 
 def _sha256(path: Path) -> str:
@@ -130,7 +131,7 @@ class BookIntegrityChecker:
                 if not path.is_file():
                     report.issues.append(IntegrityIssue('chapter_missing', 'error', rel, 'Hoofdstukbestand ontbreekt.', True))
                 else:
-                    try: path.read_text(encoding='utf-8')
+                    try: path.read_text(encoding='utf-8-sig')
                     except (OSError, UnicodeError) as exc:
                         report.issues.append(IntegrityIssue('chapter_unreadable', 'error', rel, f'Hoofdstuk is niet als UTF-8 leesbaar: {exc}', True))
 
@@ -142,12 +143,22 @@ class BookIntegrityChecker:
                 value = _read_json(path)
                 if not isinstance(value, dict):
                     raise ValueError('verwacht JSON-object')
-            except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+                if rel == 'planning/characters.json':
+                    validate_planning_payload('characters', value, path)
+                elif rel == 'planning/outline.json':
+                    validate_planning_payload('scenes', value, path)
+            except FuturePlanningFormatError as exc:
+                report.issues.append(IntegrityIssue(
+                    'aux_json_newer', 'error', rel,
+                    f'Gemaakt met een nieuwere QuietWriter (Planning-formaat {exc.version}). Werk QuietWriter bij; herstellen zou nieuwere Planning-gegevens terugdraaien.',
+                    False,
+                ))
+            except (OSError, UnicodeError, json.JSONDecodeError, ValueError, CorruptSourceError) as exc:
                 report.issues.append(IntegrityIssue('aux_json_invalid', 'error', rel, f'Bestand is ongeldig: {exc}', True))
         for rel in self.UTF8_FILES:
             path = folder / rel
             if not path.exists(): continue
-            try: path.read_text(encoding='utf-8')
+            try: path.read_text(encoding='utf-8-sig')
             except (OSError, UnicodeError) as exc:
                 report.issues.append(IntegrityIssue('aux_text_invalid', 'error', rel, f'Bestand is niet als UTF-8 leesbaar: {exc}', True))
 
@@ -156,7 +167,7 @@ class BookIntegrityChecker:
             for path in sorted(publication_texts.glob('*.md')):
                 rel = path.relative_to(folder).as_posix()
                 try:
-                    path.read_text(encoding='utf-8')
+                    path.read_text(encoding='utf-8-sig')
                 except (OSError, UnicodeError) as exc:
                     report.issues.append(IntegrityIssue('aux_text_invalid', 'error', rel, f'Bestand is niet als UTF-8 leesbaar: {exc}', True))
 

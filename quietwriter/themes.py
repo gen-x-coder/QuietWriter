@@ -444,6 +444,9 @@ def stylesheet(name: str) -> str:
     QLabel#muted {{ color: {t['muted']}; }}
     QLabel#title {{ font-size: 24px; font-weight: 600; }}
     QLabel#sectionTitle {{ font-size: 14px; font-weight: 600; }}
+    QLabel#subsectionTitle {{ font-weight: 600; color: {t['text']}; margin-top: 3px; qproperty-indent: 0; }}
+    QLabel#contextFieldLabel {{ font-weight: 600; color: {t['muted']}; margin-top: 3px; qproperty-indent: 0; }}
+    QFrame#chapterContextSceneCard {{ background: {t['panel2']}; border: 1px solid {t['border_subtle']}; border-radius: 7px; }}
     QLabel#bookTitleLabel {{ font-size: 13px; font-weight: 500; color: {t['muted']}; }}
     QLabel#autosaveStatus {{ color: {t['muted']}; font-size: 12px; }}
     QLabel#heroTitle {{ color: {t['hero_text']}; font-size: 30px; font-weight: 700; background: transparent; }}
@@ -486,7 +489,7 @@ def stylesheet(name: str) -> str:
     QPushButton#railButton:checked {{ background: {t['accent_soft']}; border-left: 3px solid {t['accent']}; color: {t['accent']}; }}
     QPushButton#railButton:checked:focus {{ border-color: {t['focus']}; border-left-color: {t['accent']}; }}
     QLabel#navGroupLabel {{ color: {t['muted']}; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; background: transparent; }}
-    QFrame#navGroupSeparator {{ background: {t['border_subtle']}; border: 0; min-height: 1px; max-height: 1px; margin: 3px 9px; }}
+    QFrame#navGroupSeparator {{ background: {t['border']}; border: 0; min-height: 2px; max-height: 2px; margin: 4px 10px; }}
     QPushButton#navButton {{ border: 1px solid transparent; border-left: 3px solid transparent; border-radius: 8px; padding: 8px 10px; text-align: left; font-weight: 600; }}
     QPushButton#navButton:hover {{ background: {t['hover']}; }}
     QPushButton#navButton:focus {{ border-color: {t['focus']}; border-left-color: {t['focus']}; }}

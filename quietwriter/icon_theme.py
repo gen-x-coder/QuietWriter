@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QSize, Qt
+from PySide6.QtCore import QByteArray, QSize, Qt, QRectF
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
@@ -60,3 +60,33 @@ def icon(name: str, size: int = 24, theme_name: str | None = None) -> QIcon:
     result.addPixmap(_pixmap(name, theme['disabled'], size), QIcon.Disabled, QIcon.Off)
     result.addPixmap(_pixmap(name, theme['disabled'], size), QIcon.Disabled, QIcon.On)
     return result
+
+
+def themed_svg_pixmap(name: str, width: int, theme_name: str | None = None, colour_key: str = 'text') -> QPixmap:
+    """Render a monochrome SVG at its intrinsic aspect ratio in a theme colour.
+
+    Unlike :func:`icon`, this is intended for non-square artwork such as the
+    QuietWriter wordmark used on the splash and About page.
+    """
+    theme = THEMES.get(theme_name or _current_theme, THEMES['Helder'])
+    path = ICON_DIR / f'{name}.svg'
+    raw = _recolour_svg(path.read_text(encoding='utf-8'), theme.get(colour_key, theme['text']))
+    renderer = QSvgRenderer(QByteArray(raw.encode('utf-8')))
+    view = renderer.viewBoxF()
+    if view.width() <= 0 or view.height() <= 0:
+        size = renderer.defaultSize()
+        aspect = (size.height() / size.width()) if size.width() else 1.0
+    else:
+        aspect = view.height() / view.width()
+    height = max(1, round(int(width) * aspect))
+    pix = QPixmap(QSize(int(width), height))
+    pix.fill(Qt.transparent)
+    painter = QPainter(pix)
+    renderer.render(painter, QRectF(0, 0, int(width), height))
+    painter.end()
+    return pix
+
+
+def app_icon_path() -> Path:
+    """Path to the packaged multi-size Windows application icon."""
+    return Path(__file__).with_name('resources') / 'quietwriter.ico'

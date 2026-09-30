@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (
 )
 
 from ...planning_models import Scene
+from ...storage import CorruptSourceError
+from ...planning_validation import FuturePlanningFormatError
 from ...i18n import tr
 from ..dialogs import confirm
 
@@ -56,7 +58,18 @@ class OutlinePage(QWidget):
         top=QHBoxLayout(); title=QLabel(tr('planning.outline.title', 'Outline')); title.setObjectName('title'); add=QPushButton(tr('planning.outline.new_scene', 'Nieuwe scène')); add.setObjectName('primaryButton'); add.clicked.connect(self.add_scene); top.addWidget(title); top.addStretch(); top.addWidget(add); root.addLayout(top)
         self.scroll=QScrollArea(); self.scroll.setWidgetResizable(True); self.scroll.setFrameShape(QFrame.NoFrame); self.host=QWidget(); self.list=QVBoxLayout(self.host); self.list.setContentsMargins(0,0,8,20); self.list.setSpacing(8); self.scroll.setWidget(self.host); root.addWidget(self.scroll,1)
 
-    def load(self): self.scenes=self.owner.store.load_scenes(self.owner.book) if self.owner.book else []; self.refresh()
+    def load(self):
+        try:
+            self.scenes = self.owner.store.load_scenes(self.owner.book) if self.owner.book else []
+        except (CorruptSourceError, FuturePlanningFormatError) as exc:
+            self.scenes = []
+            self.owner.set_source_error('scenes', exc)
+            self.setEnabled(False)
+            self.refresh()
+            return
+        self.owner.clear_source_error('scenes')
+        self.setEnabled(True)
+        self.refresh()
     def _chapters(self): return [c for s in self.owner.book.sections for c in s.chapters] if self.owner.book else []
     def refresh(self):
         while self.list.count():

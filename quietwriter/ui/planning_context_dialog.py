@@ -39,6 +39,12 @@ class PlanningContextDialog(QDialog):
         )
         root.addLayout(columns, 1)
 
+        self.error_label = QLabel(self.options.error)
+        self.error_label.setObjectName('syncWarning')
+        self.error_label.setWordWrap(True)
+        self.error_label.setVisible(bool(self.options.error))
+        root.addWidget(self.error_label)
+
         self.notes = QCheckBox(tr('ai.planning_context.notes', 'Planning-notities meenemen'))
         self.notes.setChecked(selection.include_notes and self.options.notes_available)
         self.notes.setEnabled(self.options.notes_available)
@@ -52,6 +58,7 @@ class PlanningContextDialog(QDialog):
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Save).setText(tr('common.done', 'Gereed'))
+        buttons.button(QDialogButtonBox.Save).setEnabled(not bool(self.options.error))
         buttons.button(QDialogButtonBox.Cancel).setText(tr('common.cancel', 'Annuleren'))
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); root.addWidget(buttons)
 
