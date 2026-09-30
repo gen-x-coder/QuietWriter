@@ -97,3 +97,5 @@ def test_left_rail_uses_scroll_container_and_reserved_width():
     assert "self.rail_scroll = QScrollArea()" in source
     assert 'self.rail_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)' in source
     assert 'button_width = 194 if self.rail_expanded else 48' in source
+    assert "self.rail_shell_layout.addWidget(self.program_host, 0)" in source
+    assert "self._register_nav_separator('program', layout=self.program_layout)" in source

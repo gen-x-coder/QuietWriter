@@ -404,14 +404,26 @@ Deze volgorde vervangt de oudere voorlopige nummering waarin 0.32 direct voor Pl
 - De 0.33.0-tests controleren zowel invarianten als handmatig uitgeschreven verwachte rails; runtime omvat 16 combinaties plus overgangen en herstart.
 - Testhardening uit reviewronde 33 is meegenomen vóór productcode.
 
-**0.33.1 — alleen indien nodig**
-- Uitsluitend correcties uit Claude-review of zichtbaar gebruik: state-overgangen, lage-schermlayout en tekst/layoutfouten. Geen nieuwe subsystemen of nieuwe AI-logica.
-- Daarna 0.33 sluiten en door naar 0.34.
+**0.33.1 — railafwerking en transparantie**
+- PROGRAMMA vast onderaan; het inhoudelijke middendeel mag scrollen.
+- Ingeklapte rail behoudt groepshiërarchie met subtiele separators.
+- AI-contextpagina's benoemen opnieuw expliciet wat bij iedere vraag naar de provider wordt gestuurd en welke context voorrang heeft.
+- Alleen correcties; geen nieuwe subsystemen of nieuwe AI-logica.
+- Na runtime-groen: 0.33 sluiten en direct door naar 0.34.
 
 ### 0.34 — Planning tijdens het schrijven
-- Inklapbaar **In dit hoofdstuk** naast de editor met gekoppelde scènes en relevante personages.
-- Eerst alleen transparante, bestaande Planning-data tonen; geen tweede bron van waarheid creëren.
-- Daarna expliciet zichtbaar maken welke Planning-informatie als AI-context wordt gebruikt.
+
+**0.34.0 — eerste slice gebouwd voor review**
+- Eigen rechterpaneel **In dit hoofdstuk** naast Zoeken, AI, Spelling, Toevoegen en Versiegeschiedenis.
+- Alleen-lezen weergave van opgeslagen Planning-data voor het actieve hoofdstuk: gekoppelde scènes en de daaruit afgeleide personages.
+- PlanningStore blijft de enige persistente bron; het paneel schrijft niets en introduceert geen hoofdstukmetadata.
+- Bij Voorwoord/Nawoord, geschiedenis-preview of een beschadigd hoofdstuk is de functie verborgen. Corrupte Planning toont alleen een korte melding en blokkeert de editor niet.
+- AI aan/uit heeft geen invloed op deze functie; het is Planning, geen AI-context.
+- Verweesde koppelingen worden stil overgeslagen.
+- Railselectie en programmatic navigation zijn tegelijk gehard: één selectiekring voor alle railgroepen en automatisch scrollen naar de actieve railknop.
+
+**Vervolg binnen 0.34**
+- Na runtime-review: transparant tonen welke Planning-informatie expliciet als AI-context gebruikt zou worden; pas daarna daadwerkelijk toevoegen.
 - Planning-integriteit uitbreiden met verwijzingen naar verdwenen hoofdstukken/personages waar dat nog niet wordt afgedekt.
 - Pas later lokale aliasherkenning en eventuele AI-voorstellen voor feiten/stemprofielen onderzoeken.
 

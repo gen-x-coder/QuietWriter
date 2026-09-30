@@ -36,7 +36,7 @@ class BookMemoryPage(QWidget):
         title = QLabel(tr('book_memory.title', 'Boekgeheugen')); title.setObjectName('title')
         info = QLabel(tr(
             'book_memory.info',
-            'Het boekgeheugen bewaart wat de AI over dit specifieke boek moet blijven weten. Alleen wat jij expliciet laat onthouden wordt hier opgeslagen en later als boekspecifieke AI-context gebruikt.'
+            'Het boekgeheugen bewaart wat de AI over dit specifieke boek moet blijven weten. Alleen wat jij expliciet laat onthouden wordt hier opgeslagen. Bij iedere AI-vraag stuurt QuietWriter het boekgeheugen mee als boekspecifieke context naar de gekozen AI-provider; bij een externe provider verlaten deze gegevens je computer.'
         ))
         info.setObjectName('muted'); info.setWordWrap(True)
         outer.addWidget(title); outer.addWidget(info)

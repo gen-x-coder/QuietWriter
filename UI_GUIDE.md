@@ -301,3 +301,18 @@ Tekstprompts voor hoofdstukken en secties gebruiken QuietWriter's eigen `prompt_
 - **AI-CONTEXT** betekent gegevens die AI voor het geopende boek kan gebruiken. Boekgeheugen en Boekprofiel horen hier; Schrijverspersona is globaal en staat onder **PROGRAMMA**.
 - Een rail met alle functies zichtbaar moet bruikbaar blijven bij 700–768 px vensterhoogte. De navigatie mag scrollen; de inhoud van de rail mag de minimumhoogte van het hoofdvenster niet opdrijven. De scrollbar reserveert breedte binnen de bestaande rail zodat labels niet afbreken.
 - Tests voor de rail halen hun verwachting niet uitsluitend uit hetzelfde model als de productcode. Naast modelinvarianten bestaan handmatig uitgeschreven referentietoestanden voor koude start, volledig boek en boek zonder AI/Geavanceerd.
+
+### Railankers en compacte groepen (0.33.1)
+
+- **Menu** blijft bovenaan vast; **PROGRAMMA** blijft onderaan vast. Alleen de boek- en AI-contextnavigatie ertussen mag verticaal scrollen.
+- In uitgeklapte toestand zijn groepskoppen het primaire hiërarchische signaal. In ingeklapte toestand verdwijnen de koppen en worden zichtbare groepen gescheiden door een dunne, rustige lijn.
+- Separators zijn afgeleid van dezelfde zichtbare groepen als de rail zelf: geen lijn voor een verborgen/lege groep en geen decoratieve lijnen zonder semantische grens.
+- AI-contextuitleg moet overeenkomen met werkelijk requestgedrag. Als context standaard wordt meegestuurd, moet de UI dat zeggen; bij externe providers moet duidelijk zijn dat deze gegevens de computer verlaten.
+
+
+## Rechterpaneel: In dit hoofdstuk
+- **In dit hoofdstuk** is een editor-tool, geen permanente derde kolom en geen onderdeel van AI.
+- Het paneel volgt hetzelfde open/dicht-gedrag als Zoeken, AI, Spelling en Versiegeschiedenis.
+- De inhoud is alleen-lezen en beschrijft uitsluitend opgeslagen Planning. Bewerken gebeurt via **Planning openen**.
+- Bij een niet-regulier hoofdstuk of onbetrouwbare bron verdwijnt de actie of verschijnt een korte rustige foutmelding; de editor zelf mag nooit worden geblokkeerd.
+- Linkernavigatie heeft altijd precies één geselecteerd item. Verschillende layout-containers mogen nooit aparte selectie-eilanden vormen.

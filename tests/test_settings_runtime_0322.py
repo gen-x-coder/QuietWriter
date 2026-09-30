@@ -72,15 +72,15 @@ def test_live_preview_updates_group_gap_and_preserves_open_ai_panel(app):
         window.settings_page.ai_enabled.setChecked(False)
         window.settings_page.advanced_options.setChecked(False)
         app.processEvents()
-        assert window.writing_group_label.isHidden()
-        assert window.integrity_gap.isHidden()
+        assert window.ai_context_group_label.isHidden()
+        assert window.integrity_button.isHidden()
         assert window.editor_page.right.currentWidget() is window.editor_page.ai
 
         # Toggling the rail during preview must keep preview state.
         window.toggle_nav(); window.toggle_nav()
         app.processEvents()
-        assert window.writing_group_label.isHidden()
-        assert window.integrity_gap.isHidden()
+        assert window.ai_context_group_label.isHidden()
+        assert window.integrity_button.isHidden()
 
         # Leave without saving: committed state and panel are restored/preserved.
         window.show_editor()

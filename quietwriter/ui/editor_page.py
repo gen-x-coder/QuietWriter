@@ -35,6 +35,7 @@ from ..themes import THEMES
 from ..typography import WritingTypography
 from .dialogs import confirm, prompt_text
 from .history_panel import HistoryPanel
+from .chapter_context_panel import ChapterContextPanel
 from .insert_panel import InsertPanel
 from .manuscript_editor import ManuscriptEditor
 from .manuscript_tree import ManuscriptTree
@@ -126,10 +127,11 @@ class EditorPage(QWidget):
         cl.addWidget(self.history_banner); cl.addWidget(topbar); cl.addWidget(self.content_stack)
 
         self.right = CurrentPageStack(); self.right.setObjectName('panel'); self.right.setMinimumWidth(300)
-        self.search = SearchPanel(); self.ai = AIPanel(main); self.spell = SpellPanel(self); self.insert = InsertPanel(); self.history = HistoryPanel(self)
+        self.search = SearchPanel(); self.chapter_context = ChapterContextPanel(main.library); self.ai = AIPanel(main); self.spell = SpellPanel(self); self.insert = InsertPanel(); self.history = HistoryPanel(self)
         self.load_dictionary_from_settings()
         self.editor.selectionChanged.connect(self.ai.refresh_quick_actions)
-        self.right.addWidget(self.search); self.right.addWidget(self.ai); self.right.addWidget(self.spell); self.right.addWidget(self.insert); self.right.addWidget(self.history)
+        self.right.addWidget(self.search); self.right.addWidget(self.chapter_context); self.right.addWidget(self.ai); self.right.addWidget(self.spell); self.right.addWidget(self.insert); self.right.addWidget(self.history)
+        self.chapter_context.openPlanning.connect(self._open_planning_from_context)
         # Escape closes only the temporary right-side editor tool and returns
         # focus to the matching rail button.  The shortcut is scoped to the
         # panel and its children, so Escape in the manuscript itself remains
@@ -487,6 +489,8 @@ class EditorPage(QWidget):
         self.undo_button.setEnabled(False)
         self.redo_button.setEnabled(False)
         self.right.hide()
+        if hasattr(self, 'chapter_context'):
+            self.chapter_context.clear()
         if hasattr(self.main, 'toolrail'):
             self.main.toolrail.hide()
         self.autosave_status.setText('')
@@ -915,6 +919,7 @@ class EditorPage(QWidget):
             self.autosave_status.setText(tr('editor.corrupt_readonly', 'Beschadigd · alleen-lezen'))
             self._sync_undo_redo()
             self.update_counts()
+            self.refresh_chapter_context()
             self.main.sync_tool_buttons()
             return
         self._chapter_corrupt = False
@@ -934,6 +939,7 @@ class EditorPage(QWidget):
         self.update_counts()
         if hasattr(self.main, 'toolrail') and self.main.stack.currentWidget() is self:
             self.main.toolrail.show()
+        self.refresh_chapter_context()
         self.main.sync_tool_buttons()
         if self.right.isVisible() and self.right.currentWidget() is self.spell:
             self.spell.refresh()
@@ -2100,6 +2106,7 @@ class EditorPage(QWidget):
         self.main.sync_tool_buttons()
         button_name = {
             self.search: 'search_button',
+            self.chapter_context: 'chapter_context_button',
             self.ai: 'ai_button',
             self.spell: 'spell_button',
             self.insert: 'insert_button',
@@ -2126,6 +2133,37 @@ class EditorPage(QWidget):
             else:
                 focus_widget.setFocus()
         self.main.sync_tool_buttons()
+
+    def chapter_context_available(self):
+        return bool(
+            self.book is not None
+            and self.chapter is not None
+            and not self.preview_live_book
+            and not self._chapter_corrupt
+            and self.content_stack.currentWidget() is self.manuscript_content
+        )
+
+    def refresh_chapter_context(self):
+        available = self.chapter_context_available()
+        self.chapter_context.refresh(
+            self.book if available else None,
+            self.chapter.id if available and self.chapter else None,
+            available=available,
+        )
+        if not available and self.right.isVisible() and self.right.currentWidget() is self.chapter_context:
+            self._remember_panel_widths()
+            self.right.hide()
+        if hasattr(self.main, 'sync_tool_buttons'):
+            self.main.sync_tool_buttons()
+
+    def _open_planning_from_context(self):
+        self.main.show_planning()
+
+    def show_chapter_context(self):
+        if not self.chapter_context_available():
+            return
+        self.refresh_chapter_context()
+        self._toggle_right_widget(self.chapter_context, self.chapter_context.open_button)
 
     def show_search(self):
         self._toggle_right_widget(self.search, self.search.query)

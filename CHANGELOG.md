@@ -1,3 +1,22 @@
+## 0.34.0 — Planning tijdens schrijven: eerste slice
+
+- Nieuwe rechterpaneelfunctie **In dit hoofdstuk** toont alleen-lezen de opgeslagen Planning voor het actieve manuscript-hoofdstuk.
+- Het paneel leest scènes en gekoppelde personages rechtstreeks uit `PlanningStore`; er wordt geen tweede bron van waarheid en geen nieuw dataformaat geïntroduceerd.
+- Verweesde personagekoppelingen en scènes voor andere hoofdstukken worden stil overgeslagen. Corrupte `outline.json`/`characters.json` geeft een korte foutmelding zonder de editor te blokkeren.
+- Het paneel is onafhankelijk van AI en blijft beschikbaar wanneer AI is uitgeschakeld. Bij Voorwoord/Nawoord, geschiedenis-preview en een beschadigd hoofdstuk is het niet beschikbaar.
+- **Planning openen** gebruikt de bestaande centrale navigatie. De actieve linkerrailknop wordt bij programmatic navigation automatisch in beeld gescrold.
+- Linkerrail-selectie gebruikt voortaan één expliciete `QButtonGroup` over zowel het scrollende deel als het vaste PROGRAMMA-blok. Daardoor kunnen Schrijverspersona, Instellingen en Prullenbak niet tegelijk geselecteerd blijven met een boekpagina.
+- Eerste slice voegt nog géén Planning-data toe aan AI-prompts en schrijft niets vanuit het nieuwe paneel.
+
+## 0.33.1 — Railafwerking en AI-contexttransparantie
+
+- **PROGRAMMA** staat vast onderaan de linkerrail, buiten het scrollende boek/AI-gedeelte; **Menu** blijft vast bovenaan. Instellingen en Prullenbak zijn daardoor ook op lage schermhoogte direct bereikbaar.
+- In de ingeklapte rail tonen dunne separators de grenzen tussen zichtbare groepen; in de uitgeklapte rail nemen de tekstkoppen die rol over.
+- Persona, Boekprofiel en Boekgeheugen leggen weer expliciet uit dat hun inhoud bij iedere AI-vraag naar de gekozen provider wordt gestuurd. Bij een externe provider verlaten die gegevens de computer.
+- Boekprofiel vermeldt opnieuw dat bewuste projectspecifieke afwijkingen de globale Schrijverspersona voor dat boek kunnen overrulen.
+- De railhoogtetest laadt nu het echte QuietWriter-stylesheet, zodat de gemeten scrollbarbreedte overeenkomt met de applicatie.
+- De oude 0.32.2-previewtest is bijgewerkt van de verwijderde kop **SCHRIJVEN** naar het huidige **AI-CONTEXT**-model.
+
 ## 0.33.0 — Informatiearchitectuur en declaratieve rail
 
 - Linker navigatie is opnieuw opgebouwd vanuit één declaratief railmodel (`state → model → render`). Zichtbaarheid van items, groepen en fallback-bestemming staat niet langer verspreid over losse `setVisible()`-regels.
