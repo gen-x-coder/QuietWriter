@@ -21,7 +21,7 @@ class EditorPolish0310Tests(unittest.TestCase):
 
     def test_navigation_has_subtle_groups(self):
         src = (ROOT / "quietwriter/ui/main_window.py").read_text(encoding="utf-8")
-        for label in ("BIBLIOTHEEK", "HUIDIG BOEK", "SCHRIJVEN", "PROGRAMMA"):
+        for label in ("BIBLIOTHEEK", "HUIDIG BOEK", "AI-CONTEXT", "PROGRAMMA"):
             self.assertIn(label, src)
         self.assertIn("navGroupLabel", src)
 

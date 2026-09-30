@@ -21,8 +21,9 @@ from .about_page import AboutPage
 class SettingsPage(QWidget):
     DICTIONARY_DOWNLOAD_URL = 'https://extensions.openoffice.org/'
 
-    def __init__(self, settings: QSettings, parent=None, models=None):
-        super().__init__(parent)
+    def __init__(self, settings: QSettings, main, models=None):
+        super().__init__(main)
+        self.main = main
         self.settings = settings
         self.original_theme = settings.value('theme', 'Helder')
         self._preview_theme = str(self.original_theme or 'Helder')
@@ -92,7 +93,8 @@ class SettingsPage(QWidget):
         self.language.setCurrentIndex(language_index if language_index >= 0 else 0)
         self._add_settings_field(gl, tr('settings.general.language', 'Programmataal'), self.language,
             tr('settings.general.language_help', 'De gekozen taal wordt na een herstart van QuietWriter toegepast.'))
-        self.advanced_options = QCheckBox(tr('settings.general.advanced_options', 'Geavanceerde opties gebruiken'))
+        self.advanced_options = QCheckBox()
+        self.advanced_options.setAccessibleName(tr('settings.general.advanced_options', 'Geavanceerde opties gebruiken'))
         self.advanced_options.setChecked(settings.value('advanced_options', True, bool))
         self._add_settings_field(
             gl, tr('settings.general.advanced_options', 'Geavanceerde opties gebruiken'), self.advanced_options,
@@ -293,6 +295,8 @@ class SettingsPage(QWidget):
         self.editor_font_size.valueChanged.connect(self._update_font_preview)
 
         self._wire_dirty_tracking()
+        self.ai_enabled.toggled.connect(self._preview_feature_switches)
+        self.advanced_options.toggled.connect(self._preview_feature_switches)
         self._update_font_preview()
         self._saved_form_state = self._current_form_state()
         self._update_dirty_state()
@@ -509,6 +513,13 @@ class SettingsPage(QWidget):
         visible_for_page = self.pages.currentIndex() != getattr(self, 'about_index', -1)
         self.save_btn.setEnabled(bool(dirty and visible_for_page))
 
+    def _preview_feature_switches(self, *_):
+        if self.main and hasattr(self.main, 'preview_feature_visibility'):
+            self.main.preview_feature_visibility(
+                ai_enabled=self.ai_enabled.isChecked(),
+                advanced=self.advanced_options.isChecked(),
+            )
+
     def _preview_appearance(self, *_):
         # Theme is application chrome and can be previewed safely. Writing font
         # and manuscript block layout deliberately stay inside this settings page
@@ -517,20 +528,20 @@ class SettingsPage(QWidget):
         # above already provides an accurate family/size preview.
         theme = self.theme.currentText() or 'Helder'
         if theme != self._preview_theme:
-            win = self.parent()
-            if win and hasattr(win, 'apply_theme'):
-                win.apply_theme(theme)
+            if self.main and hasattr(self.main, 'apply_theme'):
+                self.main.apply_theme(theme)
             else:
                 QApplication.instance().setStyleSheet(stylesheet(theme))
             self._preview_theme = theme
 
     def restore_preview(self):
+        if self.main and hasattr(self.main, '_apply_feature_visibility'):
+            self.main._apply_feature_visibility()
         # Only theme is live-previewed. Font/manuscript style were never applied
         # to the editor, so restoring them here would itself pollute Undo.
         if self._preview_theme != str(self.original_theme or 'Helder'):
-            win = self.parent()
-            if win and hasattr(win, 'apply_theme'):
-                win.apply_theme(str(self.original_theme or 'Helder'))
+            if self.main and hasattr(self.main, 'apply_theme'):
+                self.main.apply_theme(str(self.original_theme or 'Helder'))
             else:
                 QApplication.instance().setStyleSheet(stylesheet(self.original_theme))
             self._preview_theme = str(self.original_theme or 'Helder')
@@ -756,8 +767,8 @@ class SettingsPage(QWidget):
             self._populate_models(provider_name)
             if provider_name == 'ollama':
                 self.available_models = list(models)
-                if self.parent() and hasattr(self.parent(), 'models'):
-                    self.parent().models = models
+                if self.main and hasattr(self.main, 'models'):
+                    self.main.models = models
             self.ai_model_status.setText(tr('settings.ai.fetch_success', 'Modellen opgehaald: {count}', count=len(models)))
             self.ai_model_status.show()
             self._update_dirty_state()
@@ -807,42 +818,66 @@ class SettingsPage(QWidget):
             or new_manuscript_style.paragraph_indent_px != self.original_manuscript_style.paragraph_indent_px
             or new_manuscript_style.paragraph_spacing_px != self.original_manuscript_style.paragraph_spacing_px
         )
-        self.settings.setValue('language', new_language)
-        self.settings.setValue('theme', self.theme.currentText())
-        self.settings.setValue('editor_font', new_typography.family)
-        self.settings.setValue('editor_font_size', int(self.editor_font_size.value()))
-        self.settings.setValue('manuscript_line_spacing', int(self.manuscript_line_spacing.value()))
-        self.settings.setValue('manuscript_indent', int(self.manuscript_indent.value()))
-        self.settings.setValue('manuscript_paragraph_spacing', int(self.manuscript_paragraph_spacing.value()))
-        self.settings.setValue('smart_quotes', self.smart_quotes.isChecked())
-        self.settings.setValue('advanced_options', self.advanced_options.isChecked())
-        self.settings.setValue('autosave', True)
-        self.settings.setValue('workspace', self.root.text())
-        self.settings.setValue('ai_enabled', self.ai_enabled.isChecked())
-        provider = str(self.ai_provider.currentData() or 'ollama')
+
+        # QSettings mutates its in-memory map before sync(). If the durable write
+        # fails, restore the previous values so the running application never
+        # ends up half committed. Keep the form itself unchanged so the user can
+        # correct the storage problem and press Save again.
+        values = {
+            'language': new_language,
+            'theme': self.theme.currentText(),
+            'editor_font': new_typography.family,
+            'editor_font_size': int(self.editor_font_size.value()),
+            'manuscript_line_spacing': int(self.manuscript_line_spacing.value()),
+            'manuscript_indent': int(self.manuscript_indent.value()),
+            'manuscript_paragraph_spacing': int(self.manuscript_paragraph_spacing.value()),
+            'smart_quotes': self.smart_quotes.isChecked(),
+            'advanced_options': self.advanced_options.isChecked(),
+            'autosave': True,
+            'workspace': self.root.text(),
+            'ai_enabled': self.ai_enabled.isChecked(),
+            'ai_provider': str(self.ai_provider.currentData() or 'ollama'),
+            'ollama_url': self.ollama.text(),
+            'openrouter_api_key': self.openrouter_key.text(),
+            'ai_disable_thinking': self.ai_disable_thinking.isChecked(),
+            'ai_quick_actions_expanded': self.ai_quick_actions_expanded.isChecked(),
+            'cover_header_template': self.cover_template.text().strip() or '/{slug}.jpg',
+            'spell_enabled': self.spell_enabled.isChecked(),
+            'spell_language': self.spell_language.currentData() or '',
+        }
+        provider = values['ai_provider']
         self._remember_current_ai_model(provider)
-        self.settings.setValue('ai_provider', provider)
-        self.settings.setValue('ollama_url', self.ollama.text())
-        self.settings.setValue('openrouter_api_key', self.openrouter_key.text())
-        self.settings.setValue('ollama_model', self._ai_model_drafts.get('ollama', ''))
-        self.settings.setValue('openrouter_model', self._ai_model_drafts.get('openrouter', ''))
-        self.settings.setValue('ai_disable_thinking', self.ai_disable_thinking.isChecked())
-        self.settings.setValue('ai_quick_actions_expanded', self.ai_quick_actions_expanded.isChecked())
-        self.settings.setValue('cover_header_template', self.cover_template.text().strip() or '/{slug}.jpg')
-        self.settings.setValue('spell_enabled', self.spell_enabled.isChecked())
-        self.settings.setValue('spell_language', self.spell_language.currentData() or '')
+        values['ollama_model'] = self._ai_model_drafts.get('ollama', '')
+        values['openrouter_model'] = self._ai_model_drafts.get('openrouter', '')
+        previous = {
+            key: (self.settings.contains(key), self.settings.value(key))
+            for key in values
+        }
+        for key, value in values.items():
+            self.settings.setValue(key, value)
         self.settings.sync()
         if self.settings.status() != QSettings.Status.NoError:
+            for key, (existed, value) in previous.items():
+                if existed:
+                    self.settings.setValue(key, value)
+                else:
+                    self.settings.remove(key)
+            # Restore all live previews/effective feature visibility to the last
+            # committed state. A second sync is best-effort; the important part
+            # is that the running QSettings map is no longer half-new.
+            self.settings.sync()
+            self.restore_preview()
             QMessageBox.warning(self, tr('settings.save_error_title', 'Instellingen opslaan'), tr('settings.save_error', 'De instellingen konden niet betrouwbaar naar schijf worden geschreven. Controleer de toegangsrechten en probeer het opnieuw.'))
+            self._update_dirty_state()
             return
+
         self.original_theme = self.theme.currentText()
         self.original_typography = new_typography
         self.original_editor_font = new_typography.family
         self.original_editor_size = new_typography.point_size
         self.original_manuscript_style = new_manuscript_style
         self._preview_theme = self.original_theme
-        if self.parent() and hasattr(self.parent(), 'settings_saved'):
-            self.parent().settings_saved(old_root, writing_layout_changed=writing_layout_changed)
+        self.main.settings_saved(old_root, writing_layout_changed=writing_layout_changed)
         self._saved_form_state = self._current_form_state()
         self._update_dirty_state()
         self._show_saved_feedback(language_restart=(new_language != old_language))

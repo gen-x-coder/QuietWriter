@@ -36,7 +36,7 @@ class BookProfilePage(QWidget):
         title = QLabel(tr('book_profile.title', 'Boekprofiel')); title.setObjectName('title')
         info = QLabel(tr(
             'book_profile.info',
-            'Dit profiel geldt alleen voor het geopende boek. Het verfijnt je schrijverspersona en wordt automatisch als projectspecifieke context aan AI meegegeven.'
+            'Het boekprofiel beschrijft dit specifieke boek: toon, genre, doelgroep en andere projectkenmerken. QuietWriter gebruikt het alleen als boekspecifieke context voor AI-assistentie.'
         ))
         info.setObjectName('muted'); info.setWordWrap(True)
         outer.addWidget(title); outer.addWidget(info)

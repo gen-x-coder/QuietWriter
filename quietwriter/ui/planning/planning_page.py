@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from ..current_page_stack import CurrentPageStack
 from ...planning_storage import PlanningStore
@@ -26,7 +26,14 @@ class PlanningPage(QWidget):
 
     def __init__(self, main):
         super().__init__(); self.main=main; self.book=None; self.store=PlanningStore(main.library)
-        root=QHBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
+        root=QVBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
+        header=QWidget(); header_layout=QVBoxLayout(header); header_layout.setContentsMargins(32,26,36,14); header_layout.setSpacing(6)
+        title=QLabel(tr('planning.title', 'Planning')); title.setObjectName('title')
+        info=QLabel(tr('planning.info', 'Werk hier de personages, scènes en vrije notities van dit boek uit. Planning helpt je het verhaal te structureren zonder de manuscripttekst zelf te veranderen.'))
+        info.setObjectName('muted'); info.setWordWrap(True)
+        header_layout.addWidget(title); header_layout.addWidget(info)
+        root.addWidget(header)
+        body=QHBoxLayout(); body.setContentsMargins(0,0,0,0); body.setSpacing(0)
         side=QFrame(); side.setObjectName('planningSidebar'); side.setFixedWidth(PLANNING_PANEL_WIDTH)
         sl=QVBoxLayout(side); sl.setContentsMargins(12,22,12,22); sl.setSpacing(5)
         self.buttons=[]
@@ -37,7 +44,7 @@ class PlanningPage(QWidget):
         self.pages=CurrentPageStack(); self.characters_page=CharactersPage(self); self.outline_page=OutlinePage(self); self.notes_page=NotesPage(self)
         for p in (self.characters_page,self.outline_page,self.notes_page): self.pages.addWidget(p)
         self.characters_page.changed.connect(self.outline_page.refresh)
-        root.addWidget(side); root.addWidget(self.pages,1)
+        body.addWidget(side); body.addWidget(self.pages,1); root.addLayout(body,1)
         self.show_section(0)
 
     def _nav(self,layout,text,index):
@@ -82,7 +89,7 @@ class PlanningPage(QWidget):
         if same_book:
             if (reload_kind != 'notes' and self.notes_page.dirty
                     and 'planning/notes.md' not in changed):
-                pending_notes = self.notes_page.editor.toPlainText()
+                pending_notes = self.notes_page.editor.source_text()
             if (reload_kind != 'characters'
                     and 'planning/characters.json' not in changed):
                 pending_character = self.characters_page.pending_editor_snapshot()
@@ -102,7 +109,7 @@ class PlanningPage(QWidget):
         """Return all unrelated unsaved planning input for a recovery snapshot."""
         overrides = {}
         if conflict_kind != 'notes' and self.notes_page.dirty:
-            overrides['planning/notes.md'] = self.notes_page.editor.toPlainText()
+            overrides['planning/notes.md'] = self.notes_page.editor.source_text()
         if conflict_kind != 'characters':
             snapshot = self.characters_page.pending_editor_snapshot()
             if snapshot is not None:

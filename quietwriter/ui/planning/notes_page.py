@@ -6,7 +6,7 @@ from ...i18n import tr
 
 class NotesPage(QWidget):
     def __init__(self, planning_page):
-        super().__init__(); self.owner=planning_page; self.dirty=False
+        super().__init__(); self.owner=planning_page; self.dirty=False; self._clean_text=''
         lay=QVBoxLayout(self); lay.setContentsMargins(28,24,34,30); lay.setSpacing(12)
         top=QHBoxLayout(); title=QLabel(tr('planning.notes.title', 'Notities')); title.setObjectName('title'); top.addWidget(title); top.addStretch(); self.save_button=QPushButton(tr('common.save', 'Opslaan')); self.save_button.setObjectName('primaryButton'); self.save_button.setEnabled(False); self.save_button.clicked.connect(self.save); top.addWidget(self.save_button)
         info=QLabel(tr('planning.notes.description', 'Vrije notities voor dit boek. Onder water blijft dit gewone Markdown.')); info.setObjectName('muted')
@@ -24,10 +24,11 @@ class NotesPage(QWidget):
             ))
             self.editor.setReadOnly(True)
             self.editor.blockSignals(False)
+            self._clean_text = self.editor.source_text()
             self.dirty=False; self.save_button.setEnabled(False)
             return
         self.editor.setPlainText(text); self.editor.setReadOnly(False)
-        self.editor.blockSignals(False); self.dirty=False; self.save_button.setEnabled(False)
+        self.editor.blockSignals(False); self._clean_text = self.editor.source_text(); self.dirty=False; self.save_button.setEnabled(False)
     def restore_pending_text(self, text: str):
         self.timer.stop()
         self.editor.blockSignals(True); self.editor.setPlainText(text); self.editor.blockSignals(False)
@@ -45,12 +46,16 @@ class NotesPage(QWidget):
         )
 
     def changed(self):
+        if self.editor.source_text() == self._clean_text:
+            self.dirty=False; self.save_button.setEnabled(False); self.timer.stop(); return
         self.dirty=True; self.save_button.setEnabled(True); self.timer.start()
     def save(self):
         if not self.dirty or not self.owner.book:return True
-        result = self.owner.persist_notes(self.editor.toPlainText())
+        source_text = self.editor.source_text()
+        result = self.owner.persist_notes(source_text)
         if result == 'mine':
-            self.dirty=False; self.save_button.setEnabled(False); return True
+            self._clean_text = source_text
+            self.timer.stop(); self.dirty=False; self.save_button.setEnabled(False); return True
         if result == 'disk':
             # adopt_active_book() already reloaded the disk version into this page.
             return True

@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class ExportUiSourceTests(unittest.TestCase):
     def test_export_is_own_navigation_page_after_book_details(self):
         source = (ROOT / 'quietwriter/ui/main_window.py').read_text(encoding='utf-8')
-        book_pos = source.index("self.book_details_button = self._nav_button")
-        export_pos = source.index("self.export_button = self._nav_button")
+        book_pos = source.index("self.book_details_button = self._register_nav_item('book_details'")
+        export_pos = source.index("self.export_button = self._register_nav_item('export'")
         self.assertGreater(export_pos, book_pos)
         self.assertIn('self.export_page = ExportPage(self)', source)
 

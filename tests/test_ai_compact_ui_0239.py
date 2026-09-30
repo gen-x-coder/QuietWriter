@@ -66,9 +66,9 @@ def test_ai_panel_uses_compact_bottom_controls():
 def test_ai_settings_expose_thinking_and_quick_action_preferences():
     source = Path('quietwriter/ui/settings_page.py').read_text(encoding='utf-8')
     assert "settings.value('ai_disable_thinking', False, bool)" in source
-    assert "self.settings.setValue('ai_disable_thinking', self.ai_disable_thinking.isChecked())" in source
+    assert "'ai_disable_thinking': self.ai_disable_thinking.isChecked()" in source
     assert "settings.value('ai_quick_actions_expanded', False, bool)" in source
-    assert "self.settings.setValue('ai_quick_actions_expanded', self.ai_quick_actions_expanded.isChecked())" in source
+    assert "'ai_quick_actions_expanded': self.ai_quick_actions_expanded.isChecked()" in source
 
 
 def test_ai_send_maps_thinking_off_per_provider():

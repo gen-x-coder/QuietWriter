@@ -27,12 +27,13 @@ def test_ai_can_be_disabled_without_discarding_configuration():
     main = (ROOT / 'quietwriter' / 'ui' / 'main_window.py').read_text(encoding='utf-8')
     editor = (ROOT / 'quietwriter' / 'ui' / 'editor_page.py').read_text(encoding='utf-8')
     assert "settings.value('ai_enabled', True, bool)" in settings
-    assert "self.settings.setValue('ai_enabled', self.ai_enabled.isChecked())" in settings
+    assert "'ai_enabled': self.ai_enabled.isChecked()" in settings
     assert 'for control in self._ai_controls:' in settings
-    assert 'self.ai_button.setVisible(ai_enabled)' in main
-    assert 'self.persona_button.setVisible(ai_enabled)' in main
-    assert 'self.book_profile_button.setVisible(has_book and ai_enabled)' in main
-    assert 'self.book_memory_button.setVisible(has_book and ai_enabled)' in main
+    rail = (ROOT / 'quietwriter' / 'ui' / 'rail_model.py').read_text(encoding='utf-8')
+    assert 'self.ai_button.setVisible(bool(ai_enabled))' in main
+    assert "RailItemSpec('persona', 'program', requires_ai=True)" in rail
+    assert "RailItemSpec('book_profile', 'ai_context', requires_book=True, requires_ai=True)" in rail
+    assert "RailItemSpec('book_memory', 'ai_context', requires_book=True, requires_ai=True)" in rail
     assert "if not self.main.settings.value('ai_enabled', True, bool):" in editor
 
 

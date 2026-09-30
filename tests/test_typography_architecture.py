@@ -17,8 +17,8 @@ class TypographyArchitectureTests(unittest.TestCase):
 
     def test_writer_font_and_size_are_independent_settings(self):
         settings = (ROOT / 'quietwriter' / 'ui' / 'settings_page.py').read_text(encoding='utf-8')
-        self.assertIn("self.settings.setValue('editor_font',", settings)
-        self.assertIn("self.settings.setValue('editor_font_size',", settings)
+        self.assertIn("'editor_font': new_typography.family", settings)
+        self.assertIn("'editor_font_size': int(self.editor_font_size.value())", settings)
         self.assertIn('self._populate_font_combo(self.original_typography.family)', settings)
         self.assertIn('recommended_families(families)', settings)
         self.assertIn('system_families_excluding_recommended(families)', settings)

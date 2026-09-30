@@ -28,8 +28,8 @@ class ManuscriptEditor(QTextEdit):
     """Rustige Markdown-editor met manuscriptweergave en lichte opmaaklaag.
 
     De bron blijft altijd platte Markdown. De visuele laag gebruikt alleen Qt
-    character/block formats; opslaan via ``toPlainText()`` blijft dus volledig
-    voorspelbaar en exporteerbaar.
+    character/block formats. Persistente tekst loopt via :meth:`source_text`,
+    zodat typografische Unicode niet stil door ``toPlainText()`` normaliseert.
     """
 
     def __init__(self, parent=None):
@@ -52,6 +52,7 @@ class ManuscriptEditor(QTextEdit):
         self.settings = QSettings('QuietWriter', 'QuietWriter')
         self.typography = WritingTypography.from_settings(self.settings)
         self.manuscript_style = ManuscriptStyle.from_settings(self.settings)
+
 
         self._format_timer = QTimer(self)
         self._format_timer.setSingleShot(True)
@@ -103,6 +104,18 @@ class ManuscriptEditor(QTextEdit):
 
         self.apply_typography(self.typography)
         self._update_margins()
+
+
+    def source_text(self) -> str:
+        """Return the editor's persistent Markdown source representation.
+
+        ``QTextEdit.toPlainText()`` normalises some meaningful Unicode (notably
+        non-breaking spaces and line separators). ``toRawText()`` preserves the
+        document characters; only Qt's internal paragraph separator maps back to
+        QuietWriter's on-disk newline. Any editor that persists manuscript-like
+        text should use this method for baselines, dirty checks and writes.
+        """
+        return self.document().toRawText().replace('\u2029', '\n')
 
     def set_image_resolver(self, resolver):
         """Provide a callable that resolves one managed Markdown reference to a Path."""
@@ -991,7 +1004,7 @@ class ManuscriptEditor(QTextEdit):
             self._hover_scene_block = -1
             return
 
-        text = self.toPlainText()
+        text = self.source_text()
         new_text, caret = remove_scene_break(text, block.position())
         if new_text == text:
             self.scene_delete_button.hide()

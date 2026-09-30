@@ -13,6 +13,7 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 - Vaste subnavigatie links.
 - Scrollbare inhoud rechts; de Opslaan-actie blijft buiten de scrollviewport.
 - Instellingen staan in rijen met vaste onzichtbare kolommen: naam en noodzakelijke uitleg links, bediening rechts. De control-kolom begint op iedere rij exact op dezelfde positie.
+- Boekniveau-pagina's die een eigen concept introduceren tonen bovenaan een duidelijke paginatitel met één korte, rustige uitlegzin vóór de detailnavigatie of formulieren. Planning, Boekgeheugen en Boekprofiel volgen hierin hetzelfde patroon.
 - Verwante instellingen krijgen een kleine gedempte sectiekop.
 - Uitleg alleen waar gedrag of gevolgen niet vanzelf spreken.
 - Complexere controls mogen binnen de rechterkolom breder zijn; korte controls blijven compact.
@@ -77,6 +78,7 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 - Boekdetails gebruikt bij een externe same-book reload een drie-wegs merge per veld. Lokaal-only wijzigingen blijven in het formulier, disk-only wijzigingen volgen schijf en wanneer hetzelfde veld aan beide kanten verschillend is gewijzigd blijft de schijfwaarde live terwijl de volledige lokale formulierinvoer eerst apart in Versiegeschiedenis wordt bewaard. Een gekozen/verwijderde pending omslag blijft expliciet van de gebruiker totdat die Opslaan kiest.
 - **AI-assistent gebruiken** is de centrale zichtbaarheidsschakelaar voor AI-gerelateerde oppervlakken. Uitgeschakeld verdwijnen AI-assistent, Schrijverspersona, Boekprofiel en Boekgeheugen uit de navigatie, maar hun bestanden en instellingen blijven bestaan.
 - Wanneer een instelling de pagina verbergt waarvandaan Instellingen werd geopend, keert de gebruiker na Opslaan terug naar een geldige zichtbare bestemming (bij een open boek: Inhoud).
+- Zichtbaarheidsschakelaars die direct begrijpelijk zijn (zoals AI en Geavanceerde opties) mogen hun navigatie-effect live voorvertonen terwijl Instellingen open is. Zonder Opslaan moet die preview bij het verlaten van Instellingen terugvallen op de laatst opgeslagen toestand; inhoud wordt nooit verwijderd.
 - Spellingscontrole uit moet onmiddellijk zichtbaar zijn in het reeds geopende document: geen rode onderstrepingen en geen actieve spellingsbediening; een herstart of hoofdstukwissel mag nooit nodig zijn.
 - Integriteit/herstel vermeldt bij een concrete herstelactie waar de geselecteerde herstelkopie vandaan komt wanneer die metadata bekend is; herstel mag niet als een onzichtbare “nieuwste versie” worden gepresenteerd.
 
@@ -250,7 +252,7 @@ Tekstprompts voor hoofdstukken en secties gebruiken QuietWriter's eigen `prompt_
 
 ## Media Manager (0.27.0)
 
-- **Media** is een boekniveau-pagina tussen Boekgeheugen en Exporteren. De eerste versie is bewust tekstgericht: inventaris en integriteit zijn belangrijker dan een visuele galerij.
+- **Media** is een boekniveau-pagina binnen **HUIDIG BOEK**, tussen Planning en Boekdetails. De eerste versie is bewust tekstgericht: inventaris en integriteit zijn belangrijker dan een visuele galerij.
 - De pagina toont de omslag alleen ter informatie. Omslag wijzigen/verwijderen blijft onderdeel van Boekdetails; inline-media-cleanup raakt covers nooit.
 - Beheerde afbeeldingen krijgen één van vier statussen: Gebruikt, Ongebruikt, Ontbreekt of Gewijzigd. Niet-geregistreerde bestanden onder `assets/images/` zijn zichtbaar maar worden nooit automatisch verwijderd.
 - Opruimen is batchgericht en herstelbaar: één expliciete actie verwijdert alleen bewezen ongebruikte manifestassets en maakt daarvoor eerst één volledig `media_cleanup`-herstelpunt in Versiegeschiedenis.
@@ -264,3 +266,38 @@ Tekstprompts voor hoofdstukken en secties gebruiken QuietWriter's eigen `prompt_
 - Een hoofdstuk in de hoofdstukprullenbak is herstelbare inhoud en telt daarom als actuele mediagebruiker. Media toont zulke bronnen als **Prullenbak: <titel>**.
 - Batch-opruimen werkt uitsluitend op de assets die de actuele inventaris als `can_cleanup` markeert. Historisch onveilige assets blijven staan zonder veilige kandidaten te blokkeren.
 - Een externe wijziging tijdens cleanup wordt nooit omzeild. Met een schone editor wordt de nieuwste live-bookstate centraal geadopteerd; met pending manuscript/publicatie-invoer gaat de bestaande conflictflow vóór automatisch herladen.
+
+### Instellingen-preview en editor-dirty
+- Een live preview in Instellingen moet visueel volledig consistent zijn: knoppen, groepskoppen en spacing volgen dezelfde effectieve previewwaarden.
+- Een preview mag geen inhoudelijke paneeltoestand vernietigen; pas een succesvolle Opslaan/commit mag een uitgeschakelde functie daadwerkelijk sluiten.
+- Presentatiebewerkingen (highlighting, font/layout repaint, spellingmarkering) zijn geen manuscriptwijzigingen. Dirty/autosave mag alleen volgen uit gewijzigde brontekst.
+- Mislukt het duurzaam opslaan van Instellingen, dan blijft de laatst betrouwbaar opgeslagen runtime-toestand actief.
+
+### Tekstbron en presentatie
+
+- Presentatiebewerkingen (syntax highlighting, spelling, typografie) mogen de manuscriptbron nooit als gewijzigd markeren.
+- Dirty-status en opslag gebruiken dezelfde bronrepresentatie uit de editor. Vermijd `toPlainText()` voor persistente manuscripttekst wanneer dit typografische Unicode-tekens normaliseert.
+- Typografische bronkarakters zoals harde spaties moeten bij een gewone save behouden blijven.
+
+### Boeknavigatie en editorbron
+
+- **HUIDIG BOEK** en alle boekniveau-knoppen zijn uitsluitend zichtbaar wanneer `MainWindow.active_book()` werkelijk een boek bevat. Koude start, loskoppelen en terugkeer naar de Boekenplank gebruiken dezelfde centrale zichtbaarheidstoestand.
+- `ManuscriptEditor.source_text()` is de gedeelde persistente tekstbron voor manuscriptachtige editors. Dirty-baselines, conflict-snapshots en writes mogen niet elk een eigen Qt-tekstconversie gebruiken.
+- Editors die alleen presentatie opnieuw toepassen (typografie, highlighting, spelling) mogen geen bestand materialiseren of autosave starten wanneer hun broninhoud niet veranderde.
+- Bewerkingen die het volledige document opnieuw opbouwen gebruiken de persistente bronrepresentatie, zodat harde spaties en andere betekenisvolle Unicode buiten het bewerkte fragment intact blijven.
+
+### Dirty-baseline voor teksteditors
+
+- Iedere editor die Markdown of manuscriptachtige tekst kan opslaan gebruikt een baseline van dezelfde persistente bronrepresentatie als de save-route. Dit geldt voor hoofdstukken, Planning-notities en vrije publicatieteksten.
+- Een presentatiepass (highlighting, spelling, typografie, repaint) mag `dirty` niet zetten wanneer de broninhoud gelijk blijft. Typen en daarna exact terugkeren naar de opgeslagen bron maakt de editor weer clean en stopt autosave.
+- Na een geslaagde save wordt de baseline bijgewerkt; bij een disk-conflict of reload komt de baseline uit de daadwerkelijk geadopteerde tekst.
+
+### Declaratieve linkerrail (0.33.0)
+
+- De linkerrail heeft vier semantische groepen: **BIBLIOTHEEK**, **HUIDIG BOEK**, **AI-CONTEXT** en **PROGRAMMA**. Een groepskop is alleen zichtbaar wanneer de rail is uitgeklapt én minstens één item in die groep zichtbaar is.
+- Railzichtbaarheid wordt volledig afgeleid uit één effectief toestandsmodel: open boek (runtime), AI aan/uit en Geavanceerde opties aan/uit (opgeslagen of tijdelijke Settings-preview). De renderer leest zelf geen `QSettings` en voert geen navigatieacties uit.
+- De renderer mag uitsluitend tekenen/zichtbaarheid veranderen. Paneel sluiten, een verborgen actieve pagina verlaten en een Settings-terugkeerdoel aanpassen zijn commit-side-effects en gebeuren nooit tijdens een preview.
+- Fallback bij een gecommitteerd verborgen navigatiedoel is centraal: **Inhoud** wanneer een boek open is, anders **Boekenplank**. Er mogen geen afzonderlijke fallbackregels per feature ontstaan.
+- **AI-CONTEXT** betekent gegevens die AI voor het geopende boek kan gebruiken. Boekgeheugen en Boekprofiel horen hier; Schrijverspersona is globaal en staat onder **PROGRAMMA**.
+- Een rail met alle functies zichtbaar moet bruikbaar blijven bij 700–768 px vensterhoogte. De navigatie mag scrollen; de inhoud van de rail mag de minimumhoogte van het hoofdvenster niet opdrijven. De scrollbar reserveert breedte binnen de bestaande rail zodat labels niet afbreken.
+- Tests voor de rail halen hun verwachting niet uitsluitend uit hetzelfde model als de productcode. Naast modelinvarianten bestaan handmatig uitgeschreven referentietoestanden voor koude start, volledig boek en boek zonder AI/Geavanceerd.

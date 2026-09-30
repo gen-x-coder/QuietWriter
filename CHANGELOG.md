@@ -1,4 +1,74 @@
+## 0.33.0 — Informatiearchitectuur en declaratieve rail
+
+- Linker navigatie is opnieuw opgebouwd vanuit één declaratief railmodel (`state → model → render`). Zichtbaarheid van items, groepen en fallback-bestemming staat niet langer verspreid over losse `setVisible()`-regels.
+- Nieuwe groepen: **BIBLIOTHEEK**, **HUIDIG BOEK**, **AI-CONTEXT** en **PROGRAMMA**. Boekgeheugen en Boekprofiel staan onder AI-CONTEXT; Schrijverspersona blijft globaal onder PROGRAMMA.
+- Railrendering is puur: de renderer verandert alleen zichtbaarheid. Paneel sluiten en wegsturen van een pagina die na een gecommitteerde instelling verborgen wordt gebeuren uitsluitend in `_apply_committed_navigation_effects()`, nooit tijdens preview.
+- Fallback staat centraal in het model: een verborgen actieve/terugkeerpagina valt terug op **Inhoud** met open boek, anders **Boekenplank**.
+- De rail gebruikt een verticale `QScrollArea`, zodat 700/720/768 px hoogte niet door alle navigatie-items wordt opgedrukt. De smalle scrollbar heeft gereserveerde breedte binnen de bestaande 64/218 px rail.
+- Uitlegteksten voor Schrijverspersona, Boekprofiel en Boekgeheugen zijn op elkaar afgestemd rond het contextmodel: schrijver (globaal), boekprofiel (dit boek), geheugen (wat AI moet blijven weten).
+- De conflictmelding **Structuuractie niet uitgevoerd** is generieker gemaakt naar **Actie niet uitgevoerd**.
+- Testhardening uit reviewronde 33: onverwachte dialogen vanuit timers/slots worden ook in teardown gedetecteerd; `QDialog.exec`, `QInputDialog` en `QFileDialog` zijn suitebreed afgevangen; code-health gebruikt een absoluut pakketpad en controleert dat er werkelijk bronbestanden zijn gevonden.
+- Nieuwe railtests bevatten handmatig uitgeschreven verwachte toestanden, algemene invarianten, fallbacktests, een 16-toestanden runtime-matrix en hoogtetests op 700/720/768 px.
+
+## 0.32.7
+
+- Test-hardening zonder productwijzigingen.
+- Nieuwe pakketbrede AST-test detecteert onbereikbare top-level statements na een onvoorwaardelijke `return` of `raise`; dit vangt de 0.32.4-startcrashklasse zonder PySide6-runtime.
+- De broze positietest voor `ManuscriptEditor.source_text()` is verwijderd.
+- Centrale `tests/conftest.py`-guard laat onverwachte `QMessageBox.information`, `warning`, `critical`, `question` en instance-`exec()` direct als testfout eindigen in plaats van de Qt-suite te laten hangen.
+- De specifieke dialogenfixture uit `test_review_0324.py` is verwijderd; de bewaking geldt nu suitebreed.
+
+## 0.32.6
+
+- Preventieve dirty-baseline voor vrije publicatieteksten (Voorwoord, Nawoord en vergelijkbare Markdown-items): presentatiepasses maken de tekst niet meer dirty; terugtypen naar de opgeslagen bron maakt weer clean; een geslaagde save verplaatst de baseline.
+- De hangende Qt-test uit reviewronde 31 krijgt een echte `workspace` in de fixture, zodat de legitieme melding **Werkmap gewijzigd** niet meer onbedoeld modaal blokkeert.
+- De 0.32.4-reviewtests falen nu expliciet op onverwachte `QMessageBox.information/warning/critical`-dialogen in plaats van eindeloos te wachten.
+- Het 0.32.5-startupvangnet is aangescherpt met AST: `ManuscriptEditor.__init__` mag geen geneste methodedefinitie of voortijdige `return` bevatten. Dit vangt de 0.32.4-foutklasse ook zonder PySide6-runtime.
+- Geen productgedrag gewijzigd buiten deze preventieve dirty-regel en testhardening.
+
+## 0.32.5
+
+- Hotfix: `ManuscriptEditor.source_text()` stond in 0.32.4 per ongeluk midden in `__init__`. Daardoor werd de resterende editorinitialisatie onbereikbaar en kon QuietWriter bij startup crashen.
+- De volledige `ManuscriptEditor`-initialisatie staat weer in `__init__`; `source_text()` is een normale aparte methode na de constructor.
+- Regressietest toegevoegd die de constructorvolgorde bewaakt.
+- Geen functionele wijzigingen ten opzichte van de bedoelde 0.32.4-functionaliteit.
+
+## 0.32.4
+
+- Koude start toont alleen Bibliotheek/programmafuncties: alle boeknavigatie en de kop **HUIDIG BOEK** volgen centraal of er werkelijk een actief boek is.
+- Planning-notities gebruiken dezelfde brongebaseerde dirty-detectie als de hoofdstuk-editor; presentatiepasses vanuit Instellingen maken geen leeg `notes.md` meer en starten geen autosave.
+- `ManuscriptEditor.source_text()` is de gedeelde persistente bronrepresentatie voor manuscriptachtige editors. Planning-notities, hoofdstukken en vrije publicatietekst gebruiken dezelfde Unicode-veilige route.
+- Planning-notities bewaren harde spaties en U+2028 bij een echte save en conflict-snapshot.
+- Scènescheiding invoegen/verwijderen en afbeelding invoegen/verwijderen bouwen documentbrede wijzigingen niet meer op uit `toPlainText()`, zodat typografische Unicode in de rest van het hoofdstuk intact blijft.
+- Nieuwe Qt-regressietests voor koude-startnavigatie, presentatiepasses zonder notes-write en Unicode-behoud in Planning-notities.
+
+## 0.32.3
+
+- Editorbron centraal gemaakt via `_editor_source_text()`: dirty-detectie, baseline, conflictsnapshot en save gebruiken dezelfde Qt-bronrepresentatie.
+- Hoofdstukken met harde spaties, Unicode line separators of BOM worden niet meer vals als gewijzigd gezien door presentatie-/spellingswerk.
+- Gewone hoofdstuk-saves gebruiken `QTextDocument.toRawText()` met Qt-alineascheiding terug naar `\n`, zodat harde spaties en U+2028 behouden blijven.
+- Nieuwe runtime-regressietests voor speciale Unicode-tekens en bronbehoud.
+
+## 0.32.2
+- Editor dirty-status vergelijkt voortaan de echte manuscripttekst met de laatst geladen/opgeslagen bron; rehighlight/presentatiepasses starten geen autosave meer.
+- Spellingsacties zoals negeren/woordenboek toevoegen kunnen daardoor niet langer zonder tekstwijziging een hoofdstuk laten herschrijven.
+- Live preview van AI en Geavanceerde opties houdt nu ook SCHRIJVEN-groepskop en Integriteit-witruimte synchroon, ook na rail in-/uitklappen.
+- AI-paneel wordt tijdens een niet-opgeslagen preview niet meer gesloten; alleen een gecommitteerde AI-uit schakelt het paneel uit.
+- Settings-save bewaart de vorige QSettings-toestand en rolt effectieve runtime-previews terug als sync mislukt.
+- Nieuwe regressietests voor brongebaseerde dirty-detectie, previewconsistentie en Settings-rollback.
+
 # Changelog
+
+## 0.32.1 — Instellingen direct toepassen en Planning-uitleg
+
+- Instellingen gebruikt nu een expliciete verwijzing naar `MainWindow`; `settings_saved()` wordt na Opslaan daadwerkelijk uitgevoerd in plaats van stil te verdwijnen via de tussenliggende `CurrentPageStack`.
+- AI- en Geavanceerde-optieschakelaars geven direct een live preview in de hoofdnavigatie. Verlaat je Instellingen zonder op te slaan, dan keert de rail terug naar de opgeslagen toestand.
+- Spelling uit wordt na Opslaan onmiddellijk op het geopende manuscript toegepast: rode markeringen verdwijnen, het spellingspaneel sluit en de spellingsknop verdwijnt zonder herstart.
+- QuietWriter kan weer normaal starten wanneer `spell_enabled=False`; de woordenboek-/highlighterinitialisatie gebeurt pas nadat `SpellPanel` bestaat.
+- Terugkeren uit Instellingen wordt na een opgeslagen featurewijziging opnieuw veilig naar Inhoud geleid wanneer de oorspronkelijke pagina inmiddels verborgen is.
+- Planning heeft nu dezelfde pagina-opbouw als andere boekfuncties: titel **Planning** met een korte uitleg boven Personages/Outline/Notities.
+- De regel **Geavanceerde opties gebruiken** toont nog maar één tekstlabel; het vinkje zelf is kaal en heeft een toegankelijke naam.
+- Dezelfde expliciete `MainWindow`-route wordt ook gebruikt voor theme-preview en het bijwerken van opgehaalde AI-modellen, zodat deze Settings-acties niet meer afhankelijk zijn van Qt-parenting.
 
 ## 0.32.0 — Functiezichtbaarheid en directe editorfeedback
 

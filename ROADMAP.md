@@ -371,12 +371,21 @@ Status: geïmplementeerd voor reviewronde 25.
 Deze volgorde vervangt de oudere voorlopige nummering waarin 0.32 direct voor Planning tijdens het schrijven was gereserveerd. De uitgebreide 0.31-stabiliteitsreeks heeft de nummering verschoven; de inhoudelijke volgorde blijft hetzelfde.
 
 ### 0.32 — UI/editor polish en functiezichtbaarheid
+- **0.32.2:** presentatie-events niet dirty, consistente live preview en transactionelere Settings-save.
+- **0.32.3:** brongetrouwe editor-tekst: Qt-speciale tekens veroorzaken geen valse dirty en typografische spaties/line separators blijven bij save behouden.
+- **0.32.4:** koude-startnavigatie en gedeelde tekstbron voor Planning-notities/documentbrede editorbewerkingen; geen valse notes-autosave of Unicode-normalisatie.
 
 **0.32.0 — eerste stap, geïmplementeerd**
 - AI aan/uit is één duidelijke productschakelaar: AI-assistent, Schrijverspersona, Boekprofiel en Boekgeheugen volgen dezelfde zichtbaarheid. De bestanden blijven bestaan wanneer AI tijdelijk uit staat.
 - Nieuwe instelling **Geavanceerde opties gebruiken**, standaard aan. In de eerste versie valt alleen Integriteit & herstel hieronder.
 - Spellingscontrole uit betekent direct geen rode onderstrepingen en geen spellingspaneel/-knop; opnieuw starten is niet nodig.
 - Integriteit toont de herkomst van de gekozen herstelkopie zonder het bestaande herstelbeleid te veranderen.
+
+**0.32.1 — instellingen-apply en pagina-consistentie, geïmplementeerd**
+- Rode regressies uit reviewronde 26 gesloten: starten met spelling uit en `settings_saved()` via de echte Settings-route.
+- AI en Geavanceerde opties geven direct railfeedback tijdens het wijzigen; Opslaan commit de instelling en corrigeert zo nodig het terugkeerdoel.
+- Planning volgt voortaan het gedeelde patroon van titel + korte uitleg boven de inhoud.
+- Dubbele tekst bij Geavanceerde opties verwijderd.
 
 **Vervolg binnen 0.32.x**
 - Alleen concrete UI-/editorbevindingen uit praktijkgebruik of Claude-review oplossen; geen nieuwe subsystemen toevoegen.
@@ -385,9 +394,19 @@ Deze volgorde vervangt de oudere voorlopige nummering waarin 0.32 direct voor Pl
 - Geavanceerde opties pas met extra functies uitbreiden wanneer duidelijk is dat die voor gewone schrijvers ruis veroorzaken. Verborgen functies mogen nooit gegevens verwijderen.
 
 ### 0.33 — Informatiearchitectuur en AI-positionering
-- Na gebruik van 0.32 beoordelen of Boekenplank, huidig boek en applicatiefuncties voldoende duidelijk van elkaar onderscheiden zijn.
-- De positie van Schrijverspersona definitief beoordelen als globale AI-/schrijffunctie. De AI-schakelaar uit 0.32 blijft leidend: persona/profiel/geheugen zijn inhoud, maar alleen relevant wanneer AI wordt gebruikt.
-- Geen grote navigatieherbouw zonder concrete UX-winst; de rustige lijn uit `UI_GUIDE.md` blijft leidend.
+
+**0.33.0 — gebouwd voor review**
+- De linkerrail volgt één declaratieve keten: **effectieve toestand → railmodel → weergave**. De renderer doet uitsluitend zichtbaarheid; redirects en paneel-sluitacties zitten apart in een commitstap.
+- Vier groepen: **BIBLIOTHEEK**, **HUIDIG BOEK**, **AI-CONTEXT** en **PROGRAMMA**. AI-CONTEXT bevat uitsluitend Boekgeheugen en Boekprofiel; Schrijverspersona blijft globaal onder PROGRAMMA.
+- Eén centrale fallbackregel: verdwijnt een pagina door een gecommitteerde statewijziging, dan naar **Inhoud** met open boek en anders naar **Boekenplank**. Preview verandert de bestemming nooit.
+- Rail is verticaal scrollbaar op lage schermhoogtes zonder de bestaande railbreedte te vergroten; review meet 700, 720 en 768 px, zowel in- als uitgeklapt.
+- Contextteksten maken het onderscheid expliciet: persona = schrijver/globaal, profiel = dit boek, geheugen = wat AI over dit boek moet blijven weten.
+- De 0.33.0-tests controleren zowel invarianten als handmatig uitgeschreven verwachte rails; runtime omvat 16 combinaties plus overgangen en herstart.
+- Testhardening uit reviewronde 33 is meegenomen vóór productcode.
+
+**0.33.1 — alleen indien nodig**
+- Uitsluitend correcties uit Claude-review of zichtbaar gebruik: state-overgangen, lage-schermlayout en tekst/layoutfouten. Geen nieuwe subsystemen of nieuwe AI-logica.
+- Daarna 0.33 sluiten en door naar 0.34.
 
 ### 0.34 — Planning tijdens het schrijven
 - Inklapbaar **In dit hoofdstuk** naast de editor met gekoppelde scènes en relevante personages.
@@ -399,3 +418,8 @@ Deze volgorde vervangt de oudere voorlopige nummering waarin 0.32 direct voor Pl
 ### Daarna
 - Nieuwe schrijf- of publicatiesubsystemen alleen toevoegen op basis van concreet gebruik, vergelijking met andere schrijfsystemen en een korte technische/UX-review. Eerst moet de bestaande applicatie als één geheel rustig en voorspelbaar blijven.
 
+
+- **0.32.5:** startup-hotfix voor `ManuscriptEditor`: volledige constructorinitialisatie hersteld; geen functionele uitbreiding.
+- **0.32.6:** vrije publicatietekst krijgt dezelfde echte dirty-baseline als hoofdstukken en Planning-notities; Qt-reviewtests worden gehard tegen onverwachte modale dialogen en de startupstructuur krijgt een AST-vangnet.
+
+- **0.32.7:** test-hardening: generieke unreachable-codecontrole en suitebrede QMessageBox-guard; geen productgedrag gewijzigd. Hiermee is de 0.32-polishreeks functioneel afgerond wanneer reviewronde 33 groen is.

@@ -425,6 +425,9 @@ def stylesheet(name: str) -> str:
 
     QFrame#panel, QWidget#panel {{ background: {t['panel']}; border: 0; }}
     QFrame#toolrail {{ background: {t['panel2']}; border: 0; }}
+    QScrollArea#navScroll, QWidget#navScrollContent {{ background: transparent; border: 0; }}
+    QScrollArea#navScroll > QWidget > QWidget {{ background: transparent; }}
+    QScrollArea#navScroll QScrollBar:vertical {{ width: 5px; margin: 0; }}
     QFrame#editorTopbar {{ background: {t['panel']}; border-bottom: 1px solid {t['border_subtle']}; }}
     QFrame#historyBanner {{ background: {t['history']}; border: 0; }}
     QLabel#historyBannerLabel {{ color: {t['history_text']}; background: transparent; font-weight: 600; }}
