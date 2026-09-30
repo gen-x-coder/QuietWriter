@@ -7,7 +7,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QFrame, QHBoxLayout, QInputDialog, QMainWindow,
+    QApplication, QButtonGroup, QFileDialog, QFrame, QHBoxLayout, QInputDialog, QMainWindow,
     QLabel, QMessageBox, QPushButton, QScrollArea, QStatusBar, QVBoxLayout, QWidget
 )
 
@@ -31,7 +31,7 @@ from .persona_page import PersonaPage
 from .planning import PlanningPage
 from .settings_page import SettingsPage
 from .trash_page import TrashPage
-from .rail_model import RailState, build_rail_view, fallback_destination
+from .rail_model import RAIL_GROUPS, RailState, build_rail_view, fallback_destination
 
 class MainWindow(QMainWindow):
     def __init__(self, settings, library, models):
@@ -59,6 +59,10 @@ class MainWindow(QMainWindow):
         self.rail_layout = QVBoxLayout(self.rail_content)
         self.rail_layout.setContentsMargins(0, 2, 0, 2); self.rail_layout.setSpacing(6)
         self.rail_scroll.setWidget(self.rail_content)
+        self.program_host = QWidget(); self.program_host.setObjectName('navProgramHost')
+        self.program_layout = QVBoxLayout(self.program_host)
+        self.program_layout.setContentsMargins(0, 0, 0, 0); self.program_layout.setSpacing(6)
+        self._rail_separator_widgets = {}
 
         self.stack = CurrentPageStack()
         self.start = StartPage(library)
@@ -77,6 +81,8 @@ class MainWindow(QMainWindow):
         root.addWidget(self.rail); root.addWidget(self.stack, 1)
 
         self.nav_buttons = []
+        self.nav_selection_group = QButtonGroup(self)
+        self.nav_selection_group.setExclusive(True)
         self.nav_group_labels = []
         self._rail_item_widgets = {}
         self._rail_group_widgets = {}
@@ -89,6 +95,7 @@ class MainWindow(QMainWindow):
         self.library_group_label = self._register_nav_group('library', tr('nav.group.library', 'BIBLIOTHEEK'))
         self.bookshelf_button = self._register_nav_item('bookshelf', 'shelf', tr('nav.bookshelf', 'Boekenplank'), self.go_home)
 
+        self._register_nav_separator('current_book')
         self.book_group_label = self._register_nav_group('current_book', tr('nav.group.current_book', 'HUIDIG BOEK'))
         self.write_button = self._register_nav_item('contents', 'books', tr('nav.contents', 'Inhoud'), self.show_editor)
         self.planning_button = self._register_nav_item('planning', 'planning', tr('nav.planning', 'Planning'), self.show_planning)
@@ -97,15 +104,18 @@ class MainWindow(QMainWindow):
         self.export_button = self._register_nav_item('export', 'export', tr('nav.export', 'Exporteren'), self.show_export)
         self.integrity_button = self._register_nav_item('integrity', 'shield', tr('nav.integrity', 'Integriteit'), self.show_integrity)
 
+        self._register_nav_separator('ai_context')
         self.ai_context_group_label = self._register_nav_group('ai_context', tr('nav.group.ai_context', 'AI-CONTEXT'))
         self.book_memory_button = self._register_nav_item('book_memory', 'memory', tr('nav.book_memory', 'Boekgeheugen'), self.show_book_memory)
         self.book_profile_button = self._register_nav_item('book_profile', 'book-profile', tr('nav.book_profile', 'Boekprofiel'), self.show_book_profile)
 
-        self.program_group_label = self._register_nav_group('program', tr('nav.group.program', 'PROGRAMMA'))
-        self.persona_button = self._register_nav_item('persona', 'persona', tr('nav.persona', 'Schrijverspersona'), self.show_persona)
-        self.settings_button = self._register_nav_item('settings', 'settings', tr('nav.settings', 'Instellingen'), self.open_settings)
-        self.trash_button = self._register_nav_item('trash', 'trash', tr('nav.trash', 'Prullenbak'), self.show_trash)
         self.rail_layout.addStretch()
+        self._register_nav_separator('program', layout=self.program_layout)
+        self.program_group_label = self._register_nav_group('program', tr('nav.group.program', 'PROGRAMMA'), layout=self.program_layout)
+        self.persona_button = self._register_nav_item('persona', 'persona', tr('nav.persona', 'Schrijverspersona'), self.show_persona, layout=self.program_layout)
+        self.settings_button = self._register_nav_item('settings', 'settings', tr('nav.settings', 'Instellingen'), self.open_settings, layout=self.program_layout)
+        self.trash_button = self._register_nav_item('trash', 'trash', tr('nav.trash', 'Prullenbak'), self.show_trash, layout=self.program_layout)
+        self.rail_shell_layout.addWidget(self.program_host, 0)
 
         # Rechter gereedschapsrail. De functie-iconen openen/sluiten hun eigen paneel.
         # Een aparte 'rechterpaneel tonen/verbergen'-knop is daardoor overbodig.
@@ -117,6 +127,7 @@ class MainWindow(QMainWindow):
             b=QPushButton(); b.setObjectName('railButton'); b.setProperty('iconName', icon_name); b.setIcon(icon(icon_name)); b.setIconSize(QSize(24,24)); b.setFixedHeight(48); b.setToolTip(tip); b.setAccessibleName(tip); b.setCheckable(checkable); b.clicked.connect(fn); b.setProperty('toolLabel', tip); self.tool_layout.addWidget(b); self.tool_buttons.append(b); return b
         self.tool_menu_button = trb('menu', tr('nav.menu', 'Menu'), self.toggle_toolrail, checkable=False)
         self.search_button = trb('search', tr('tool.search', 'Zoeken'), self.editor_page.show_search)
+        self.chapter_context_button = trb('planning', tr('tool.chapter_context', 'In dit hoofdstuk'), self.editor_page.show_chapter_context)
         self.ai_button = trb('spark', tr('tool.ai', 'AI-assistent'), self.editor_page.show_ai)
         self.spell_button = trb('spell', tr('tool.spell', 'Spellingscontrole'), self.editor_page.show_spell)
         self.insert_button = trb('insert', tr('tool.insert', 'Toevoegen'), self.editor_page.show_insert_menu)
@@ -307,17 +318,17 @@ class MainWindow(QMainWindow):
             return page.save() is not False
         return True
 
-    def _nav_group(self, label):
+    def _nav_group(self, label, *, layout=None):
         heading = QLabel(label)
         heading.setObjectName('navGroupLabel')
         heading.setProperty('navGroupText', label)
         heading.setContentsMargins(11, 6, 0, 0)
-        self.rail_layout.addWidget(heading)
+        (layout or self.rail_layout).addWidget(heading)
         self.nav_group_labels.append(heading)
         return heading
 
-    def _register_nav_group(self, key, label):
-        heading = self._nav_group(label)
+    def _register_nav_group(self, key, label, *, layout=None):
+        heading = self._nav_group(label, layout=layout)
         heading.setProperty('railGroupKey', key)
         self._rail_group_widgets[key] = heading
         return heading
@@ -327,19 +338,30 @@ class MainWindow(QMainWindow):
         b.setObjectName('navButton')
         b.setProperty('iconName', icon_name); b.setIcon(icon(icon_name)); b.setIconSize(QSize(22,22))
         b.setToolTip(label); b.setAccessibleName(label); b.setCheckable(checkable)
-        # De hoofdrail gedraagt zich als navigatie, niet als een set toggles.
+        # Eén expliciete groep overbrugt ook widgets met verschillende parents
+        # (scrollgebied versus vast PROGRAMMA-blok).
         if checkable:
-            b.setAutoExclusive(True)
+            b.setAutoExclusive(False)
+            self.nav_selection_group.addButton(b)
         b.clicked.connect(fn)
         b.setProperty('navLabel', label)
         (layout or self.rail_layout).addWidget(b); self.nav_buttons.append(b)
         return b
 
-    def _register_nav_item(self, key, icon_name, label, fn, checkable=True):
-        button = self._nav_button(icon_name, label, fn, checkable=checkable)
+    def _register_nav_item(self, key, icon_name, label, fn, checkable=True, *, layout=None):
+        button = self._nav_button(icon_name, label, fn, checkable=checkable, layout=layout)
         button.setProperty('railItemKey', key)
         self._rail_item_widgets[key] = button
         return button
+
+    def _register_nav_separator(self, before_group, *, layout=None):
+        separator = QFrame()
+        separator.setObjectName('navGroupSeparator')
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFixedHeight(1)
+        (layout or self.rail_layout).addWidget(separator)
+        self._rail_separator_widgets[before_group] = separator
+        return separator
 
     def _configure_rail_tab_order(self):
         for buttons in (self.nav_buttons, self.tool_buttons):
@@ -413,6 +435,8 @@ class MainWindow(QMainWindow):
         if not in_editor and self.editor_page.preview_live_book:
             self.editor_page.exit_history_preview()
         self.toolrail.setVisible(in_editor)
+        if in_editor and hasattr(self.editor_page, 'chapter_context'):
+            self.editor_page.refresh_chapter_context()
         has_book = self.active_book() is not None
         self._apply_feature_visibility()
         self._sync_nav_selection()
@@ -424,19 +448,29 @@ class MainWindow(QMainWindow):
 
     def _sync_nav_selection(self):
         current = self.stack.currentWidget()
-        for b in (self.bookshelf_button, self.write_button, self.planning_button, self.book_details_button, self.book_profile_button, self.book_memory_button, self.media_button, self.integrity_button, self.export_button, self.persona_button, self.settings_button, self.trash_button): b.setChecked(False)
-        if current is self.start: self.bookshelf_button.setChecked(True)
-        elif current is self.editor_page: self.write_button.setChecked(True)
-        elif current is self.planning_page: self.planning_button.setChecked(True)
-        elif self.book_details_page is not None and current is self.book_details_page: self.book_details_button.setChecked(True)
-        elif current is self.book_profile_page: self.book_profile_button.setChecked(True)
-        elif current is self.book_memory_page: self.book_memory_button.setChecked(True)
-        elif current is self.media_manager_page: self.media_button.setChecked(True)
-        elif current is self.integrity_page: self.integrity_button.setChecked(True)
-        elif current is self.export_page: self.export_button.setChecked(True)
-        elif current is self.persona: self.persona_button.setChecked(True)
-        elif current is self.settings_page: self.settings_button.setChecked(True)
-        elif current is self.trash: self.trash_button.setChecked(True)
+        target = None
+        if current is self.start: target = self.bookshelf_button
+        elif current is self.editor_page: target = self.write_button
+        elif current is self.planning_page: target = self.planning_button
+        elif self.book_details_page is not None and current is self.book_details_page: target = self.book_details_button
+        elif current is self.book_profile_page: target = self.book_profile_button
+        elif current is self.book_memory_page: target = self.book_memory_button
+        elif current is self.media_manager_page: target = self.media_button
+        elif current is self.integrity_page: target = self.integrity_button
+        elif current is self.export_page: target = self.export_button
+        elif current is self.persona: target = self.persona_button
+        elif current is self.settings_page: target = self.settings_button
+        elif current is self.trash: target = self.trash_button
+
+        if target is None:
+            self.nav_selection_group.setExclusive(False)
+            for button in self.nav_selection_group.buttons():
+                button.setChecked(False)
+            self.nav_selection_group.setExclusive(True)
+            return
+        target.setChecked(True)
+        if target.parent() is self.rail_content and target.isVisible():
+            self.rail_scroll.ensureWidgetVisible(target, 0, 8)
 
     def save_active(self):
         if self.stack.currentWidget() is self.planning_page:
@@ -849,6 +883,16 @@ class MainWindow(QMainWindow):
             button.setVisible(view.is_item_visible(key))
         for key, heading in self._rail_group_widgets.items():
             heading.setVisible(self.rail_expanded and view.is_group_visible(key))
+
+        # In the collapsed rail the text headings disappear. Thin separators
+        # retain the same grouping without adding visual noise. A separator is
+        # only useful when its group and at least one preceding group are visible.
+        group_order = [group.key for group in RAIL_GROUPS]
+        visible_groups = set(view.visible_groups)
+        for key, separator in self._rail_separator_widgets.items():
+            index = group_order.index(key)
+            has_visible_before = any(group in visible_groups for group in group_order[:index])
+            separator.setVisible((not self.rail_expanded) and key in visible_groups and has_visible_before)
         return view
 
     def _render_feature_buttons(self, *, ai_enabled=None, spell_enabled=None):
@@ -998,7 +1042,10 @@ class MainWindow(QMainWindow):
         # Feature visibility is an editor invariant, not a one-off settings side effect.
         self.ai_button.setVisible(ai_enabled)
         self.spell_button.setVisible(spell_enabled)
+        chapter_context_available = self.editor_page.chapter_context_available()
+        self.chapter_context_button.setVisible(chapter_context_available)
         self.search_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.search)
+        self.chapter_context_button.setChecked(bool(chapter_context_available and right_visible and self.editor_page.right.currentWidget() is self.editor_page.chapter_context))
         self.ai_button.setChecked(bool(ai_enabled and right_visible and self.editor_page.right.currentWidget() is self.editor_page.ai))
         self.spell_button.setChecked(bool(spell_enabled and right_visible and self.editor_page.right.currentWidget() is self.editor_page.spell))
         self.insert_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.insert)
@@ -1007,6 +1054,7 @@ class MainWindow(QMainWindow):
         self.ai_button.setEnabled(bool(ai_enabled and not corrupt_chapter))
         self.spell_button.setEnabled(bool(spell_enabled and not corrupt_chapter))
         self.insert_button.setEnabled(not corrupt_chapter)
+        self.chapter_context_button.setEnabled(chapter_context_available)
         if hasattr(self, 'delete_chapter_button'):
             total = sum(len(sec.chapters) for sec in self.editor_page.book.sections) if self.editor_page.book else 0
             self.delete_chapter_button.setEnabled(bool(in_editor and self.editor_page.chapter and not self.editor_page.preview_live_book and total > 1))

@@ -65,7 +65,10 @@ class UIRegressionTests(unittest.TestCase):
 
     def test_left_nav_buttons_are_exclusive_navigation_not_toggles(self):
         source = MAIN.read_text(encoding="utf-8")
-        self.assertIn("b.setAutoExclusive(True)", source)
+        self.assertIn("self.nav_selection_group = QButtonGroup(self)", source)
+        self.assertIn("self.nav_selection_group.setExclusive(True)", source)
+        self.assertIn("self.nav_selection_group.addButton(b)", source)
+        self.assertNotIn("b.setAutoExclusive(True)", source)
         self.assertNotIn("self.stories", source)
         self.assertNotIn("StoryBrowser", source)
         self.assertIn("if self.stack.currentWidget() is self.persona:", source)

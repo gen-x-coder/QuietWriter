@@ -425,7 +425,7 @@ def stylesheet(name: str) -> str:
 
     QFrame#panel, QWidget#panel {{ background: {t['panel']}; border: 0; }}
     QFrame#toolrail {{ background: {t['panel2']}; border: 0; }}
-    QScrollArea#navScroll, QWidget#navScrollContent {{ background: transparent; border: 0; }}
+    QScrollArea#navScroll, QWidget#navScrollContent, QWidget#navProgramHost {{ background: transparent; border: 0; }}
     QScrollArea#navScroll > QWidget > QWidget {{ background: transparent; }}
     QScrollArea#navScroll QScrollBar:vertical {{ width: 5px; margin: 0; }}
     QFrame#editorTopbar {{ background: {t['panel']}; border-bottom: 1px solid {t['border_subtle']}; }}
@@ -486,6 +486,7 @@ def stylesheet(name: str) -> str:
     QPushButton#railButton:checked {{ background: {t['accent_soft']}; border-left: 3px solid {t['accent']}; color: {t['accent']}; }}
     QPushButton#railButton:checked:focus {{ border-color: {t['focus']}; border-left-color: {t['accent']}; }}
     QLabel#navGroupLabel {{ color: {t['muted']}; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; background: transparent; }}
+    QFrame#navGroupSeparator {{ background: {t['border_subtle']}; border: 0; min-height: 1px; max-height: 1px; margin: 3px 9px; }}
     QPushButton#navButton {{ border: 1px solid transparent; border-left: 3px solid transparent; border-radius: 8px; padding: 8px 10px; text-align: left; font-weight: 600; }}
     QPushButton#navButton:hover {{ background: {t['hover']}; }}
     QPushButton#navButton:focus {{ border-color: {t['focus']}; border-left-color: {t['focus']}; }}

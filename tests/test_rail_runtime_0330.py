@@ -12,13 +12,16 @@ from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
 from quietwriter.storage import Library
+from quietwriter.themes import stylesheet
 from quietwriter.ui.main_window import MainWindow
 from quietwriter.ui.rail_model import RailState, build_rail_view
 
 
 @pytest.fixture(scope='module')
 def app():
-    return QApplication.instance() or QApplication([])
+    instance = QApplication.instance() or QApplication([])
+    instance.setStyleSheet(stylesheet('Helder'))
+    return instance
 
 
 def _settings(path: Path, *, ai=True, advanced=True, expanded=True):
@@ -75,6 +78,9 @@ def test_low_height_rail_scrolls_without_forcing_window_taller(app):
             assert window.rail_scroll.viewport().width() >= 194
             if window.rail_scroll.verticalScrollBar().isVisible():
                 assert window.rail_scroll.verticalScrollBar().width() <= 8
+            # PROGRAMMA is outside the scrolling viewport and remains reachable.
+            assert not window.program_host.isHidden()
+            assert window.settings_button.geometry().bottom() <= window.program_host.height()
 
         window.close()
 
@@ -124,4 +130,18 @@ def test_commit_redirects_hidden_integrity_page_to_contents(app):
         assert window._settings_return_page is window.editor_page
         window.return_from_settings(); app.processEvents()
         assert window.stack.currentWidget() is window.editor_page
+        window.close()
+
+
+def test_collapsed_rail_shows_group_separators_without_headings(app):
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        lib = Library(root / 'workspace')
+        window = MainWindow(_settings(root / 'settings.ini', ai=True, advanced=True, expanded=False), lib, [])
+        window.show(); app.processEvents()
+        window.open_book(lib.create_book('Separators')); app.processEvents()
+        window.rail_expanded = False
+        window._apply_nav_width(False); app.processEvents()
+        assert all(heading.isHidden() for heading in window._rail_group_widgets.values())
+        assert all(not sep.isHidden() for sep in window._rail_separator_widgets.values())
         window.close()
