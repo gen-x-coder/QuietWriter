@@ -19,8 +19,12 @@ def read_version() -> str:
 
 
 def version_tuple(version: str) -> tuple[int, int, int, int]:
-    numbers = [int(n) for n in re.findall(r'\d+', version)[:4]]
-    return tuple((numbers + [0, 0, 0, 0])[:4])  # type: ignore[return-value]
+    # Windows requires a numeric 4-part file version. Use only the SemVer core
+    # so 1.0.0-rc1 and the later 1.0.0 both map to 1.0.0.0; the complete
+    # prerelease label remains visible in FileVersion/ProductVersion strings.
+    core = version.split('-', 1)[0].split('+', 1)[0]
+    numbers = [int(n) for n in re.findall(r'\d+', core)[:3]]
+    return tuple((numbers + [0, 0, 0, 0])[:3] + [0])  # type: ignore[return-value]
 
 
 TEMPLATE = """VSVersionInfo(

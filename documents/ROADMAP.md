@@ -2,7 +2,9 @@
 
 ## Naar 1.0 — actief vanaf 0.35
 
-De featurefase is afgesloten. Vanaf 0.35 geldt één harde regel: alleen werk dat QuietWriter **stabiel, begrijpelijk of distribueerbaar** maakt blijft in de 1.0-lijn; nieuwe AI-functies en andere uitbreidingen gaan naar v2. Het volledige afvinkplan staat in `PLAN_1_0.md`.
+De featurefase is afgesloten. Vanaf 0.35 geldt één harde regel: alleen werk dat QuietWriter **stabiel, begrijpelijk of distribueerbaar** maakt blijft in de 1.0-lijn; nieuwe AI-functies en andere uitbreidingen gaan naar v2. Het volledige afvinkplan staat in `dev/PLAN_1_0.md`.
+
+**AI-positionering voor 1.0:** QuietWriter gebruikt AI uitsluitend als **Meelezer**. De Meelezer analyseert tekst, geeft feedback en controleert onder meer persona, feiten, continuïteit en consistentie. QuietWriter presenteert AI niet als schrijver of co-auteur en biedt geen functie om manuscripttekst te laten schrijven of herschrijven.
 
 **0.35 — releasefundament**
 - Crashvangnet naar lokale per-computer opslag, Qt-logging en zichtbare foutmelding.
@@ -11,13 +13,13 @@ De featurefase is afgesloten. Vanaf 0.35 geldt één harde regel: alleen werk da
 
 **0.36 — Windows en verpakking**
 - **0.36.0:** schone allowlist-staging + lokale/CI PyInstaller-onedir bouwroute; ontwikkelmap en distributiemap zijn fysiek gescheiden.
-- Volgende stap: first-run wizard, daarna echte portable Windows-smoketest en eerste Windows-testmatrix.
+- **Afgerond richting RC1:** first-run wizard, portable Windows-build, smoketest, DEV/PROD-profielen, Meelezer-positionering en release-hardening.
 
 **0.37 — praktijkgebruik**
 - Echte oude boeken, groot boek, Dropbox/OneDrive, compacte documentatie en dagelijkse praktijktests.
 
 **1.0.0-rc1 → 1.0.0**
-- Feature freeze, alleen bugs, 2–3 weken dagelijks schrijven en geen bekende dataverliesbug.
+- **RC1 gestart (1 oktober 2026).** Feature freeze: alleen bugs. Voor 1.0 volgen 2–3 weken dagelijks schrijven, de resterende Windows-/grote-boektests en geen bekende dataverliesbug.
 
 ## Historische roadmap
 
@@ -251,7 +253,7 @@ De AI-laag krijgt voorrang boven de eerder geplande portable Markdown-media. De 
 - **0.23.5 — AI-context/geheugenactie hardening — afgerond:** geheugenvoorstellen geven deterministische opslagfeedback en binden eerst aan het actieve boek; Planning-context is letterlijk inspecteerbaar in Context bekijken en wordt als expliciet geselecteerde context sterker in de systeemprompt gepositioneerd.
 - **0.23.6 — Onthouden hotfix — afgerond:** goedgekeurde geheugenvoorstellen worden als reeds samengestelde geheugenstate opgeslagen en kunnen niet meer vlak vóór de write door de stale Boekgeheugen-editor worden teruggedraaid.
 - **0.23.7 — Geheugenbevestiging — afgerond:** geslaagde Onthouden-acties geven een subtiele, blijvende QuietWriter-bevestiging in de AI-chat; deze lokale notices worden niet terug naar het model gestuurd.
-- **0.23.8 — AI-snelacties — afgerond:** vier bewerkbare prompttemplates in het AI-paneel: Feedback, Herschrijf selectie, Persona-check en Feitencheck. Snelacties versturen nooit automatisch; Herschrijf selectie is alleen actief bij echte manuscriptselectie.
+- **0.23.8 — AI-snelacties — historisch:** destijds vier bewerkbare prompttemplates. **Herschrijf selectie is in 0.36.3 verwijderd**; voor 1.0 blijven Feedback, Persona-check en Feitencheck over en is de AI-rol expliciet Meelezer.
 - **0.23.9 — Compacte AI-zijbalk en thinking-regie — afgerond:** de chat krijgt weer de meeste ruimte; Context en Snelacties zijn inklapbare hulpmiddelen onder de composer, Huidig hoofdstuk is impliciet de standaardcontext, Context bekijken gebruikt een aparte inspectiedialoog en AI-instellingen kunnen provider-thinking expliciet uitschakelen.
 - **0.23.10 — Thinking-capabilities zichtbaar — afgerond:** modeldetectie leest provider-metadata en markeert alleen modellen waarbij thinking aantoonbaar uitschakelbaar is met 🧠; model-id en presentatielabel blijven gescheiden en de thinking-instelling volgt bekende capability-state.
 - **0.23.11 — Ollama thinking-capability fallback — afgerond:** `/api/show.capabilities` wordt gebruikt wanneer gedetailleerde thinking-controlmetadata ontbreekt; 🧠 staat voor thinking/reasoning-support en de UI onderscheidt bekende uitschakelbaarheid van een capability-only `think:false`-verzoek.
@@ -397,7 +399,7 @@ Deze volgorde vervangt de oudere voorlopige nummering waarin 0.32 direct voor Pl
 - **0.32.4:** koude-startnavigatie en gedeelde tekstbron voor Planning-notities/documentbrede editorbewerkingen; geen valse notes-autosave of Unicode-normalisatie.
 
 **0.32.0 — eerste stap, geïmplementeerd**
-- AI aan/uit is één duidelijke productschakelaar: AI-assistent, Schrijverspersona, Boekprofiel en Boekgeheugen volgen dezelfde zichtbaarheid. De bestanden blijven bestaan wanneer AI tijdelijk uit staat.
+- AI aan/uit is één duidelijke productschakelaar: Meelezer, Schrijverspersona, Boekprofiel en Boekgeheugen volgen dezelfde zichtbaarheid. De bestanden blijven bestaan wanneer AI tijdelijk uit staat.
 - Nieuwe instelling **Geavanceerde opties gebruiken**, standaard aan. In de eerste versie valt alleen Integriteit & herstel hieronder.
 - Spellingscontrole uit betekent direct geen rode onderstrepingen en geen spellingspaneel/-knop; opnieuw starten is niet nodig.
 - Integriteit toont de herkomst van de gekozen herstelkopie zonder het bestaande herstelbeleid te veranderen.
@@ -545,3 +547,11 @@ Status: geïmplementeerd. Nieuwe gebruikers/contextinstellingen starten uit; bes
 
 ### 0.35.4 — afsluiting 0.35
 Planning custom values behouden; undefined-name CI-gate; Python 3.12+ officieel vastgelegd.
+
+## Releasepad-status 0.36.1
+
+- First-run wizard gebouwd volgens het 0.35-contract.
+- Nieuwe gebruikers: taal/thema, werkmap, spelling en AI; AI standaard uit.
+- Bestaande gebruikers migreren stil via `first_run_done`.
+- Eén executable ondersteunt gescheiden productie- en ontwikkelprofielen met `--profile prod|dev`.
+- Volgende stap: Windows-runtime review van first-run/profielisolatie, daarna verdere portable-build polish en Windows-matrix.

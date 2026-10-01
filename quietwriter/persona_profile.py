@@ -19,7 +19,7 @@ SECTIONS = (
     PersonaSection('dialogue', 'Dialoog & interactie', 'Hoe personages spreken, hoeveel subtekst je gebruikt en hoe dialoog, handeling en gedachten elkaar afwisselen.'),
     PersonaSection('emotion_intimacy', 'Emotie, spanning & intimiteit', 'Hoe expliciet of impliciet je emotie, conflict, romantiek, lichamelijkheid, intimiteit en geweld behandelt.'),
     PersonaSection('scenes_pacing', 'Scènes & verteltempo', 'Hoe scènes beginnen en eindigen, informatie wordt gedoseerd en spanning, rust en overgangen worden opgebouwd.'),
-    PersonaSection('editorial', 'Redactionele voorkeuren', 'Waar AI op moet letten bij feedback of herschrijven en welke ingrepen het juist niet automatisch moet doen.'),
+    PersonaSection('editorial', 'Redactionele voorkeuren', 'Waar de meelezer op moet letten bij feedback en analyse, en welke kenmerken van jouw eigen stijl hij moet bewaken.'),
     PersonaSection('avoid', 'Vermijden', 'Clichés, woorden, formuleringen, verteltrucs en AI-gewoonten die niet bij jouw stijl passen.'),
     PersonaSection('examples', 'Voorbeeldteksten', 'Korte eigen fragmenten of beschrijvingen van passages die jouw gewenste stijl goed vertegenwoordigen.'),
     PersonaSection('additional', 'Aanvullende instructies', 'Vrije instructies die niet goed in de andere onderdelen passen. Oude vrije persona-inhoud wordt hier zonder verlies bewaard.'),

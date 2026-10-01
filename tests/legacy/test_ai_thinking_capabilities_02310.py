@@ -68,7 +68,8 @@ def test_openrouter_uses_supported_parameters_for_reasoning_capability():
 
 def test_settings_model_combo_keeps_raw_model_id_separate_from_brain_label():
     source = Path('quietwriter/ui/settings_page.py').read_text(encoding='utf-8')
-    assert "label = f'🧠 {name}' if supported else name" in source
+    assert "icons.append('🧠')" in source
+    assert "label = f\"{' '.join(icons)} {name}\" if icons else name" in source
     assert 'self.model.addItem(label, name)' in source
     assert 'self.model.findData(current)' in source
     assert 'return str(data if data is not None else self.model.currentText()).strip()' in source

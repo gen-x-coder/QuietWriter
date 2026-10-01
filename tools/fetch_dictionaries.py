@@ -3,7 +3,7 @@
 De bestanden komen in ./dictionaries/, waar dictionary_catalog.py ze als
 'Meegeleverd' vindt. OpenTaal is vrij te gebruiken onder de Revised BSD
 License (3-clause) en/of CC BY 3.0; de licentiekop staat in nl_NL.aff zelf en
-wordt hier ook als apart bestand meegeleverd (zie THIRD_PARTY_LICENSES.md).
+wordt hier ook als apart bestand meegeleverd (zie documents/licenses/THIRD_PARTY_LICENSES.md).
 """
 from __future__ import annotations
 

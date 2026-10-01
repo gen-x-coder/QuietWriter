@@ -63,7 +63,8 @@ def test_model_refresh_keeps_capabilities_from_api_show():
 def test_settings_brain_marker_is_based_on_thinking_support_not_only_known_disable_flag():
     source = Path('quietwriter/ui/settings_page.py').read_text(encoding='utf-8')
     assert "supported = info.get('thinking_supported') is True" in source
-    assert "label = f'🧠 {name}' if supported else name" in source
+    assert "icons.append('🧠')" in source
+    assert "label = f\"{' '.join(icons)} {name}\" if icons else name" in source
     assert 'enabled = enabled and can_disable is not False' in source
 
 

@@ -15,6 +15,7 @@ from ..themes import THEMES
 from ..icon_theme import icon
 from ..i18n import tr
 from ..typography import WritingTypography, typography_from_values
+from ..editor_view import DEFAULT_TEXT_WIDTH, normalize_text_width, text_width_pixels
 from .selection_toolbar import SelectionToolbar
 from .presentation_highlighter import ManuscriptHighlighter
 from .image_block_card import ImageBlockCard
@@ -34,7 +35,8 @@ class ManuscriptEditor(QTextEdit):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.max_text_width = 850
+        self.text_width_preset = DEFAULT_TEXT_WIDTH
+        self.max_text_width = text_width_pixels(self.text_width_preset)
         self.min_side_margin = 42
         self.setAcceptRichText(False)
         self._formatting = False
@@ -373,6 +375,18 @@ class ManuscriptEditor(QTextEdit):
     def showEvent(self, event):
         super().showEvent(event)
         self._schedule_image_sync()
+
+    def apply_text_width(self, preset: str):
+        """Apply a global presentation-only manuscript column width.
+
+        This changes only viewport margins. It never touches QTextDocument
+        contents, block formatting, saved Markdown, or export layout.
+        """
+        self.text_width_preset = normalize_text_width(preset)
+        self.max_text_width = text_width_pixels(self.text_width_preset)
+        self._update_margins()
+        self._schedule_image_layout()
+        self.viewport().update()
 
     def _update_margins(self):
         side = max(self.min_side_margin, (max(0, self.width()) - self.max_text_width) // 2)

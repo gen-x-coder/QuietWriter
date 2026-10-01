@@ -7,12 +7,14 @@ from PySide6.QtWidgets import (
     QGridLayout, QLineEdit, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSizePolicy, QVBoxLayout, QWidget
 )
 from .current_page_stack import CurrentPageStack
+from ..workspace_path import normalize_workspace_path
 from .. import APP_NAME
 from ..ai.providers import ProviderFactory
 from ..dictionary_catalog import DictionaryCatalog
 from ..i18n import tr
 from ..themes import THEMES, stylesheet
 from ..typography import WritingTypography, available_families, typography_from_values
+from ..editor_view import DEFAULT_TEXT_WIDTH, normalize_text_width
 from ..font_catalog import recommended_families, system_families_excluding_recommended
 from ..manuscript_markup import ManuscriptStyle
 from .dialogs import confirm
@@ -141,6 +143,23 @@ class SettingsPage(QWidget):
         self.editor_font_size = QSpinBox(); self.editor_font_size.setRange(11, 24); self.editor_font_size.setSuffix(' pt'); self.editor_font_size.setValue(self.original_typography.point_size)
         self._add_settings_field(al, tr('settings.appearance.font_size', 'Tekstgrootte'), self.editor_font_size)
 
+        self.editor_text_width = QComboBox()
+        for key, label in (
+            ('extra_narrow', tr('editor.text_width.extra_narrow', 'Extra smal')),
+            ('narrow', tr('editor.text_width.narrow', 'Smal')),
+            ('normal', tr('editor.text_width.normal', 'Normaal')),
+            ('wide', tr('editor.text_width.wide', 'Breed')),
+            ('extra_wide', tr('editor.text_width.extra_wide', 'Extra breed')),
+        ):
+            self.editor_text_width.addItem(label, key)
+        saved_text_width = normalize_text_width(settings.value('editor_text_width', DEFAULT_TEXT_WIDTH))
+        width_index = self.editor_text_width.findData(saved_text_width)
+        self.editor_text_width.setCurrentIndex(width_index if width_index >= 0 else self.editor_text_width.findData(DEFAULT_TEXT_WIDTH))
+        self._add_settings_field(
+            al, tr('settings.appearance.text_width', 'Tekstbreedte'), self.editor_text_width,
+            tr('settings.appearance.text_width_help', 'Bepaalt hoeveel witruimte links en rechts van de tekst zichtbaar is. Dit verandert alleen de weergave en heeft geen invloed op je manuscript of export.')
+        )
+
         self._add_settings_section(al, tr('settings.section.manuscript', 'Manuscript'))
         self.manuscript_line_spacing = QSpinBox(); self.manuscript_line_spacing.setRange(120, 200); self.manuscript_line_spacing.setSuffix(' %'); self.manuscript_line_spacing.setValue(int(settings.value('manuscript_line_spacing', 155, int) or 155))
         self.manuscript_indent = QSpinBox(); self.manuscript_indent.setRange(0, 60); self.manuscript_indent.setSuffix(' px'); self.manuscript_indent.setValue(int(settings.value('manuscript_indent', 28, int) or 28))
@@ -182,14 +201,14 @@ class SettingsPage(QWidget):
 
         # AI
         ai, ail = self._make_settings_page(
-            tr('settings.ai', 'AI'),
-            tr('settings.ai.intro', 'De AI-assistent helpt alleen wanneer jij daarom vraagt, bijvoorbeeld voor feedback of analyse. Hij wijzigt je manuscript nooit zelfstandig. QuietWriter bevat zelf geen AI-model: je verbindt een lokaal model via Ollama of een extern model via OpenRouter.')
+            tr('settings.ai', 'AI Meelezer'),
+            tr('settings.ai.intro', 'De AI Meelezer is een tweede paar ogen voor jouw manuscript. Hij helpt met feedback, persona- en stijlcontrole, feiten, continuïteit en consistentie, maar neemt het schrijven niet van je over. Hij schrijft of herschrijft geen manuscripttekst en wijzigt je manuscript nooit zelfstandig. QuietWriter bevat zelf geen AI-model: je verbindt een lokaal model via Ollama of een extern model via OpenRouter.')
         )
         self._add_settings_section(ail, tr('settings.section.ai_usage', 'Gebruik'))
-        self.ai_enabled = QCheckBox(tr('settings.ai.enable', 'AI-assistent gebruiken'))
+        self.ai_enabled = QCheckBox(tr('settings.ai.enable', 'AI Meelezer gebruiken'))
         self.ai_enabled.setChecked(settings.value('ai_enabled', True, bool))
-        self._add_settings_field(ail, tr('settings.ai.enable', 'AI-assistent gebruiken'), self.ai_enabled,
-            tr('settings.ai.enable_help', 'Toont de AI-assistent in de editor. Staat dit uit, dan blijven de AI-instellingen bewaard maar zijn ze niet actief en wordt er geen AI-provider gebruikt.'))
+        self._add_settings_field(ail, tr('settings.ai.enable', 'AI Meelezer gebruiken'), self.ai_enabled,
+            tr('settings.ai.enable_help', 'Toont de Meelezer in de editor. Staat dit uit, dan blijven de AI-instellingen bewaard maar zijn ze niet actief en wordt er geen AI-provider gebruikt.'))
 
         self._add_settings_section(ail, tr('settings.section.provider', 'Provider'))
         self.ai_provider = QComboBox(); self.ai_provider.addItem(tr('settings.ai.ollama_local', 'Ollama (lokaal)'), 'ollama'); self.ai_provider.addItem('OpenRouter', 'openrouter')
@@ -207,12 +226,16 @@ class SettingsPage(QWidget):
         self._add_settings_section(ail, tr('settings.section.model', 'Model'))
         self.model = QComboBox(); self.model.setEditable(False)
         self.ai_refresh_button = QPushButton(tr('settings.ai.refresh_models', 'Modellen ophalen')); self.ai_refresh_button.clicked.connect(self.refresh_models)
+        self.openrouter_free_only = QCheckBox(tr('settings.ai.openrouter_free_only', 'Alleen gratis modellen tonen'))
+        self.openrouter_free_only.setChecked(settings.value('openrouter_free_only', False, bool))
+        self.openrouter_free_only.setToolTip(tr('settings.ai.openrouter_free_only_help', 'Toont alleen OpenRouter-modellen waarvan de actuele prompt- en outputprijs nul zijn. Gebruik Modellen ophalen om de prijsstatus te verversen.'))
+        self.openrouter_free_only.toggled.connect(self._openrouter_free_filter_changed)
         modelbox = QWidget(); mv = QVBoxLayout(modelbox); mv.setContentsMargins(0,0,0,0); mv.setSpacing(5)
         modelrow = QWidget(); mh = QHBoxLayout(modelrow); mh.setContentsMargins(0,0,0,0); mh.setSpacing(8); mh.addWidget(self.model, 1); mh.addWidget(self.ai_refresh_button)
         self.ai_model_status = QLabel(''); self.ai_model_status.setObjectName('settingsFieldHelp'); self.ai_model_status.hide()
-        mv.addWidget(modelrow); mv.addWidget(self.ai_model_status)
+        mv.addWidget(modelrow); mv.addWidget(self.openrouter_free_only); mv.addWidget(self.ai_model_status)
         self._add_settings_field(ail, tr('settings.ai.model', 'Schrijf- en analysemodel'), modelbox,
-            tr('settings.ai.model_help', 'QuietWriter stuurt alleen de context die je in de AI-zijbalk kiest, samen met je schrijverspersona.\n🧠 = bij dit model kan thinking worden uitgeschakeld. Zonder thinking zijn antwoorden vaak sneller en directer; bij creatief schrijven kan dat prettiger werken. Het effect verschilt per model.'))
+            tr('settings.ai.model_help', 'QuietWriter stuurt alleen de context die je in de Meelezer-zijbalk kiest, samen met je schrijverspersona.\n🧠 = bij dit model kan thinking worden uitgeschakeld. Zonder thinking zijn antwoorden vaak sneller en directer. Het effect verschilt per model.'))
 
         self._add_settings_section(ail, tr('settings.section.ai_behavior', 'Gedrag'))
         self.ai_disable_thinking = QCheckBox(tr('settings.ai.disable_thinking', 'Thinking uitschakelen'))
@@ -222,14 +245,15 @@ class SettingsPage(QWidget):
         self.ai_quick_actions_expanded = QCheckBox(tr('settings.ai.quick_actions_expanded', 'Snelacties standaard uitklappen'))
         self.ai_quick_actions_expanded.setChecked(settings.value('ai_quick_actions_expanded', False, bool))
         self._add_settings_field(ail, tr('settings.ai.quick_actions_expanded', 'Snelacties standaard uitklappen'), self.ai_quick_actions_expanded,
-            tr('settings.ai.quick_actions_expanded_help', 'Toont de vier AI-snelacties direct wanneer het AI-paneel opent. Staat dit uit, dan blijven ze bereikbaar via de knop Snelacties zonder permanente ruimte in te nemen.'))
-        self._ai_controls = (self.ai_provider, self.ollama, self.openrouter_key, self.model, self.ai_refresh_button, self.ai_disable_thinking, self.ai_quick_actions_expanded)
+            tr('settings.ai.quick_actions_expanded_help', 'Toont de drie Meelezer-snelacties direct wanneer het paneel opent. Staat dit uit, dan blijven ze bereikbaar via de knop Snelacties zonder permanente ruimte in te nemen.'))
+        self._ai_controls = (self.ai_provider, self.ollama, self.openrouter_key, self.model, self.ai_refresh_button, self.openrouter_free_only, self.ai_disable_thinking, self.ai_quick_actions_expanded)
         self.ai_enabled.toggled.connect(self._update_ai_controls)
         self.ai_provider.currentIndexChanged.connect(self._ai_provider_changed)
         self.model.currentIndexChanged.connect(self._update_thinking_control)
+        self.model.currentIndexChanged.connect(self._ai_model_selection_changed)
         self._update_ai_controls()
         ail.addStretch(1)
-        self._add_settings_category(nav_lay, tr('settings.ai', 'AI'), ai)
+        self._add_settings_category(nav_lay, tr('settings.ai', 'AI Meelezer'), ai)
 
         # Spelling
         spelling, spl = self._make_settings_page(
@@ -468,6 +492,7 @@ class SettingsPage(QWidget):
             self.theme.currentText(),
             self.editor_font.currentText(),
             int(self.editor_font_size.value()),
+            normalize_text_width(self.editor_text_width.currentData()),
             int(self.manuscript_line_spacing.value()),
             int(self.manuscript_indent.value()),
             int(self.manuscript_paragraph_spacing.value()),
@@ -480,6 +505,7 @@ class SettingsPage(QWidget):
             self.ollama.text(),
             self.openrouter_key.text(),
             self._selected_ai_model(),
+            bool(self.openrouter_free_only.isChecked()),
             bool(self.ai_disable_thinking.isChecked()),
             bool(self.ai_quick_actions_expanded.isChecked()),
             bool(self.spell_enabled.isChecked()),
@@ -489,10 +515,10 @@ class SettingsPage(QWidget):
     def _wire_dirty_tracking(self):
         widgets = (
             self.language, self.theme, self.editor_font,
-            self.editor_font_size, self.manuscript_line_spacing,
+            self.editor_font_size, self.editor_text_width, self.manuscript_line_spacing,
             self.manuscript_indent, self.manuscript_paragraph_spacing,
             self.smart_quotes, self.advanced_options, self.root, self.cover_template,
-            self.ai_enabled, self.ai_provider, self.ollama, self.openrouter_key, self.model,
+            self.ai_enabled, self.ai_provider, self.ollama, self.openrouter_key, self.model, self.openrouter_free_only,
             self.ai_disable_thinking, self.ai_quick_actions_expanded,
             self.spell_enabled, self.spell_language,
         )
@@ -633,8 +659,24 @@ class SettingsPage(QWidget):
 
     def _remember_current_ai_model(self, provider_name: str | None = None):
         provider_name = provider_name or self._last_ai_provider
-        if provider_name in self._ai_model_drafts:
-            self._ai_model_drafts[provider_name] = self._selected_ai_model()
+        selected = self._selected_ai_model()
+        # Never erase a persisted model merely because a filtered/unfetched
+        # catalogue leaves the combo empty. Model discovery is transient UI
+        # state; the saved preference remains authoritative until the user
+        # actually selects another model.
+        if provider_name in self._ai_model_drafts and selected:
+            self._ai_model_drafts[provider_name] = selected
+
+    def _ai_model_selection_changed(self, *_):
+        # _populate_models blocks combo signals, so this only records an actual
+        # form selection and not a programmatic catalogue rebuild.
+        provider_name = str(self.ai_provider.currentData() or 'ollama')
+        self._remember_current_ai_model(provider_name)
+
+    def _openrouter_free_filter_changed(self, *_):
+        if str(self.ai_provider.currentData() or 'ollama') == 'openrouter':
+            self._populate_models('openrouter')
+        self._update_dirty_state()
 
     def _populate_models(self, provider_name: str | None = None):
         # Use the live form selection, never the already-persisted ai_provider.
@@ -644,28 +686,57 @@ class SettingsPage(QWidget):
         current = self._ai_model_drafts.get(provider_name, '')
         models = list(self._ai_models_by_provider.get(provider_name, []))
         info_by_name = self._ai_model_info_by_provider.get(provider_name, {})
+        filter_active = False
+        if provider_name == 'openrouter':
+            # Keep OpenRouter's own ordering within each group, but put models
+            # that are currently free before paid models. The free-only filter
+            # is only meaningful after a catalogue refresh supplied pricing
+            # metadata; before that, preserve the saved model visibly.
+            models.sort(key=lambda name: 0 if info_by_name.get(name, {}).get('free') is True else 1)
+            filter_active = self.openrouter_free_only.isChecked() and bool(info_by_name)
+            if filter_active:
+                models = [name for name in models if info_by_name.get(name, {}).get('free') is True]
+
         self.model.blockSignals(True)
         self.model.clear()
         for name in models:
             info = info_by_name.get(name, {})
             supported = info.get('thinking_supported') is True
             can_disable = info.get('thinking_can_disable')
-            label = f'🧠 {name}' if supported else name
+            is_free = provider_name == 'openrouter' and info.get('free') is True
+            icons = []
+            if is_free:
+                icons.append('🆓')
+            if supported:
+                icons.append('🧠')
+            label = f"{' '.join(icons)} {name}" if icons else name
             self.model.addItem(label, name)
+            tips = []
+            if is_free:
+                tips.append(tr('settings.ai.openrouter_free_tip', 'Gratis via OpenRouter volgens de laatst opgehaalde prijsinformatie.'))
             if supported:
                 if can_disable is True:
-                    tooltip = tr('settings.ai.thinking_model_tip', 'Dit model ondersteunt thinking en meldt expliciet dat thinking kan worden uitgeschakeld.')
+                    tips.append(tr('settings.ai.thinking_model_tip', 'Dit model ondersteunt thinking en meldt expliciet dat thinking kan worden uitgeschakeld.'))
                 elif can_disable is False:
-                    tooltip = tr('settings.ai.thinking_fixed_tip', 'Dit model ondersteunt thinking, maar de provider meldt geen uitgeschakelde modus voor deze variant.')
+                    tips.append(tr('settings.ai.thinking_fixed_tip', 'Dit model ondersteunt thinking, maar de provider meldt geen uitgeschakelde modus voor deze variant.'))
                 else:
-                    tooltip = tr('settings.ai.thinking_unknown_tip', 'Dit model ondersteunt thinking. QuietWriter kan thinking uitschakelen aanvragen, maar de provider meldt niet of deze modelvariant dat gegarandeerd ondersteunt.')
-                self.model.setItemData(self.model.count() - 1, tooltip, Qt.ToolTipRole)
+                    tips.append(tr('settings.ai.thinking_unknown_tip', 'Dit model ondersteunt thinking. QuietWriter kan thinking uitschakelen aanvragen, maar de provider meldt niet of deze modelvariant dat gegarandeerd ondersteunt.'))
+            if tips:
+                self.model.setItemData(self.model.count() - 1, '\n'.join(tips), Qt.ToolTipRole)
+
         if current:
             index = self.model.findData(current)
-            if index < 0:
+            explicit_free = current == 'openrouter/free' or current.endswith(':free')
+            if index < 0 and (not filter_active or explicit_free):
+                # Preserve a saved model that is not in the current provider
+                # response (for example before the first refresh/offline). An
+                # explicit :free model remains visible even with the filter on.
                 self.model.addItem(current, current)
                 index = self.model.count() - 1
-            self.model.setCurrentIndex(index)
+            if index >= 0:
+                self.model.setCurrentIndex(index)
+            elif self.model.count():
+                self.model.setCurrentIndex(0)
         elif self.model.count():
             self.model.setCurrentIndex(0)
         self.model.blockSignals(False)
@@ -725,14 +796,18 @@ class SettingsPage(QWidget):
 
     def _update_ai_controls(self, *_):
         enabled = bool(self.ai_enabled.isChecked())
+        provider_name = str(self.ai_provider.currentData() or 'ollama')
         for control in self._ai_controls:
             control.setEnabled(enabled)
+        self.openrouter_free_only.setVisible(provider_name == 'openrouter')
+        self.openrouter_free_only.setEnabled(enabled and provider_name == 'openrouter')
         self._update_thinking_control()
 
     def refresh_models(self):
         # Model discovery must not silently persist unsaved form values. Settings
         # remain transactional: only Opslaan writes them to QSettings.
         provider_name = str(self.ai_provider.currentData() or 'ollama')
+
         values = {
             'ai_provider': provider_name,
             'ollama_url': self.ollama.text(),
@@ -804,7 +879,12 @@ class SettingsPage(QWidget):
         self._save_feedback_timer.start()
 
     def save_settings(self):
-        old_root = self.settings.value('workspace', str(Path.home()/APP_NAME))
+        default_workspace = Path.home() / APP_NAME
+        old_root = str(normalize_workspace_path(
+            self.settings.value('workspace', str(default_workspace)), default_workspace
+        ))
+        normalized_workspace = str(normalize_workspace_path(self.root.text(), default_workspace))
+        self.root.setText(normalized_workspace)
         old_language = str(self.settings.value('language', 'nl') or 'nl')
         new_language = str(self.language.currentData() or 'nl')
         new_typography = typography_from_values(self.editor_font.currentText(), self.editor_font_size.value())
@@ -828,17 +908,19 @@ class SettingsPage(QWidget):
             'theme': self.theme.currentText(),
             'editor_font': new_typography.family,
             'editor_font_size': int(self.editor_font_size.value()),
+            'editor_text_width': normalize_text_width(self.editor_text_width.currentData()),
             'manuscript_line_spacing': int(self.manuscript_line_spacing.value()),
             'manuscript_indent': int(self.manuscript_indent.value()),
             'manuscript_paragraph_spacing': int(self.manuscript_paragraph_spacing.value()),
             'smart_quotes': self.smart_quotes.isChecked(),
             'advanced_options': self.advanced_options.isChecked(),
             'autosave': True,
-            'workspace': self.root.text(),
+            'workspace': normalized_workspace,
             'ai_enabled': self.ai_enabled.isChecked(),
             'ai_provider': str(self.ai_provider.currentData() or 'ollama'),
             'ollama_url': self.ollama.text(),
             'openrouter_api_key': self.openrouter_key.text(),
+            'openrouter_free_only': self.openrouter_free_only.isChecked(),
             'ai_disable_thinking': self.ai_disable_thinking.isChecked(),
             'ai_quick_actions_expanded': self.ai_quick_actions_expanded.isChecked(),
             'cover_header_template': self.cover_template.text().strip() or '/{slug}.jpg',
@@ -846,7 +928,9 @@ class SettingsPage(QWidget):
             'spell_language': self.spell_language.currentData() or '',
         }
         provider = values['ai_provider']
-        self._remember_current_ai_model(provider)
+        # The combo may show a filtered fallback selected programmatically.
+        # Only user-driven currentIndexChanged updates the draft; saving an
+        # unrelated setting must never replace the persisted model implicitly.
         values['ollama_model'] = self._ai_model_drafts.get('ollama', '')
         values['openrouter_model'] = self._ai_model_drafts.get('openrouter', '')
         previous = {
@@ -889,15 +973,17 @@ class SettingsPage(QWidget):
         self.original_editor_size = self.original_typography.point_size
         self.original_manuscript_style = ManuscriptStyle.from_settings(self.settings)
         self._preview_theme = str(self.original_theme or 'Helder')
-        for widget in (self.theme, self.editor_font, self.editor_font_size, self.manuscript_line_spacing, self.manuscript_indent, self.manuscript_paragraph_spacing, self.smart_quotes): widget.blockSignals(True)
+        for widget in (self.theme, self.editor_font, self.editor_font_size, self.editor_text_width, self.manuscript_line_spacing, self.manuscript_indent, self.manuscript_paragraph_spacing, self.smart_quotes): widget.blockSignals(True)
         self.theme.setCurrentText(str(self.original_theme or 'Helder'))
         self.editor_font.setCurrentText(self.original_editor_font)
         self.editor_font_size.setValue(self.original_editor_size)
+        width_index = self.editor_text_width.findData(normalize_text_width(self.settings.value('editor_text_width', DEFAULT_TEXT_WIDTH)))
+        self.editor_text_width.setCurrentIndex(width_index if width_index >= 0 else self.editor_text_width.findData(DEFAULT_TEXT_WIDTH))
         self.manuscript_line_spacing.setValue(self.original_manuscript_style.line_spacing_percent)
         self.manuscript_indent.setValue(self.original_manuscript_style.paragraph_indent_px)
         self.manuscript_paragraph_spacing.setValue(self.original_manuscript_style.paragraph_spacing_px)
         self.smart_quotes.setChecked(self.original_manuscript_style.smart_quotes)
-        for widget in (self.theme, self.editor_font, self.editor_font_size, self.manuscript_line_spacing, self.manuscript_indent, self.manuscript_paragraph_spacing, self.smart_quotes): widget.blockSignals(False)
+        for widget in (self.theme, self.editor_font, self.editor_font_size, self.editor_text_width, self.manuscript_line_spacing, self.manuscript_indent, self.manuscript_paragraph_spacing, self.smart_quotes): widget.blockSignals(False)
         self.advanced_options.setChecked(self.settings.value('advanced_options', True, bool))
         language_value = str(self.settings.value('language', 'nl') or 'nl')
         language_index = self.language.findData(language_value)
@@ -918,6 +1004,7 @@ class SettingsPage(QWidget):
         self._last_ai_provider = provider
         self.ollama.setText(self.settings.value('ollama_url', 'http://127.0.0.1:11434'))
         self.openrouter_key.setText(self.settings.value('openrouter_api_key', ''))
+        self.openrouter_free_only.setChecked(self.settings.value('openrouter_free_only', False, bool))
         self.ai_disable_thinking.setChecked(self.settings.value('ai_disable_thinking', False, bool))
         self.ai_quick_actions_expanded.setChecked(self.settings.value('ai_quick_actions_expanded', False, bool))
         self._populate_models(provider)

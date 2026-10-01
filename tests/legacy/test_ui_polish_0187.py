@@ -36,11 +36,11 @@ def test_ai_visibility_is_reapplied_after_restored_window_state():
 
 def test_program_language_is_selectable_and_persisted():
     settings = (ROOT / 'quietwriter' / 'ui' / 'settings_page.py').read_text(encoding='utf-8')
-    app = (ROOT / 'quietwriter' / 'app.py').read_text(encoding='utf-8')
+    startup = (ROOT / 'quietwriter' / 'startup.py').read_text(encoding='utf-8')
     assert "self.language.addItem(tr('language.english', 'Engels'), 'en')" in settings
     assert "'language': new_language" in settings
     assert "self.language.findData(language_value)" in settings
-    assert "set_locale(str(settings.value('language', 'nl') or 'nl'))" in app
+    assert "set_locale(str(settings.value('language', 'nl') or 'nl'))" in startup
 
 
 def test_language_copy_exists_in_both_locales():

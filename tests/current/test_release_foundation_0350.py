@@ -21,7 +21,10 @@ def test_app_uses_local_per_machine_log_and_windows_app_id():
     source = (ROOT / 'quietwriter' / 'app.py').read_text(encoding='utf-8')
     assert 'QStandardPaths.AppLocalDataLocation' in source
     assert "local_data / 'logs' / 'crash.log'" in source
-    assert "SetCurrentProcessExplicitAppUserModelID('LucasBonsel.QuietWriter')" in source
+    assert 'SetCurrentProcessExplicitAppUserModelID(profile.app_user_model_id)' in source
+    profiles = (ROOT / 'quietwriter' / 'runtime_profile.py').read_text(encoding='utf-8')
+    assert "app_user_model_id='LucasBonsel.QuietWriter'" in profiles
+    assert "app_user_model_id='LucasBonsel.QuietWriter.Dev'" in profiles
     assert 'QIcon(str(app_icon_path()))' in source
 
 

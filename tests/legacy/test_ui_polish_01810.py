@@ -2,7 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 THEMES = ROOT / 'quietwriter' / 'themes.py'
-GUIDE = ROOT / 'UI_GUIDE.md'
+GUIDE = ROOT / 'documents' / 'dev' / 'UI_GUIDE.md'
 
 
 def _theme_source():

@@ -91,7 +91,7 @@ gebruik.
 **Klaar als:** de hele Windows-matrix is groen en er zijn geen open 🔴-bevindingen.
 
 ### 1.0.0-rc1
-Functies bevroren; alleen nog bugs. De lijst met bekende problemen is gepubliceerd, en Lucas schrijft er 2–3 weken mee.
+**Status: gestart op 1 oktober 2026.** Functies zijn bevroren; alleen nog bugs. De lijst met bekende problemen staat in de RC1-release notes. De resterende RC-fase is 2–3 weken dagelijks schrijven en de nog open praktijktests uitvoeren.
 
 ### 1.0.0
 Pas als alle vijf de voorwaarden gelden:
@@ -113,3 +113,7 @@ Pas als alle vijf de voorwaarden gelden:
 
 ## Runtimecontract
 QuietWriter 1.0 ondersteunt Python 3.12 en nieuwer. De portable Windows-build bundelt zijn eigen Python-runtime.
+
+### Uitvoering 0.36.1
+
+First-run is gebouwd. Daarnaast zijn productie en development als runtimeprofielen gescheiden: eigen QSettings, standaardwerkmap, loglocatie en Windows AppUserModelID, terwijl dezelfde portable executable kan worden gebruikt. `--first-run` is uitsluitend een expliciete test/herconfiguratie-ingang; normale bestaande gebruikers krijgen de wizard niet opnieuw.

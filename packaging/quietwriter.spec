@@ -20,7 +20,7 @@ relatieve structuur terechtkomen als in de broncode:
     _internal/quietwriter/export_templates (exporting/templates.py)
     _internal/resources/fonts/...          (font_catalog.py)
     _internal/dictionaries/...             (dictionary_catalog.py, 'Meegeleverd')
-    _internal/LICENSE, THIRD_PARTY_LICENSES.md  (ui/about_page.py)
+    _internal/documents/licenses/LICENSE, THIRD_PARTY_LICENSES.md  (ui/about_page.py)
 """
 import sys
 from pathlib import Path
@@ -55,8 +55,8 @@ datas += _dir('quietwriter/export_templates')
 datas += [(str(ICON), 'quietwriter/resources')]
 datas += _dir('resources/fonts')
 datas += _dir('dictionaries')  # optioneel: alleen als tools/fetch_dictionaries.py gedraaid is
-datas += _file('LICENSE')
-datas += _file('THIRD_PARTY_LICENSES.md')
+datas += _file('documents/licenses/LICENSE', 'documents/licenses')
+datas += _file('documents/licenses/THIRD_PARTY_LICENSES.md', 'documents/licenses')
 
 hiddenimports = collect_submodules('spylls')
 

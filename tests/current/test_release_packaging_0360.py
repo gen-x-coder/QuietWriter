@@ -26,8 +26,8 @@ def test_release_staging_is_allowlist_based_and_clean():
     assert (STAGE / 'packaging' / 'quietwriter.spec').is_file()
     assert (STAGE / 'tools' / 'fetch_bundled_fonts.py').is_file()
     assert (STAGE / 'tools' / 'fetch_dictionaries.py').is_file()
-    assert (STAGE / 'LICENSE').is_file()
-    assert (STAGE / 'THIRD_PARTY_LICENSES.md').is_file()
+    assert (STAGE / 'documents' / 'licenses' / 'LICENSE').is_file()
+    assert (STAGE / 'documents' / 'licenses' / 'THIRD_PARTY_LICENSES.md').is_file()
 
     forbidden_dirs = {'tests', 'ppm', '.git', '.github', '.venv', '__pycache__'}
     for path in STAGE.rglob('*'):
@@ -41,7 +41,7 @@ def test_stage_manifest_matches_version_and_has_hashes():
     _prepare()
     data = json.loads((STAGE / 'STAGE_MANIFEST.json').read_text(encoding='utf-8'))
     assert data['product'] == 'QuietWriter'
-    assert data['version'] == '0.36.0'
+    assert data['version'] == '1.0.0-rc1'
     assert data['files']
     assert all(item['path'] and len(item['sha256']) == 64 and item['bytes'] >= 0 for item in data['files'])
 

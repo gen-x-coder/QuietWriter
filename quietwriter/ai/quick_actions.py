@@ -16,20 +16,13 @@ QUICK_ACTIONS: tuple[QuickAction, ...] = (
     QuickAction(
         'feedback',
         'Feedback',
-        'Geef concrete redactionele feedback op de meegegeven tekst. Benoem de belangrijkste sterke punten en verbeterpunten. Controleer relevante feiten, continuïteit en stijl tegen schrijverspersona, boekprofiel, boekgeheugen en geselecteerde Planning-context. Herschrijf de tekst niet automatisch.',
+        'Geef concrete redactionele feedback op de meegegeven tekst. Benoem de belangrijkste sterke punten en verbeterpunten. Controleer relevante feiten, continuïteit en stijl tegen schrijverspersona, boekprofiel, boekgeheugen en geselecteerde Planning-context. Geef advies en aandachtspunten, maar schrijf of herschrijf geen manuscripttekst.',
         'Vul een prompt in voor gerichte redactionele feedback.',
-    ),
-    QuickAction(
-        'rewrite_selection',
-        'Herschrijf selectie',
-        'Herschrijf uitsluitend de geselecteerde tekst zodat die beter aansluit op mijn schrijverspersona en boekprofiel. Behoud betekenis, feiten, perspectief en bedoeling, en respecteer Boekgeheugen en geselecteerde Planning-context. Geef alleen de herschreven tekst.',
-        'Vul een herschrijfopdracht in voor de geselecteerde manuscripttekst.',
-        requires_selection=True,
     ),
     QuickAction(
         'persona_check',
         'Persona-check',
-        'Controleer de meegegeven tekst tegen mijn schrijverspersona en boekprofiel. Benoem alleen concrete afwijkingen die er echt toe doen, met korte verbeteradviezen. Herschrijf de tekst niet automatisch.',
+        'Controleer de meegegeven tekst tegen mijn schrijverspersona en boekprofiel. Benoem alleen concrete afwijkingen die er echt toe doen, met korte verbeteradviezen. Schrijf geen vervangende manuscripttekst.',
         'Vul een prompt in om stijl en stem tegen persona en boekprofiel te controleren.',
     ),
     QuickAction(
