@@ -25,6 +25,7 @@ jobs:
         run: build_exe.cmd
 
       - name: Smoke test executable
+        timeout-minutes: 5
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
@@ -32,17 +33,17 @@ jobs:
           $v = (Select-String -Path quietwriter\__init__.py -Pattern '__version__\s*=\s*"(.+)"').Matches[0].Groups[1].Value
           $exe = "release\QuietWriter-$v\QuietWriter.exe"
           if (-not (Test-Path $exe)) { Write-Error "Executable ontbreekt: $exe"; exit 1 }
-          $p = Start-Process -FilePath $exe -PassThru
-          Start-Sleep -Seconds 15
-          if ($p.HasExited) { Write-Error "QuietWriter.exe stopte binnen 15 s (exitcode $($p.ExitCode))"; exit 1 }
-          Stop-Process -Id $p.Id -Force
-          Write-Host "QuietWriter.exe draait."
+          & $exe --smoke-test
+          if ($LASTEXITCODE -ne 0) { Write-Error "QuietWriter smoke test faalde met exitcode $LASTEXITCODE"; exit $LASTEXITCODE }
+          Write-Host "QuietWriter.exe volledige startup-smoketest: OK"
 
       - name: Verify release hygiene
         shell: pwsh
         run: |
           $v = (Select-String -Path quietwriter\__init__.py -Pattern '__version__\s*=\s*"(.+)"').Matches[0].Groups[1].Value
           $out = "release\QuietWriter-$v"
+          if (-not (Test-Path (Join-Path $out 'LEESMIJ.txt'))) { Write-Error 'LEESMIJ.txt ontbreekt naast QuietWriter.exe'; exit 1 }
+          if (Test-Path (Join-Path $out '_internal\LEESMIJ.txt')) { Write-Error 'LEESMIJ.txt staat onterecht in _internal'; exit 1 }
           foreach ($bad in @('ppm','tests','.git')) {
             if (Test-Path (Join-Path $out $bad)) { Write-Error "Verboden release-item: $bad"; exit 1 }
           }
@@ -71,4 +72,5 @@ jobs:
           files: |
             release/${{ steps.artifact.outputs.name }}
             release/${{ steps.artifact.outputs.name }}.sha256
+          body_path: documents/RELEASE_NOTES_1.0.0-rc1.md
           prerelease: ${{ contains(github.ref_name, 'rc') || startsWith(github.ref_name, 'v0.') }}

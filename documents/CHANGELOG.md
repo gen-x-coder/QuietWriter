@@ -1,3 +1,100 @@
+# Changelog
+
+## 1.0.0-rc1 — eerste publieke release candidate
+
+- Eerste release candidate voor de kleine testgroep; de functieset is bevroren en tot 1.0.0 worden alleen regressies en releaseblokkades opgelost.
+- Gebaseerd op de groen verklaarde 0.36.10-lijn: first-run, gescheiden DEV/PROD-profielen, schone portable Windows-build, lokale crashlogging, tweetaligheid en release-smoketest.
+- De AI-laag is expliciet een **Meelezer**: feedback, persona-/stijlcontrole, feiten, continuïteit en consistentie; QuietWriter positioneert hem niet als co-auteur of herschrijver.
+- OpenRouter toont gratis modellen herkenbaar en kan daarop filteren; OpenRouter-welkomsttekst is lokaal en verstuurt niets totdat de gebruiker zelf een vraag stelt. Ollama kan lokaal opwarmen in een achtergrondworker.
+- De editor heeft een globale, presentatie-only tekstbreedte (**Extra smal / Smal / Normaal / Breed / Extra breed**) zonder invloed op manuscript of export.
+- Release notes publiceren expliciet de bekende beperking en de nog uit te voeren praktijktests voor deze RC.
+
+## 0.36.10 — release-candidate fixes
+
+- OpenRouter: het filter **Alleen gratis modellen tonen** wist een opgeslagen model niet meer wanneer de catalogus nog niet is opgehaald. Het filter wordt pas toegepast zodra prijsmetadata beschikbaar is; expliciete `:free`-modellen blijven zichtbaar.
+- Editor: de tekstbreedtekeuze in de werkbalk is compacter gemaakt en het losse label is verwijderd.
+- Editor: lange boektitels worden alleen visueel met een ellipsis ingekort en kunnen de minimale vensterbreedte niet meer oprekken; de volledige titel blijft als tooltip beschikbaar.
+- LEESMIJ: opgeslagen met UTF-8 BOM voor maximale compatibiliteit met Windows-tekstviewers.
+- Releasebron: tijdelijke `release/stage`- en pytest-cachebestanden worden niet meer in de ontwikkel-ZIP meegenomen.
+- Vanaf deze versie geldt feature freeze richting `1.0.0-rc1`: alleen regressiefixes.
+
+## 0.36.9 — ruimere schaal voor tekstbreedte
+
+- De tekstbreedte heeft nu vijf niet-technische standen: **Extra smal / Smal / Normaal / Breed / Extra breed**.
+- De bestaande visuele breedtes schuiven één label op: de oude Smal wordt Extra smal, de oude Normaal wordt Smal, de oude Breed wordt Normaal en de oude Extra breed wordt Breed.
+- **Normaal** is daardoor voortaan merkbaar ruimer en beter passend op moderne brede schermen; **Extra breed** voegt een nieuwe, nog ruimere stand toe.
+- De standaardinstelling blijft semantisch **Normaal**. Bestaande gebruikers die Normaal hadden gekozen krijgen daardoor automatisch de nieuwe, ruimere normale weergave.
+- Tekstbreedte blijft uitsluitend een globale weergavevoorkeur en heeft geen invloed op manuscript of export.
+
+## 0.36.8 — globale tekstbreedte in de editor
+
+- De schrijfeditor krijgt een globale keuze **Smal / Normaal / Breed / Extra breed** waarmee de tekstkolom direct smaller of breder wordt zonder de lettergrootte te veranderen.
+- De keuze staat zowel direct in de editor als onder **Instellingen → Uiterlijk → Tekstbreedte** en geldt voor alle boeken binnen hetzelfde profiel.
+- Tekstbreedte is uitsluitend weergave: manuscripttekst, Markdown, woordtelling en export worden niet aangepast.
+- De editor bewaart een wijziging direct; Instellingen gebruikt dezelfde globale voorkeur en licht expliciet toe dat de keuze geen invloed heeft op manuscript of export.
+- Nieuwe regressietests bewaken de presets, veilige fallback en het presentation-only contract.
+
+## 0.36.7 — correcte UTF-8 in OpenRouter-streams
+
+- OpenRouter Server-Sent Events worden nu expliciet als UTF-8 gedecodeerd. Daardoor verschijnen Nederlandse tekens zoals `scène`, `één` en `café` niet meer als mojibake (`scÃ¨ne`, `Ã©Ã©n`).
+- Nieuwe regressietest bewaakt UTF-8-inhoud in gestreamde OpenRouter-antwoorden.
+
+## 0.36.6 — gratis OpenRouter-modellen beter zichtbaar
+
+- OpenRouter-modelmetadata bewaart nu de actuele prompt- en outputprijs en markeert modellen als gratis wanneer beide nul zijn; expliciete `:free`-varianten en `openrouter/free` worden eveneens herkend.
+- In de modelkeuzelijst staan gratis OpenRouter-modellen voortaan vóór betaalde modellen, met een `🆓`-markering; `🧠` blijft daarnaast zichtbaar wanneer thinking wordt ondersteund.
+- Nieuwe optie **Alleen gratis modellen tonen** filtert de OpenRouter-lijst zonder betaalde modellen te verwijderen uit de opgehaalde catalogus.
+- De optie is alleen zichtbaar bij OpenRouter en wordt als gebruikersvoorkeur opgeslagen. **Modellen ophalen** ververst de gratis/betaald-status.
+- Tooltips en Nederlandstalige/Engelstalige uitleg beschrijven wat de gratis-markering betekent.
+
+## 0.36.5 — release-hardening na review 53
+
+- Regressie in Instellingen opgelost: de genormaliseerde werkmap wordt nu in `save_settings()` bepaald, zodat Opslaan weer werkt voor thema, taal, AI, spelling en werkmap.
+- Alleen een echte werkmapwijziging toont nog de melding dat een herstart nodig is; oude en nieuwe paden worden daarvoor eerst op dezelfde manier genormaliseerd.
+- `--smoke-test` gebruikt een volledig tijdelijke INI en tijdelijke appdata en kan daardoor nooit meer de echte DEV-instellingen of het DEV-crashlog wijzigen.
+- Smoke-modus toont bij een opstartfout geen modale dialoog meer maar schrijft naar stderr en eindigt met exitcode 1; ook onverwachte Python-/threadfouten tijdens de smoketest maken de run rood.
+- De Windows CI-smoketest heeft een timeout van vijf minuten zodat een defect proces de workflow nooit uren kan blokkeren.
+- `LEESMIJ.txt` wordt na de PyInstaller-build expliciet naast `QuietWriter.exe` geplaatst en niet meer in `_internal/`. De releasecontrole bewaakt beide voorwaarden.
+- De LEESMIJ vermeldt nu expliciet dat de ZIP eerst moet worden uitgepakt, de SmartScreen-stappen, het crashlogpad en leesbare Windows-paden.
+- `build_exe.cmd` installeert zo nodig `pyflakes` en draait `tools/check_undefined_names.py` vóór staging/build, zodat undefined names een lokale release-build direct blokkeren.
+
+## 0.36.4 — veilige werkmap en snelle Meelezer-warmup
+
+- Relatieve werkmappen worden voortaan onder de gebruikersmap geplaatst en nooit relatief aan de programmamap. Dit geldt zowel voor de first-run wizard als voor Instellingen.
+- OpenRouter krijgt bij het openen van de Meelezer geen warmup-request meer. De welkomsttekst wordt lokaal getoond; er worden dan geen persona-, boekprofiel- of boekgeheugengegevens verstuurd en er worden geen tokens verbruikt.
+- Ollama-warmup start rechtstreeks in de achtergrondworker zonder voorafgaande synchrone bereikbaarheidstest. Een trage of niet-bereikbare provider bevriest de interface daardoor niet meer bij het openen.
+- Ook gewone Meelezer-verzoeken voeren geen blokkerende provider-check meer uit op de GUI-thread; netwerkfouten worden door de worker afgehandeld.
+- De Windows CI-smoketest gebruikt nu `--smoke-test` en laat QuietWriter de volledige startup doorlopen tot het hoofdvenster; een foutdialoog telt daardoor niet meer als geslaagde build.
+- `LEESMIJ.txt` toegevoegd aan de portable release met starten, SmartScreen, opslag/back-up, AI/privacy en probleemrapportage in Nederlands en Engels.
+
+## 0.36.3 — AI Meelezer als expliciete productrol
+
+- QuietWriter positioneert de AI-laag voortaan expliciet als **Meelezer**: een tweede paar ogen voor feedback, persona-/stijlcontrole, feiten, continuïteit en consistentie, niet als co-auteur.
+- **Herschrijf selectie** is verwijderd. De resterende snelacties zijn Feedback, Persona-check en Feitencheck en vragen nooit om vervangende manuscripttekst.
+- De basis-systeemprompt verbiedt het model om manuscripttekst te schrijven of te herschrijven, ook wanneer de gebruiker daarom vraagt; de Meelezer geeft observaties, vragen, suggesties en verbeterpunten waarmee de schrijver zelf beslist.
+- Instellingen → **AI Meelezer**, de editoractie **Meelezer**, het paneel **Meelees-assistent** en de first-run teksten gebruiken dezelfde positionering in Nederlands en Engels.
+- De uitleg bij **Schrijverspersona** beschrijft nu waarom de persona de Meelezer helpt om de eigen stem, toon, ritme en voorkeuren van de schrijver te herkennen zonder die stem over te nemen.
+- Een echt nieuw Meelezer-gesprek krijgt bij openen een model-warmup. Tijdens die korte initialisatie staat **De meelees-assistent wordt geladen…** in het gesprek en invoer blijft uitgeschakeld; de modelintroductie verschijnt daarna als eerste antwoord.
+- De warmup wordt pas gestart wanneer de gebruiker de Meelezer opent of **Nieuw gesprek** kiest. Er wordt voor de warmup geen manuscripttekst meegestuurd; de gewone manuscriptcontext wordt pas gebruikt bij een echte vraag.
+- Nieuwe regressietests bewaken de drie snelacties, het anti-ghostwriting promptcontract, de Meelezer-terminologie en de privacygrens van de warmup.
+
+## 0.36.2 — documentstructuur en directe first-run taalwissel
+
+- Ontwikkeldocumentatie is verplaatst naar `documents/dev/`; gebruikersdocumentatie staat in `documents/`.
+- QuietWriter- en third-partylicenties staan nu in `documents/licenses/`; build-staging, PyInstaller en de Over-pagina gebruiken deze nieuwe locatie.
+- De first-run wizard schakelt direct van taal zodra Nederlands/English wordt gekozen. Titel, stappen, uitleg en navigatieknoppen worden opnieuw vertaald zonder herstart.
+- De gekozen taal blijft na afronden van first-run actief voor de rest van dezelfde applicatiestart.
+- Nieuwe regressietests bewaken zowel de documentindeling als live taalwissel tijdens first-run.
+
+## 0.36.1
+
+- First-run wizard gebouwd met vier korte stappen: taal/thema, werkmap, spelling en AI.
+- Bestaande gebruikers worden stil gemigreerd via `first_run_done`; een bestaande standaardwerkmap telt ook als bestaand gebruik.
+- Productie- en ontwikkelprofiel toegevoegd aan dezelfde executable (`--profile prod|dev`) met gescheiden QSettings, werkmappen, logs en Windows AppUserModelID.
+- `--first-run` toegevoegd voor veilige, expliciete wizardtests zonder instellingen eerst te hoeven verwijderen.
+- Portable build maakt `QuietWriter PROD.cmd` en `QuietWriter DEV.cmd` als eenvoudige launchers.
+- AI blijft voor nieuwe gebruikers standaard uit; wanneer AI uit staat wordt Ollama bij startup niet benaderd.
+
 ## 0.36.0
 
 - Nieuwe allowlist-gebaseerde release-staging via `tools/prepare_release.py`; een rommelige ontwikkelmap kan niet meer rechtstreeks in de distributie terechtkomen.
@@ -12,8 +109,6 @@
 - Herstelt aangepaste Planning-statussen en relatietypen bij bewerkbare keuzelijsten.
 - CI faalt bij pyflakes alleen nog op ongedefinieerde namen/syntaxfouten, niet op ongebruikte imports.
 - Python 3.12+ is nu het expliciete bron/runtimecontract; `main.py` controleert dit vóór de app-import.
-
-# Changelog
 
 ## 0.35.3 — releasefundament afronden
 
@@ -229,6 +324,14 @@
 - Nieuwe regressietests voor brongebaseerde dirty-detectie, previewconsistentie en Settings-rollback.
 
 # Changelog
+
+## 0.36.6 — gratis OpenRouter-modellen beter zichtbaar
+
+- OpenRouter-modelmetadata bewaart nu de actuele prompt- en outputprijs en markeert modellen als gratis wanneer beide nul zijn; expliciete `:free`-varianten en `openrouter/free` worden eveneens herkend.
+- In de modelkeuzelijst staan gratis OpenRouter-modellen voortaan vóór betaalde modellen, met een `🆓`-markering; `🧠` blijft daarnaast zichtbaar wanneer thinking wordt ondersteund.
+- Nieuwe optie **Alleen gratis modellen tonen** filtert de OpenRouter-lijst zonder betaalde modellen te verwijderen uit de opgehaalde catalogus.
+- De optie is alleen zichtbaar bij OpenRouter en wordt als gebruikersvoorkeur opgeslagen. **Modellen ophalen** ververst de gratis/betaald-status.
+- Tooltips en Nederlandstalige/Engelstalige uitleg beschrijven wat de gratis-markering betekent.
 
 ## 0.32.1 — Instellingen direct toepassen en Planning-uitleg
 

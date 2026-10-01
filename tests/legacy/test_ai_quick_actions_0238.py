@@ -3,14 +3,14 @@ from pathlib import Path
 from quietwriter.ai.quick_actions import QUICK_ACTIONS, QUICK_ACTION_BY_KEY
 
 
-def test_quick_actions_are_small_editable_prompt_templates():
+def test_quick_actions_are_small_editable_reader_prompt_templates():
     assert [action.key for action in QUICK_ACTIONS] == [
-        'feedback', 'rewrite_selection', 'persona_check', 'fact_check'
+        'feedback', 'persona_check', 'fact_check'
     ]
     assert [action.label for action in QUICK_ACTIONS] == [
-        'Feedback', 'Herschrijf selectie', 'Persona-check', 'Feitencheck'
+        'Feedback', 'Persona-check', 'Feitencheck'
     ]
-    assert QUICK_ACTION_BY_KEY['rewrite_selection'].requires_selection is True
+    assert 'rewrite_selection' not in QUICK_ACTION_BY_KEY
     assert all(action.prompt.strip() for action in QUICK_ACTIONS)
     assert all('verstuur' not in action.prompt.lower() for action in QUICK_ACTIONS)
 
@@ -27,13 +27,11 @@ def test_feedback_and_fact_check_use_existing_context_layers():
     assert 'actuele manuscripttekst' in facts.lower()
 
 
-def test_rewrite_is_selection_only_and_preserves_story_intent():
-    action = QUICK_ACTION_BY_KEY['rewrite_selection']
-    assert action.requires_selection
-    prompt = action.prompt.lower()
-    assert 'uitsluitend de geselecteerde tekst' in prompt
-    assert 'behoud betekenis, feiten, perspectief en bedoeling' in prompt
-    assert 'geef alleen de herschreven tekst' in prompt
+def test_reader_actions_do_not_offer_replacement_manuscript_text():
+    feedback = QUICK_ACTION_BY_KEY['feedback'].prompt.lower()
+    persona = QUICK_ACTION_BY_KEY['persona_check'].prompt.lower()
+    assert 'schrijf of herschrijf geen manuscripttekst' in feedback
+    assert 'geen vervangende manuscripttekst' in persona
 
 
 def test_ai_panel_exposes_quick_actions_without_auto_send():

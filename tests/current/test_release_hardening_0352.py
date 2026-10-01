@@ -75,7 +75,7 @@ def test_dynamic_ai_section_and_quick_action_keys_exist_in_both_locales():
         *(f'persona.section.{key}.{field}' for key in ('voice_tone','narration','language','rhythm','description','dialogue','emotion_intimacy','scenes_pacing','editorial','avoid','examples','additional') for field in ('title','help')),
         *(f'book_profile.section.{key}.{field}' for key in ('genre_audience','premise','narration','tone','themes','setting','pacing','intensity','persona_overrides','editorial','additional') for field in ('title','help')),
         *(f'book_memory.section.{key}.{field}' for key in ('canon','book_style','decisions','preferences','open_points') for field in ('title','help')),
-        *(f'ai.quick.{key}.{field}' for key in ('feedback','rewrite_selection','persona_check','fact_check') for field in ('label','tooltip','prompt')),
+        *(f'ai.quick.{key}.{field}' for key in ('feedback','persona_check','fact_check') for field in ('label','tooltip','prompt')),
     }
     for language in ('nl', 'en'):
         data = json.loads((LOCALES / f'{language}.json').read_text(encoding='utf-8'))
@@ -110,8 +110,8 @@ def test_font_manifest_has_release_fonts_and_local_license_files():
 
 
 def test_release_license_inventory_exists_and_calls_out_dictionary_gate():
-    own = (ROOT / 'LICENSE').read_text(encoding='utf-8')
-    third = (ROOT / 'THIRD_PARTY_LICENSES.md').read_text(encoding='utf-8')
+    own = (ROOT / 'documents' / 'licenses' / 'LICENSE').read_text(encoding='utf-8')
+    third = (ROOT / 'documents' / 'licenses' / 'THIRD_PARTY_LICENSES.md').read_text(encoding='utf-8')
     assert 'Lucas Bonsel' in own
     for term in ('PySide6', 'Python', 'Requests', 'spylls', 'Merriweather', 'Literata', 'Source Serif 4', 'EB Garamond'):
         assert term in third

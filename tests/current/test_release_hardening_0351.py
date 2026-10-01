@@ -13,7 +13,7 @@ def test_about_wordmark_uses_hero_text_colour():
 
 
 def test_first_run_contract_does_not_use_workspace_as_sole_trigger():
-    text = (ROOT / 'FIRST_RUN_DESIGN_035.md').read_text(encoding='utf-8')
+    text = (ROOT / 'documents' / 'dev' / 'FIRST_RUN_DESIGN_035.md').read_text(encoding='utf-8')
     assert '`first_run_done`' in text
     assert 'workspace` is **geen** betrouwbare first-run-indicator' in text
     assert 'bestaande gebruiker' in text.lower()

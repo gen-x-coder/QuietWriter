@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import threading
+from decimal import Decimal, InvalidOperation
 import requests
 from .providers import AIProvider, StreamChunk
 
@@ -88,6 +89,22 @@ class OpenRouterProvider(AIProvider):
         names = {str(value) for value in supported}
         return 'reasoning' in names
 
+
+    @staticmethod
+    def _is_free_model(row: dict) -> bool:
+        model_id = str(row.get('id') or '')
+        if model_id == 'openrouter/free' or model_id.endswith(':free'):
+            return True
+        pricing = row.get('pricing') or {}
+        prompt = pricing.get('prompt')
+        completion = pricing.get('completion')
+        if prompt is None or completion is None:
+            return False
+        try:
+            return Decimal(str(prompt)) == 0 and Decimal(str(completion)) == 0
+        except (InvalidOperation, ValueError, TypeError):
+            return False
+
     def list_models(self) -> list[dict]:
         if not self.api_key: return []
         r = requests.get(f'{self.base_url}/models', headers=self.headers, timeout=8)
@@ -104,6 +121,9 @@ class OpenRouterProvider(AIProvider):
                 'thinking_can_disable': self._supports_reasoning(x),
                 'thinking_values': [],
                 'thinking_default': None,
+                'free': self._is_free_model(x),
+                'prompt_price': (x.get('pricing') or {}).get('prompt'),
+                'completion_price': (x.get('pricing') or {}).get('completion'),
             }
             for x in rows if x.get('id')
         ]
@@ -120,12 +140,20 @@ class OpenRouterProvider(AIProvider):
             if self._is_cancelled():
                 return
             self._raise_detailed(r, 'OpenRouter aanvraag mislukt')
-            for raw in r.iter_lines(decode_unicode=True):
+            # OpenRouter streams Server-Sent Events as UTF-8. Requests may
+            # otherwise decode text/event-stream as Latin-1 when the response
+            # omits an explicit charset, producing mojibake such as scÃ¨ne.
+            for raw in r.iter_lines(decode_unicode=False):
                 if self._is_cancelled():
                     break
                 if not raw:
                     continue
-                line = raw.strip()
+                if isinstance(raw, bytes):
+                    line = raw.decode('utf-8', errors='replace').strip()
+                else:
+                    # Keep compatibility with mocked/test responses that yield
+                    # text directly; real requests responses yield bytes here.
+                    line = str(raw).strip()
                 if line.startswith('data:'):
                     line = line[5:].strip()
                 if line == '[DONE]':

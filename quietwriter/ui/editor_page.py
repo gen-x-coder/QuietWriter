@@ -9,8 +9,8 @@ from PySide6.QtCore import QDate, QLocale, Qt, QSettings, QTimer, QSize, QPoint
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut, QTextCursor
 from PySide6.QtWidgets import (
     QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout,
-    QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QSplitter,
-    QTreeWidgetItem, QVBoxLayout, QWidget
+    QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QSplitter, QComboBox,
+    QTreeWidgetItem, QVBoxLayout, QWidget, QSizePolicy
 )
 
 from .current_page_stack import CurrentPageStack
@@ -34,6 +34,7 @@ from ..spell_engine import WordDictionary
 from ..storage import Chapter, Section, StorageWriteError, CorruptSourceError
 from ..themes import THEMES
 from ..typography import WritingTypography
+from ..editor_view import DEFAULT_TEXT_WIDTH, normalize_text_width
 from .dialogs import confirm, prompt_text
 from .history_panel import HistoryPanel
 from .chapter_context_panel import ChapterContextPanel
@@ -90,13 +91,36 @@ class EditorPage(QWidget):
         undo = QPushButton(); self.undo_button = undo; undo.setProperty('iconName','undo'); undo.setObjectName('compactButton'); undo.setIcon(icon('undo')); undo.setIconSize(QSize(22,22)); undo.setToolTip(tr('editor.undo', 'Ongedaan maken'))
         redo = QPushButton(); self.redo_button = redo; redo.setProperty('iconName','redo'); redo.setObjectName('compactButton'); redo.setIcon(icon('redo')); redo.setIconSize(QSize(22,22)); redo.setToolTip(tr('editor.redo', 'Opnieuw'))
         self.book_title_label = QLabel(''); self.book_title_label.setObjectName('bookTitleLabel')
+        self._book_title_full = ''
+        self.book_title_label.setMinimumWidth(0)
+        self.book_title_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self.autosave_status = QLabel(''); self.autosave_status.setObjectName('autosaveStatus')
-        tl.addWidget(undo); tl.addWidget(redo); tl.addSpacing(8); tl.addWidget(self.book_title_label); tl.addStretch(); tl.addWidget(self.autosave_status)
+        self.text_width_combo = QComboBox()
+        self.text_width_combo.setObjectName('editorTextWidth')
+        self.text_width_combo.setToolTip(tr('editor.text_width.tip', 'Tekstbreedte verandert alleen de weergave, niet je manuscript of export.'))
+        self.text_width_combo.setAccessibleName(tr('editor.text_width', 'Tekstbreedte'))
+        self.text_width_combo.setFixedWidth(112)
+        for key, label in (
+            ('extra_narrow', tr('editor.text_width.extra_narrow', 'Extra smal')),
+            ('narrow', tr('editor.text_width.narrow', 'Smal')),
+            ('normal', tr('editor.text_width.normal', 'Normaal')),
+            ('wide', tr('editor.text_width.wide', 'Breed')),
+            ('extra_wide', tr('editor.text_width.extra_wide', 'Extra breed')),
+        ):
+            self.text_width_combo.addItem(label, key)
+        current_width = normalize_text_width(self.main.settings.value('editor_text_width', DEFAULT_TEXT_WIDTH))
+        width_index = self.text_width_combo.findData(current_width)
+        self.text_width_combo.setCurrentIndex(width_index if width_index >= 0 else self.text_width_combo.findData(DEFAULT_TEXT_WIDTH))
+        self.text_width_combo.currentIndexChanged.connect(self._editor_text_width_changed)
+        tl.addWidget(undo); tl.addWidget(redo); tl.addSpacing(8); tl.addWidget(self.book_title_label, 1); tl.addStretch()
+        tl.addWidget(self.text_width_combo)
+        tl.addSpacing(8); tl.addWidget(self.autosave_status)
         self.chapter_title = QLineEdit(); self.chapter_title.setPlaceholderText(tr('editor.chapter_title_placeholder', 'Hoofdstuktitel')); self.chapter_title.setAlignment(Qt.AlignCenter); self.chapter_title.setObjectName('chapterTitle')
         _writing_typography = WritingTypography.from_settings(QSettings('QuietWriter','QuietWriter'))
         self.chapter_title.setFont(_writing_typography.title_font())
         self.chapter_title.editingFinished.connect(self.rename_current)
         self.editor = ManuscriptEditor(); self.editor.setObjectName('editor'); self.editor.textChanged.connect(self.on_text_changed); self.editor.cursorPositionChanged.connect(self._spell_follow_cursor); self.editor.document().contentsChange.connect(self._spell_contents_changed)
+        self.editor.apply_text_width(current_width)
         self.editor.set_image_resolver(self._resolve_editor_image_path)
         self.editor.imageEditRequested.connect(self._open_image_editor)
         self.editor.imageDeleteRequested.connect(self._delete_image_block)
@@ -180,6 +204,21 @@ class EditorPage(QWidget):
         self._configure_tab_order()
         QTimer.singleShot(0, self._position_contents_edge_button)
 
+    def _editor_text_width_changed(self, *_args):
+        preset = normalize_text_width(self.text_width_combo.currentData())
+        self.editor.apply_text_width(preset)
+        self.main.settings.setValue('editor_text_width', preset)
+        self.main.settings.sync()
+
+    def apply_text_width_setting(self, preset: str):
+        preset = normalize_text_width(preset)
+        self.editor.apply_text_width(preset)
+        index = self.text_width_combo.findData(preset)
+        if index >= 0 and index != self.text_width_combo.currentIndex():
+            self.text_width_combo.blockSignals(True)
+            self.text_width_combo.setCurrentIndex(index)
+            self.text_width_combo.blockSignals(False)
+
     def _configure_tab_order(self):
         """Keep the editor chrome in the same order visually and by keyboard."""
         controls = (
@@ -242,7 +281,7 @@ class EditorPage(QWidget):
         preserve_publication_context = self.content_stack.currentWidget() in (self.publication_editor, self.publication_setup) and self.chapter is None
         self.book = book
         self.chapter = None
-        self.book_title_label.setText(book.title)
+        self._set_book_title(book.title)
         self.publication_editor.adopt_book(book)
         self._rebuild_word_count_cache()
 
@@ -1713,7 +1752,7 @@ class EditorPage(QWidget):
         self.book = snapshot
         self._rebuild_word_count_cache()
         self.chapter = None; self.dirty = False
-        self.book_title_label.setText(snapshot.title)
+        self._set_book_title(snapshot.title)
         self.editor.setReadOnly(True); self.chapter_title.setReadOnly(True); self.tree.setDragEnabled(False)
         self.history_banner_label.setText(tr('history.preview_banner', 'Historische versie · {label}', label=self._history_label(row or {'created_at': ''})))
         self.history_banner.show()
@@ -1740,7 +1779,7 @@ class EditorPage(QWidget):
         self.book = book
         self.chapter = None
         self.dirty = False
-        self.book_title_label.setText(book.title)
+        self._set_book_title(book.title)
         self._rebuild_word_count_cache()
         chapter = None
         if preferred_chapter_id:
@@ -1892,7 +1931,7 @@ class EditorPage(QWidget):
         self._clean_text = ''
         self.tree.clear()
         self.chapter_title.clear()
-        self.book_title_label.clear()
+        self._set_book_title('')
         self.editor.blockSignals(True); self.editor.clear(); self.editor.blockSignals(False)
         self._sync_undo_redo()
         self.right.hide()
@@ -2053,8 +2092,27 @@ class EditorPage(QWidget):
         except RuntimeError:
             pass
 
+    def _set_book_title(self, title: str):
+        self._book_title_full = str(title or '')
+        self.book_title_label.setToolTip(self._book_title_full)
+        self._update_book_title_elision()
+
+    def _update_book_title_elision(self):
+        if not hasattr(self, 'book_title_label'):
+            return
+        # The title is presentation only and may never determine the minimum
+        # window width. Keep enough room for the editor controls/right panel.
+        available = max(80, min(360, self.width() // 4))
+        self.book_title_label.setMaximumWidth(available)
+        self.book_title_label.setText(
+            self.book_title_label.fontMetrics().elidedText(
+                self._book_title_full, Qt.ElideRight, available
+            )
+        )
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._update_book_title_elision()
         QTimer.singleShot(0, self._position_contents_edge_button)
 
     def _restore_splitter_widths(self):
@@ -2194,6 +2252,7 @@ class EditorPage(QWidget):
             return
         self.ai.refresh_quick_actions()
         self._toggle_right_widget(self.ai, self.ai.input)
+        self.ai.ensure_warmup()
 
     def show_spell(self):
         opening = not (self.right.isVisible() and self.right.currentWidget() is self.spell)

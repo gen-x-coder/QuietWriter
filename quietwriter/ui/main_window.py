@@ -18,6 +18,7 @@ from ..i18n import tr
 from ..search import BookSearchIndex
 from ..themes import THEMES, stylesheet
 from ..typography import typography_from_values
+from ..editor_view import DEFAULT_TEXT_WIDTH, normalize_text_width
 from ..manuscript_markup import ManuscriptStyle
 from ..storage import CorruptSourceError
 from ..planning_validation import FuturePlanningFormatError
@@ -47,7 +48,8 @@ class MainWindow(QMainWindow):
         self._document_status_text = ''
         self._restoring_document_status = False
         self.status.messageChanged.connect(self._status_message_changed)
-        self.setWindowTitle(APP_NAME); self.setWindowIcon(QIcon(str(app_icon_path()))); self.resize(1280, 720)
+        window_title = f'{APP_NAME} — DEV' if settings.applicationName() == 'QuietWriter-Dev' else APP_NAME
+        self.setWindowTitle(window_title); self.setWindowIcon(QIcon(str(app_icon_path()))); self.resize(1280, 720)
         self.rail_expanded = self.settings.value('nav_expanded', False, bool)
         self._feature_visibility_preview = None
 
@@ -136,7 +138,7 @@ class MainWindow(QMainWindow):
         self.tool_menu_button = trb('menu', tr('nav.menu', 'Menu'), self.toggle_toolrail, checkable=False)
         self.search_button = trb('search', tr('tool.search', 'Zoeken'), self.editor_page.show_search)
         self.chapter_context_button = trb('planning', tr('tool.chapter_context', 'In dit hoofdstuk'), self.editor_page.show_chapter_context)
-        self.ai_button = trb('spark', tr('tool.ai', 'AI-assistent'), self.editor_page.show_ai)
+        self.ai_button = trb('spark', tr('tool.ai', 'Meelezer'), self.editor_page.show_ai)
         self.spell_button = trb('spell', tr('tool.spell', 'Spellingscontrole'), self.editor_page.show_spell)
         self.insert_button = trb('insert', tr('tool.insert', 'Toevoegen'), self.editor_page.show_insert_menu)
         self.history_button = trb('history', tr('tool.history', 'Versiegeschiedenis'), self.editor_page.show_history)
@@ -161,6 +163,7 @@ class MainWindow(QMainWindow):
             str(self.settings.value('editor_font', 'Merriweather') or 'Merriweather'),
             int(self.settings.value('editor_font_size', 15, int) or 15),
         )
+        self.apply_editor_text_width(self.settings.value('editor_text_width', DEFAULT_TEXT_WIDTH))
         self._refresh_theme_icons(self._active_theme)
         self.editor_page.ai.apply_theme(self._active_theme)
 
@@ -893,6 +896,10 @@ class MainWindow(QMainWindow):
         self.editor_page.chapter_title.setFont(typography.title_font())
         self.planning_page.notes_page.editor.apply_typography(typography)
 
+    def apply_editor_text_width(self, preset: str):
+        """Apply the global manuscript view width without touching book data."""
+        self.editor_page.apply_text_width_setting(normalize_text_width(preset))
+
     def apply_manuscript_style(self, style: ManuscriptStyle | None = None):
         if style is None:
             style = ManuscriptStyle.from_settings(self.settings)
@@ -1089,6 +1096,7 @@ class MainWindow(QMainWindow):
         editor_font = str(self.settings.value('editor_font','Merriweather') or 'Merriweather')
         editor_size = int(self.settings.value('editor_font_size',15,int) or 15)
         self.apply_writing_font(editor_font, editor_size)
+        self.apply_editor_text_width(self.settings.value('editor_text_width', DEFAULT_TEXT_WIDTH))
         self.apply_manuscript_style()
         if writing_layout_changed:
             # Qt records QTextBlockFormat changes in the same Undo stack as text.

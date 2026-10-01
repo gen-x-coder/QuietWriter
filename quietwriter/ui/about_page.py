@@ -169,7 +169,7 @@ class AboutPage(QWidget):
         own_license = LicenseCard(
             tr('about.quietwriter_license', 'QuietWriter-licentie'),
             tr('about.quietwriter_license_help', 'Copyright © 2026 Lucas Bonsel. Alle rechten voorbehouden.'),
-            _root_text('LICENSE', 'about.license.load_error', 'De licentietekst kon niet worden geladen.'),
+            _root_text('documents/licenses/LICENSE', 'about.license.load_error', 'De licentietekst kon niet worden geladen.'),
         )
         own_license.setMaximumWidth(820)
         layout.addWidget(own_license)
@@ -177,7 +177,7 @@ class AboutPage(QWidget):
         third_party = LicenseCard(
             tr('about.third_party_licenses', 'Licenties van derden'),
             tr('about.third_party_licenses_help', 'Overzicht van software, lettertypen en andere componenten die QuietWriter gebruikt of kan meeleveren.'),
-            _root_text('THIRD_PARTY_LICENSES.md', 'about.license.load_error', 'De licentietekst kon niet worden geladen.'),
+            _root_text('documents/licenses/THIRD_PARTY_LICENSES.md', 'about.license.load_error', 'De licentietekst kon niet worden geladen.'),
         )
         third_party.setMaximumWidth(820)
         layout.addWidget(third_party)

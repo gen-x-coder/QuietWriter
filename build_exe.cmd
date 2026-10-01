@@ -7,6 +7,9 @@ cd /d "%~dp0"
 
 python -c "import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)" || (echo Python 3.12 of nieuwer is nodig. & exit /b 1)
 
+python -c "import pyflakes" >nul 2>&1 || python -m pip install pyflakes || exit /b 1
+python tools\check_undefined_names.py || exit /b 1
+
 rem 1. Schone build-bron maken. Vanaf hier bouwen we NIET meer uit de ontwikkelmap.
 python tools\prepare_release.py || exit /b 1
 cd /d "%~dp0release\stage"
@@ -29,6 +32,15 @@ set OUT=%~dp0release\QuietWriter-!VER!
 if exist "!OUT!" rmdir /s /q "!OUT!"
 mkdir "!OUT!" || exit /b 1
 xcopy /e /i /q /y "dist\QuietWriter\*" "!OUT!\" >nul || exit /b 1
+
+copy /y "documents\LEESMIJ.txt" "!OUT!\LEESMIJ.txt" >nul || exit /b 1
+if not exist "!OUT!\LEESMIJ.txt" (echo FOUT: LEESMIJ.txt ontbreekt naast QuietWriter.exe. & exit /b 1)
+
+rem Zelfde portable release kan met een geisoleerd ontwikkelprofiel starten.
+>"!OUT!\QuietWriter DEV.cmd" echo @echo off
+>>"!OUT!\QuietWriter DEV.cmd" echo start "" "%%~dp0QuietWriter.exe" --profile dev
+>"!OUT!\QuietWriter PROD.cmd" echo @echo off
+>>"!OUT!\QuietWriter PROD.cmd" echo start "" "%%~dp0QuietWriter.exe" --profile prod
 
 rem 5. Release hygiene: bron/tests/PPM mogen absoluut niet in de distributiemap staan.
 if exist "!OUT!\ppm" (echo FOUT: ppm staat in de release. & exit /b 1)

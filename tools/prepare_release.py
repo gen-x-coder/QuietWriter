@@ -25,8 +25,9 @@ ALLOWED_DIRS = (
 # Only these top-level/build files are needed to create the portable release.
 ALLOWED_FILES = (
     "main.py",
-    "LICENSE",
-    "THIRD_PARTY_LICENSES.md",
+    "documents/LEESMIJ.txt",
+    "documents/licenses/LICENSE",
+    "documents/licenses/THIRD_PARTY_LICENSES.md",
     "packaging/quietwriter.spec",
     "packaging/make_version_info.py",
     "tools/fetch_bundled_fonts.py",

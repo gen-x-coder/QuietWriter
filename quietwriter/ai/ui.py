@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QTextBrowser, QMessageBox, QFrame, QDialog, QDialogButtonBox, QCheckBox
 )
 from .providers import ProviderFactory
-from .context import ContextBuilder
+from .context import ContextBuilder, ContextBundle
 from .conversations import ConversationStore
 from .memory_suggestions import extract_memory_suggestions, proposal_instruction
 from .planning_context import PlanningSelection, build_planning_context_result, chapter_planning_preview
@@ -97,6 +97,8 @@ class AIPanel(QWidget):
         self._active_request_id = None
         self._planning_selection = PlanningSelection()
         self._pending_memory_suggestions = []
+        self._warming_up = False
+        self._warmup_attempted = False
         self.messages: list[dict] = []
         self.store = None
         self.theme_name = str(self.main.settings.value('theme','Helder') or 'Helder')
@@ -109,7 +111,7 @@ class AIPanel(QWidget):
         # the bottom near the composer; occasional context/quick-action tools
         # expand only when requested.
         top = QHBoxLayout()
-        lab = QLabel(tr('ai.title', 'AI-assistent')); lab.setObjectName('sectionTitle')
+        lab = QLabel(tr('ai.title', 'Meelees-assistent')); lab.setObjectName('sectionTitle')
         self.clear_button = QPushButton(tr('ai.new_conversation', 'Nieuw gesprek')); self.clear_button.setObjectName('suggestionButton'); self.clear_button.clicked.connect(self.clear_conversation)
         top.addWidget(lab); top.addStretch(); top.addWidget(self.clear_button)
         lay.addLayout(top)
@@ -266,6 +268,7 @@ class AIPanel(QWidget):
         busy=self.is_busy()
         self.action_button.setEnabled(True)
         self._set_action_state(busy)
+        self.input.setEnabled(not busy)
         self.clear_button.setEnabled(not busy)
         has_book = self.store is not None
         self.planning_context_button.setEnabled(not busy and has_book)
@@ -310,6 +313,8 @@ class AIPanel(QWidget):
         self._active_user_index = None
         self.store = ConversationStore(book) if book else None
         self.messages = self.store.load() if self.store else []
+        self._warming_up = False
+        self._warmup_attempted = bool(self.messages)
         self.context.setCurrentIndex(max(0, self.context.findData('chapter')))
         self.context_panel.hide(); self.context_toggle.setChecked(False)
         self._refresh_idle_context_summary()
@@ -562,8 +567,44 @@ class AIPanel(QWidget):
     def clear_conversation(self):
         if self.is_busy(): return
         self.messages = []
+        self._warming_up = False
+        self._warmup_attempted = False
         if self.store: self.store.save(self.messages)
         self._render_chat()
+        self.ensure_warmup()
+
+    def ensure_warmup(self):
+        """Prepare a genuinely new Reader conversation without blocking the UI.
+
+        No manuscript text is sent for this introduction. OpenRouter never
+        receives a warm-up request: its welcome is local, so no book/persona
+        data leaves the computer merely because the panel opens. Ollama may warm
+        the selected local model in a worker thread. The first real question
+        remains the first point at which manuscript text is sent.
+        """
+        if self.is_busy() or self.messages or self._warmup_attempted or self.store is None:
+            return
+        provider_name = str(self.main.settings.value('ai_provider', 'ollama') or 'ollama').lower()
+        self._warmup_attempted = True
+        if provider_name == 'openrouter':
+            self.messages.append(ConversationStore.entry('assistant', tr(
+                'ai.warmup.welcome',
+                'Ik ben jouw meelees-assistent. Ik kan feedback geven op je eigen tekst, bijvoorbeeld met een persona-check, feitencheck en controles op continuïteit en consistentie. Selecteer gerust een tekstfragment en stel daar een vraag over; ik lees mee en adviseer, maar neem het schrijven niet van je over.'
+            )))
+            self.store.save(self.messages)
+            self._render_chat()
+            return
+        provider, model = self._provider_model()
+        if not model:
+            self._warmup_attempted = False
+            return
+        context = ContextBundle(tr('ai.warmup.context_label', 'nog geen manuscriptcontext'), '', [])
+        self._continue_send(
+            provider, model, tr(
+                'ai.warmup.prompt',
+                'Start dit nieuwe gesprek met een korte introductie als mijn meelees-assistent. Leg uit dat je feedback, persona-checks, feitenchecks en controles op continuïteit en consistentie kunt doen, en dat ik tekst kan selecteren om daar een vraag over te stellen. Maak duidelijk dat jij meeleest en adviseert en het schrijven niet van mij overneemt. Schrijf of herschrijf geen manuscripttekst.'
+            ), context, warmup=True
+        )
 
     def _provider_model(self):
         provider = ProviderFactory.from_settings(self.main.settings)
@@ -577,9 +618,6 @@ class AIPanel(QWidget):
         provider, model = self._provider_model()
         if not model:
             QMessageBox.information(self, 'AI', tr('ai.model_required', 'Kies eerst een AI-model in Instellingen.')); return
-        if not provider.is_available():
-            QMessageBox.warning(self, 'AI', tr('ai.provider_unavailable', 'De geselecteerde AI-provider is niet bereikbaar of niet geconfigureerd.')); return
-
         builder = ContextBuilder(self.main)
         manuscript_context = builder.build(str(self.context.currentData() or 'chapter'))
         planning = self._planning_context_result()
@@ -594,7 +632,7 @@ class AIPanel(QWidget):
         self._continue_send(provider, model, prompt, manuscript_context, planning.text, chapter_planning_text)
 
 
-    def _continue_send(self, provider, model: str, prompt: str, context, planning_text: str = '', chapter_planning_text: str = ''):
+    def _continue_send(self, provider, model: str, prompt: str, context, planning_text: str = '', chapter_planning_text: str = '', *, warmup: bool = False):
         self._active_context = context
         self._refresh_idle_context_summary()
         persona=self.main.library.read_persona()
@@ -613,8 +651,12 @@ class AIPanel(QWidget):
             context_text=context_text,
         )
 
-        self.messages.append(ConversationStore.entry('user', prompt, {'pieces': context.pieces, 'scope': str(self.context.currentData() or 'chapter')}))
-        self._active_user_index=len(self.messages)-1
+        if warmup:
+            self._active_user_index = None
+        else:
+            self.messages.append(ConversationStore.entry('user', prompt, {'pieces': context.pieces, 'scope': str(self.context.currentData() or 'chapter')}))
+            self._active_user_index=len(self.messages)-1
+        self._warming_up = bool(warmup)
         self.current_assistant=''; self._final_started=False; self._thinking_text=''
         thinking_requested = bool(self.main.settings.value('ai_disable_thinking', False, bool))
         provider_name = str(getattr(provider, 'name', '') or '')
@@ -625,14 +667,17 @@ class AIPanel(QWidget):
         # provider parameter. Unknown/capability-only models may still receive
         # the best-effort request exactly as before.
         thinking_disabled = thinking_requested and capability != 'false'
-        self._render_chat(streaming_placeholder=True); self._start_thinking(tr('ai.working', 'AI werkt') if thinking_disabled else tr('ai.thinking_base', 'Denken'))
+        self._render_chat(streaming_placeholder=True)
+        if not warmup:
+            self._start_thinking(tr('ai.working', 'De Meelezer werkt') if thinking_disabled else tr('ai.thinking_base', 'Meelezen'))
 
-        # Eenvoudige, directe chatflow. Geen tokenberekeningen, geen automatische
-        # contextvensters en geen provider-specifieke tuning. QuietWriter stuurt
-        # alleen persona + boekprofiel + boekgeheugen + optionele hoofdstukplanning + optionele gerichte Planning-context + gekozen manuscriptcontext + een beperkte recente chat
-        # naar het geselecteerde model. De provider/modelruntime bepaalt de context.
+        # QuietWriter sends the stable Reader context plus a limited recent chat.
+        # A warm-up deliberately excludes manuscript text and uses a hidden user
+        # instruction only to initialize the model and introduce its Reader role.
         recent=[{'role':m['role'],'content':m['content']} for m in self.messages[-6:] if m.get('role') in {'user','assistant'}]
         messages=[{'role':'system','content':system_prompt}] + recent
+        if warmup:
+            messages.append({'role':'user','content':prompt})
         self._request_serial += 1
         request_id = (self._book_generation, self._request_serial)
         provider_options = {}
@@ -721,9 +766,14 @@ class AIPanel(QWidget):
         if not self._request_is_current(worker, request_id):
             return
         self._finish_thinking()
+        was_warmup = self._warming_up
+        self._warming_up = False
         if self.current_assistant.strip():
             context = self._active_context
-            visible, suggestions = extract_memory_suggestions(self.current_assistant)
+            if was_warmup:
+                visible, suggestions = self.current_assistant.strip(), []
+            else:
+                visible, suggestions = extract_memory_suggestions(self.current_assistant)
             if visible:
                 self.messages.append(ConversationStore.entry('assistant', visible, {'pieces': context.pieces if context else []}))
             if self.store: self.store.save(self.messages)
@@ -737,7 +787,15 @@ class AIPanel(QWidget):
         if not self._request_is_current(worker, request_id):
             return
         self._finish_thinking(); self.current_assistant=''
-        self.messages.append(ConversationStore.entry('assistant', f'Fout: {err}'))
+        was_warmup = self._warming_up
+        self._warming_up = False
+        if was_warmup:
+            self.messages.append(ConversationStore.entry('assistant', tr(
+                'ai.warmup.welcome',
+                'Ik ben jouw meelees-assistent. Ik kan feedback geven op je eigen tekst, bijvoorbeeld met een persona-check, feitencheck en controles op continuïteit en consistentie. Selecteer gerust een tekstfragment en stel daar een vraag over; ik lees mee en adviseer, maar neem het schrijven niet van je over.'
+            )))
+        else:
+            self.messages.append(ConversationStore.entry('assistant', f'Fout: {err}'))
         self._active_user_index=None
         if self.store: self.store.save(self.messages)
         self._render_chat()
@@ -745,7 +803,7 @@ class AIPanel(QWidget):
     def _chat_cancelled(self, worker, request_id):
         if not self._request_is_current(worker, request_id):
             return
-        self._finish_thinking(); self.render_timer.stop(); self.current_assistant=''
+        self._finish_thinking(); self.render_timer.stop(); self.current_assistant=''; self._warming_up = False
         # Een gestopte opdracht wordt niet als half gesprek bewaard.
         if self._active_user_index is not None and self._active_user_index == len(self.messages)-1:
             if self.messages[self._active_user_index].get('role') == 'user':
@@ -785,6 +843,13 @@ class AIPanel(QWidget):
         text = theme['text']
         muted = theme['muted']
         blocks=[]
+        role_label = html.escape(tr('ai.role_label', 'MEELEZER'))
+        if self._warming_up and not self.current_assistant:
+            loading = html.escape(tr('ai.warmup.loading', 'De meelees-assistent wordt geladen…'))
+            blocks.append(
+                f'<div align="left" style="margin:8px; color:{muted}; font-size:11px;">'
+                f'<b>QuietWriter</b> · {loading}</div><br>'
+            )
         for msg in self.messages:
             role = msg.get('role'); content = msg.get('content','')
             if role == 'user':
@@ -803,7 +868,7 @@ class AIPanel(QWidget):
                 body = markdown_to_html(content)
                 blocks.append(
                     f'<div align="left"><table width="96%" cellspacing="0" cellpadding="10" bgcolor="{ai_bg}">'
-                    f'<tr><td style="color:{text};"><span style="color:{muted}; font-size:10px; font-weight:600;">QUIETWRITER</span><br><div style="color:{text};">{body}</div></td></tr></table></div><br>'
+                    f'<tr><td style="color:{text};"><span style="color:{muted}; font-size:10px; font-weight:600;">{role_label}</span><br><div style="color:{text};">{body}</div></td></tr></table></div><br>'
                 )
         if streaming_placeholder and self.current_assistant:
             stream_text = self.current_assistant
@@ -814,7 +879,7 @@ class AIPanel(QWidget):
                 body = markdown_to_html(stream_text)
                 blocks.append(
                     f'<div align="left"><table width="96%" cellspacing="0" cellpadding="10" bgcolor="{ai_bg}">'
-                    f'<tr><td style="color:{text};"><span style="color:{muted}; font-size:10px; font-weight:600;">QUIETWRITER</span><br><div style="color:{text};">{body}</div></td></tr></table></div><br>'
+                    f'<tr><td style="color:{text};"><span style="color:{muted}; font-size:10px; font-weight:600;">{role_label}</span><br><div style="color:{text};">{body}</div></td></tr></table></div><br>'
                 )
         self.chat.setHtml(f'<html><body style="margin:4px; background:{theme["panel"]}; color:{text};">' + ''.join(blocks) + '</body></html>')
         cur=self.chat.textCursor(); cur.movePosition(QTextCursor.End); self.chat.setTextCursor(cur)
