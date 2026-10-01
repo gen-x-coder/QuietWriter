@@ -87,12 +87,12 @@ class EditorPage(QWidget):
         hb.addWidget(self.history_banner_label); hb.addStretch(); hb.addWidget(self.history_restore_btn); hb.addWidget(self.history_exit_btn)
         self.history_banner.hide()
         topbar = QFrame(); topbar.setObjectName('editorTopbar'); tl = QHBoxLayout(topbar); tl.setContentsMargins(14,8,18,8)
-        undo = QPushButton(); self.undo_button = undo; undo.setProperty('iconName','undo'); undo.setObjectName('compactButton'); undo.setIcon(icon('undo')); undo.setIconSize(QSize(22,22)); undo.setToolTip('Ongedaan maken')
-        redo = QPushButton(); self.redo_button = redo; redo.setProperty('iconName','redo'); redo.setObjectName('compactButton'); redo.setIcon(icon('redo')); redo.setIconSize(QSize(22,22)); redo.setToolTip('Opnieuw')
+        undo = QPushButton(); self.undo_button = undo; undo.setProperty('iconName','undo'); undo.setObjectName('compactButton'); undo.setIcon(icon('undo')); undo.setIconSize(QSize(22,22)); undo.setToolTip(tr('editor.undo', 'Ongedaan maken'))
+        redo = QPushButton(); self.redo_button = redo; redo.setProperty('iconName','redo'); redo.setObjectName('compactButton'); redo.setIcon(icon('redo')); redo.setIconSize(QSize(22,22)); redo.setToolTip(tr('editor.redo', 'Opnieuw'))
         self.book_title_label = QLabel(''); self.book_title_label.setObjectName('bookTitleLabel')
         self.autosave_status = QLabel(''); self.autosave_status.setObjectName('autosaveStatus')
         tl.addWidget(undo); tl.addWidget(redo); tl.addSpacing(8); tl.addWidget(self.book_title_label); tl.addStretch(); tl.addWidget(self.autosave_status)
-        self.chapter_title = QLineEdit(); self.chapter_title.setPlaceholderText('Hoofdstuktitel'); self.chapter_title.setAlignment(Qt.AlignCenter); self.chapter_title.setObjectName('chapterTitle')
+        self.chapter_title = QLineEdit(); self.chapter_title.setPlaceholderText(tr('editor.chapter_title_placeholder', 'Hoofdstuktitel')); self.chapter_title.setAlignment(Qt.AlignCenter); self.chapter_title.setObjectName('chapterTitle')
         _writing_typography = WritingTypography.from_settings(QSettings('QuietWriter','QuietWriter'))
         self.chapter_title.setFont(_writing_typography.title_font())
         self.chapter_title.editingFinished.connect(self.rename_current)
@@ -468,9 +468,9 @@ class EditorPage(QWidget):
                         self.main.library.create_version_with_file_overrides(old_book, {relative_path: local_text}, kind='conflict_local')
                         snapshot_exists = True
                     except Exception as snapshot_error:
-                        QMessageBox.critical(self, 'Lokale tekst niet veiliggesteld', 'De publicatietekst kon niet in Versiegeschiedenis worden bewaard. Het boek blijft open.\n\n' + str(snapshot_error))
+                        QMessageBox.critical(self, tr('publication.future.snapshot_failed_title', 'Lokale tekst niet veiliggesteld'), tr('publication.future.snapshot_failed_text', 'De publicatietekst kon niet in Versiegeschiedenis worden bewaard. Het boek blijft open.\n\n{error}', error=snapshot_error))
                         return 'failed'
-                QMessageBox.warning(self, 'Nieuwere QuietWriter nodig', 'Dit boek gebruikt inmiddels een nieuwere QuietWriter-versie. Je lokale publicatietekst is bewaard in Versiegeschiedenis. Het boek wordt gesloten; werk QuietWriter bij voordat je verdergaat.')
+                QMessageBox.warning(self, tr('publication.future.title', 'Nieuwere QuietWriter nodig'), tr('publication.future.text', 'Dit boek gebruikt inmiddels een nieuwere QuietWriter-versie. Je lokale publicatietekst is bewaard in Versiegeschiedenis. Het boek wordt gesloten; werk QuietWriter bij voordat je verdergaat.'))
                 self.main.force_return_to_bookshelf(old_book)
                 return 'failed'
             except Exception as error:
@@ -603,9 +603,8 @@ class EditorPage(QWidget):
                 if not changed:
                     if retried_after_conflict and not target_still_exists():
                         QMessageBox.warning(
-                            self, 'Verplaatsen niet uitgevoerd',
-                            'De boekstructuur is tijdens het synchroniseren gewijzigd. '
-                            'Het bronhoofdstuk of doel bestaat niet meer, daarom is de verplaatsing niet uitgevoerd.'
+                            self, tr('editor.move.not_done_title', 'Verplaatsen niet uitgevoerd'),
+                            tr('editor.move.source_missing', 'De boekstructuur is tijdens het synchroniseren gewijzigd. Het bronhoofdstuk of doel bestaat niet meer, daarom is de verplaatsing niet uitgevoerd.')
                         )
                     break
                 shadow = copy.copy(self.book)
@@ -622,9 +621,8 @@ class EditorPage(QWidget):
                     # indefinitely if sync software keeps changing the book.
                     self._handle_concurrency_issue(exc)
                     QMessageBox.warning(
-                        self, 'Verplaatsen niet uitgevoerd',
-                        'Het boek veranderde opnieuw tijdens het opnieuw toepassen van de verplaatsing. '
-                        'De verplaatsing is niet uitgevoerd. Probeer het opnieuw zodra de synchronisatie klaar is.'
+                        self, tr('editor.move.not_done_title', 'Verplaatsen niet uitgevoerd'),
+                        tr('editor.move.changed_again', 'Het boek veranderde opnieuw tijdens het opnieuw toepassen van de verplaatsing. De verplaatsing is niet uitgevoerd. Probeer het opnieuw zodra de synchronisatie klaar is.')
                     )
                     break
                 if not self._handle_concurrency_issue(exc):
@@ -636,8 +634,8 @@ class EditorPage(QWidget):
                 break
             except Exception as exc:
                 QMessageBox.critical(
-                    self, 'Verplaatsen mislukt',
-                    'Het hoofdstuk is niet verplaatst en de bestaande volgorde is behouden.\n\n' + str(exc)
+                    self, tr('editor.move.failed_title', 'Verplaatsen mislukt'),
+                    tr('editor.move.failed_text', 'Het hoofdstuk is niet verplaatst en de bestaande volgorde is behouden.\n\n{error}', error=exc)
                 )
                 break
 
@@ -665,14 +663,14 @@ class EditorPage(QWidget):
             chosen = menu.exec(self.tree.viewport().mapToGlobal(pos))
 
             if chosen is rename_action:
-                title, ok = prompt_text(self, 'Hoofdstuk hernoemen', 'Titel:', chapter.title)
+                title, ok = prompt_text(self, tr('editor.rename_chapter.title', 'Hoofdstuk hernoemen'), tr('common.title_label', 'Titel:'), chapter.title)
                 if ok and title.strip():
                     try:
                         self.main.library.rename_chapter(self.book, chapter_id, title)
                     except (ExternalModificationError, RevisionVerificationError) as exc:
                         self._handle_concurrency_issue(exc); return
                     except Exception as exc:
-                        QMessageBox.critical(self, 'Hernoemen mislukt', f'Het hoofdstuk is niet hernoemd.\n\n{exc}')
+                        QMessageBox.critical(self, tr('editor.rename.failed_title', 'Hernoemen mislukt'), tr('editor.rename.chapter_failed', 'Het hoofdstuk is niet hernoemd.\n\n{error}', error=exc))
                         return
                     if self.chapter and self.chapter.id == chapter_id:
                         self.chapter_title.setText(title.strip())
@@ -683,12 +681,12 @@ class EditorPage(QWidget):
                 try:
                     copied = self.main.library.duplicate_chapter(self.book, chapter_id)
                 except CorruptSourceError:
-                    QMessageBox.warning(self, 'Hoofdstuk beschadigd', 'Dit hoofdstuk is beschadigd en kan niet worden gedupliceerd. Herstel het eerst via Integriteit.')
+                    QMessageBox.warning(self, tr('editor.duplicate.corrupt_title', 'Hoofdstuk beschadigd'), tr('editor.duplicate.corrupt_text', 'Dit hoofdstuk is beschadigd en kan niet worden gedupliceerd. Herstel het eerst via Integriteit.'))
                     return
                 except (ExternalModificationError, RevisionVerificationError) as exc:
                     self._handle_concurrency_issue(exc); return
                 except Exception as exc:
-                    QMessageBox.critical(self, 'Dupliceren mislukt', f'Het hoofdstuk is niet gedupliceerd.\n\n{exc}')
+                    QMessageBox.critical(self, tr('editor.duplicate.failed_title', 'Dupliceren mislukt'), tr('editor.duplicate.failed_text', 'Het hoofdstuk is niet gedupliceerd.\n\n{error}', error=exc))
                     return
                 if copied:
                     self._chapter_word_counts[copied.id] = self._chapter_word_counts.get(chapter_id, count_words(self.main.library.read_chapter(self.book, copied)))
@@ -708,25 +706,25 @@ class EditorPage(QWidget):
             sec = next((x for x in self.book.sections if x.id == section_id), None)
             if not sec:
                 return
-            rename_action = menu.addAction('Sectie hernoemen…')
-            delete_action = menu.addAction('Sectie verwijderen…')
+            rename_action = menu.addAction(tr('editor.section.rename_action', 'Sectie hernoemen…'))
+            delete_action = menu.addAction(tr('editor.section.delete_action', 'Sectie verwijderen…'))
             chosen = menu.exec(self.tree.viewport().mapToGlobal(pos))
             if chosen is rename_action:
-                title, ok = prompt_text(self, 'Sectie hernoemen', 'Titel:', sec.title)
+                title, ok = prompt_text(self, tr('editor.section.rename_title', 'Sectie hernoemen'), tr('common.title_label', 'Titel:'), sec.title)
                 if ok and title.strip():
                     try:
                         self.main.library.rename_section(self.book, section_id, title)
                     except (ExternalModificationError, RevisionVerificationError) as exc:
                         self._handle_concurrency_issue(exc); return
                     except Exception as exc:
-                        QMessageBox.critical(self, 'Hernoemen mislukt', f'De sectie is niet hernoemd.\n\n{exc}')
+                        QMessageBox.critical(self, tr('editor.rename.failed_title', 'Hernoemen mislukt'), tr('editor.rename.section_failed', 'De sectie is niet hernoemd.\n\n{error}', error=exc))
                         return
                     self.populate_tree()
             elif chosen is delete_action:
                 if sec.chapters:
-                    QMessageBox.information(self, 'Sectie verwijderen', 'Verplaats eerst de hoofdstukken uit deze sectie. Een niet-lege sectie wordt niet verwijderd.')
+                    QMessageBox.information(self, tr('editor.section.delete_title', 'Sectie verwijderen'), tr('editor.section.delete_nonempty', 'Verplaats eerst de hoofdstukken uit deze sectie. Een niet-lege sectie wordt niet verwijderd.'))
                     return
-                if confirm(self, 'Sectie verwijderen', f'Wil je de sectie “{sec.title}” verwijderen?'):
+                if confirm(self, tr('editor.section.delete_title', 'Sectie verwijderen'), tr('editor.section.delete_confirm', 'Wil je de sectie “{title}” verwijderen?', title=sec.title)):
                     previous_sections = self.book.sections
                     self.book.sections = [x for x in self.book.sections if x.id != sec.id]
                     if not self.book.sections:
@@ -738,7 +736,7 @@ class EditorPage(QWidget):
                         self._handle_concurrency_issue(exc); return
                     except Exception as exc:
                         self.book.sections = previous_sections
-                        QMessageBox.critical(self, 'Sectie verwijderen mislukt', f'De sectie is niet verwijderd.\n\n{exc}')
+                        QMessageBox.critical(self, tr('editor.section.delete_failed_title', 'Sectie verwijderen mislukt'), tr('editor.section.delete_failed_text', 'De sectie is niet verwijderd.\n\n{error}', error=exc))
                         return
                     self.populate_tree()
 
@@ -760,17 +758,16 @@ class EditorPage(QWidget):
             return
         total = sum(len(sec.chapters) for sec in self.book.sections)
         if total <= 1:
-            QMessageBox.information(self, 'Hoofdstuk verwijderen', 'Het laatste hoofdstuk van een boek kan niet worden verwijderd.')
+            QMessageBox.information(self, tr('editor.chapter.delete_title', 'Hoofdstuk verwijderen'), tr('editor.chapter.delete_last', 'Het laatste hoofdstuk van een boek kan niet worden verwijderd.'))
             return
 
         deleting_active = bool(self.chapter and self.chapter.id == chapter_id)
         active_id = self.chapter.id if self.chapter else None
         next_chapter = self.main.library.adjacent_chapter_for_delete(self.book, chapter_id) if deleting_active else None
         message = (
-            f'Weet je zeker dat je “{chapter.title}” wilt verwijderen?\n\n'
-            'Het hoofdstuk wordt naar de prullenbak verplaatst en kan later worden hersteld.'
+            tr('editor.chapter.delete_confirm', 'Weet je zeker dat je “{title}” wilt verwijderen?\n\nHet hoofdstuk wordt naar de prullenbak verplaatst en kan later worden hersteld.', title=chapter.title)
         )
-        if not confirm(self, 'Hoofdstuk verwijderen', message):
+        if not confirm(self, tr('editor.chapter.delete_title', 'Hoofdstuk verwijderen'), message):
             return
         if self.save() is False:
             return
@@ -780,10 +777,10 @@ class EditorPage(QWidget):
         except (ExternalModificationError, RevisionVerificationError) as exc:
             self._handle_concurrency_issue(exc); return
         except Exception as exc:
-            QMessageBox.critical(self, 'Hoofdstuk verwijderen', f'Verwijderen is mislukt.\n\n{exc}')
+            QMessageBox.critical(self, tr('editor.chapter.delete_title', 'Hoofdstuk verwijderen'), tr('editor.chapter.delete_failed', 'Verwijderen is mislukt.\n\n{error}', error=exc))
             return
         if not removed:
-            QMessageBox.warning(self, 'Hoofdstuk verwijderen', 'Het hoofdstuk kon niet worden verwijderd.')
+            QMessageBox.warning(self, tr('editor.chapter.delete_title', 'Hoofdstuk verwijderen'), tr('editor.chapter.delete_failed_short', 'Het hoofdstuk kon niet worden verwijderd.'))
             return
 
         self._chapter_word_counts.pop(chapter_id, None)
@@ -935,7 +932,7 @@ class EditorPage(QWidget):
         self.editor.reset_undo_history()
         self._sync_undo_redo()
         self.dirty = False
-        self.autosave_status.setText('● Opgeslagen')
+        self.autosave_status.setText(tr('editor.status.saved', '● Opgeslagen'))
         self.update_counts()
         if hasattr(self.main, 'toolrail') and self.main.stack.currentWidget() is self:
             self.main.toolrail.show()
@@ -973,12 +970,12 @@ class EditorPage(QWidget):
         if current_text == self._clean_text:
             self.dirty = False
             self.autosave_timer.stop()
-            self.autosave_status.setText('● Opgeslagen')
+            self.autosave_status.setText(tr('editor.status.saved', '● Opgeslagen'))
             self._schedule_undo_redo_sync()
             self.update_counts()
             return
         self.dirty = True
-        self.autosave_status.setText('Niet opgeslagen')
+        self.autosave_status.setText(tr('editor.status.unsaved', 'Niet opgeslagen'))
         self._schedule_undo_redo_sync()
         self.update_counts()
         self.autosave_timer.start()
@@ -1031,14 +1028,14 @@ class EditorPage(QWidget):
         if self.tree.is_dragging:
             self._save_pending_after_drag = True
             self.autosave_timer.stop()
-            self.autosave_status.setText('Extern gewijzigd · na verplaatsen controleren')
+            self.autosave_status.setText(tr('editor.status.external_after_move', 'Extern gewijzigd · na verplaatsen controleren'))
             return False
         self.autosave_timer.stop()
         if not self.book:
             return False
         changed = '\n'.join(f'• {name}' for name in exc.changed_files[:6])
         if len(exc.changed_files) > 6:
-            changed += f'\n• … en {len(exc.changed_files) - 6} meer'
+            changed += '\n• ' + tr('editor.conflict.more', '… en {count} meer', count=len(exc.changed_files) - 6)
 
         # Voorwerk/Achterwerk and publication setup deliberately have no active
         # manuscript chapter. Structural actions can still hit a book.json
@@ -1125,20 +1122,20 @@ class EditorPage(QWidget):
 
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Warning)
-        box.setWindowTitle('Boek extern gewijzigd')
-        box.setText('Dit boek is buiten QuietWriter gewijzigd.')
-        box.setInformativeText(
-            'QuietWriter heeft niet opgeslagen om te voorkomen dat een andere versie wordt overschreven.\n\n'
-            f'Gewijzigd:\n{changed}\n\n'
-            'Welke versie wil je als uitgangspunt gebruiken? Beide keuzes maken eerst automatisch een herstelversie.'
-        )
-        use_mine = box.addButton('Mijn versie gebruiken', QMessageBox.AcceptRole)
-        use_disk = box.addButton('Versie op schijf gebruiken', QMessageBox.DestructiveRole)
+        box.setWindowTitle(tr('editor.external.title', 'Boek extern gewijzigd'))
+        box.setText(tr('editor.external.text', 'Dit boek is buiten QuietWriter gewijzigd.'))
+        box.setInformativeText(tr(
+            'editor.external.info',
+            'QuietWriter heeft niet opgeslagen om te voorkomen dat een andere versie wordt overschreven.\n\nGewijzigd:\n{changed}\n\nWelke versie wil je als uitgangspunt gebruiken? Beide keuzes maken eerst automatisch een herstelversie.',
+            changed=changed,
+        ))
+        use_mine = box.addButton(tr('editor.external.use_mine', 'Mijn versie gebruiken'), QMessageBox.AcceptRole)
+        use_disk = box.addButton(tr('editor.external.use_disk', 'Versie op schijf gebruiken'), QMessageBox.DestructiveRole)
         box.setDefaultButton(use_disk)
         box.exec()
         clicked = box.clickedButton()
         if clicked not in (use_mine, use_disk):
-            self.autosave_status.setText('⚠ Extern gewijzigd · niet opgeslagen')
+            self.autosave_status.setText(tr('editor.status.external_unsaved', '⚠ Extern gewijzigd · niet opgeslagen'))
             self.dirty = True
             return False
 
@@ -1154,7 +1151,7 @@ class EditorPage(QWidget):
                 self.main.library.save_chapter(latest, target, local_text)
                 self.book = latest
                 self._adopt_disk_book(chapter_id)
-                self.autosave_status.setText('● Eigen versie bewaard')
+                self.autosave_status.setText(tr('editor.status.local_preserved', '● Eigen versie bewaard'))
             else:
                 # Preserve the in-memory manuscript structure and current editor
                 # text in History before discarding them in favour of disk.
@@ -1162,7 +1159,7 @@ class EditorPage(QWidget):
                     old_book, {old_chapter.file: local_text}, kind='conflict_local'
                 )
                 self._adopt_disk_book(chapter_id)
-                self.autosave_status.setText('● Versie op schijf geladen')
+                self.autosave_status.setText(tr('editor.status.disk_loaded', '● Versie op schijf geladen'))
             return True
         except FutureBookFormatError:
             self.book = old_book; self.chapter = old_chapter
@@ -1176,19 +1173,19 @@ class EditorPage(QWidget):
             self.book = old_book; self.chapter = old_chapter
             self.editor.blockSignals(True); self.editor.setPlainText(local_text); self.editor.blockSignals(False)
             self.dirty = True
-            self.autosave_status.setText('⚠ Opnieuw extern gewijzigd')
-            QMessageBox.warning(self, 'Boek opnieuw gewijzigd', 'Het boek veranderde opnieuw tijdens het oplossen van het conflict. Er is niets overschreven. Probeer opnieuw nadat de synchronisatie klaar is.')
+            self.autosave_status.setText(tr('editor.status.external_changed_again', '⚠ Opnieuw extern gewijzigd'))
+            QMessageBox.warning(self, tr('editor.external.changed_again_title', 'Boek opnieuw gewijzigd'), tr('editor.external.changed_again_text', 'Het boek veranderde opnieuw tijdens het oplossen van het conflict. Er is niets overschreven. Probeer opnieuw nadat de synchronisatie klaar is.'))
             return False
         except Exception as error:
             self.book = old_book; self.chapter = old_chapter
             self.editor.blockSignals(True); self.editor.setPlainText(local_text); self.editor.blockSignals(False)
             self.dirty = True
-            self.autosave_status.setText('⚠ Conflict niet opgelost')
-            QMessageBox.critical(self, 'Conflict niet opgelost', f'De herstelactie is mislukt. Er is niet verder opgeslagen.\n\n{error}')
+            self.autosave_status.setText(tr('editor.status.conflict_unresolved', '⚠ Conflict niet opgelost'))
+            QMessageBox.critical(self, tr('editor.external.resolve_failed_title', 'Conflict niet opgelost'), tr('editor.external.resolve_failed_text', 'De herstelactie is mislukt. Er is niet verder opgeslagen.\n\n{error}', error=error))
             return False
 
     def _handle_verification_error(self, exc: RevisionVerificationError) -> bool:
-        self.autosave_status.setText('Opslaan tijdelijk niet mogelijk')
+        self.autosave_status.setText(tr('editor.status.save_temporarily_unavailable', 'Opslaan tijdelijk niet mogelijk'))
         self.dirty = True
         # Sync software can briefly lock/on-demand hydrate a file. This is not a
         # content conflict. Keep the text in memory and quietly retry autosave.
@@ -1197,7 +1194,7 @@ class EditorPage(QWidget):
 
     def _handle_storage_write_error(self, exc: StorageWriteError) -> bool:
         self.dirty = True
-        self.autosave_status.setText('⚠ Opslaan mislukt · bestand vergrendeld')
+        self.autosave_status.setText(tr('editor.status.save_locked', '⚠ Opslaan mislukt · bestand vergrendeld'))
         self.autosave_timer.start(2500)
         return False
 
@@ -1207,13 +1204,11 @@ class EditorPage(QWidget):
             if not snapshot_exists:
                 self.main.library.create_version_from_state(old_book, chapter_overrides or {}, kind='conflict_local')
         except Exception as snapshot_error:
-            QMessageBox.critical(self, 'Lokale tekst niet veiliggesteld',
-                'Dit boek gebruikt inmiddels een nieuwere QuietWriter-versie, maar je lokale tekst kon niet in Versiegeschiedenis worden bewaard. '
-                'Het boek blijft daarom open. Kopieer je tekst handmatig voordat je afsluit.\n\n' + str(snapshot_error))
+            QMessageBox.critical(self, tr('editor.future.snapshot_failed_title', 'Lokale tekst niet veiliggesteld'),
+                tr('editor.future.snapshot_failed_text', 'Dit boek gebruikt inmiddels een nieuwere QuietWriter-versie, maar je lokale tekst kon niet in Versiegeschiedenis worden bewaard. Het boek blijft daarom open. Kopieer je tekst handmatig voordat je afsluit.\n\n{error}', error=snapshot_error))
             return False
-        QMessageBox.warning(self, 'Nieuwere QuietWriter nodig',
-            'Dit boek is op een andere computer met een nieuwere QuietWriter opgeslagen. Je laatste lokale tekst is bewaard in Versiegeschiedenis. '
-            'QuietWriter sluit dit boek nu om te voorkomen dat het nieuwere formaat wordt beschadigd. Werk QuietWriter bij voordat je verdergaat.')
+        QMessageBox.warning(self, tr('editor.future.title', 'Nieuwere QuietWriter nodig'),
+            tr('editor.future.text', 'Dit boek is op een andere computer met een nieuwere QuietWriter opgeslagen. Je laatste lokale tekst is bewaard in Versiegeschiedenis. QuietWriter sluit dit boek nu om te voorkomen dat het nieuwere formaat wordt beschadigd. Werk QuietWriter bij voordat je verdergaat.'))
         self.main.force_return_to_bookshelf(old_book)
         return False
 
@@ -1225,7 +1220,7 @@ class EditorPage(QWidget):
         if self.tree.is_dragging:
             if self.dirty:
                 self._save_pending_after_drag = True
-                self.autosave_status.setText('Niet opgeslagen · na verplaatsen')
+                self.autosave_status.setText(tr('editor.status.unsaved_after_move', 'Niet opgeslagen · na verplaatsen'))
             return False
         if self.preview_live_book:
             return True
@@ -1253,7 +1248,7 @@ class EditorPage(QWidget):
         self._clean_text = source_text
         self.dirty = False
         self.main.search_index.rebuild_book(self.book)
-        self.autosave_status.setText('● Opgeslagen · zojuist')
+        self.autosave_status.setText(tr('editor.status.saved_just_now', '● Opgeslagen · zojuist'))
         self.update_counts(saved=True)
         return True
 
@@ -1272,7 +1267,7 @@ class EditorPage(QWidget):
             return
         if self.chapter:
             old_title = self.chapter.title
-            self.chapter.title = self.chapter_title.text().strip() or 'Nieuw hoofdstuk'
+            self.chapter.title = self.chapter_title.text().strip() or tr('editor.chapter.untitled', 'Nieuw hoofdstuk')
             try:
                 self.main.library.save_manifest(self.book)
             except (ExternalModificationError, RevisionVerificationError) as exc:
@@ -1281,7 +1276,7 @@ class EditorPage(QWidget):
                 return
             except Exception as exc:
                 self.chapter.title = old_title
-                QMessageBox.critical(self, 'Hernoemen mislukt', f'Het hoofdstuk is niet hernoemd.\n\n{exc}')
+                QMessageBox.critical(self, tr('editor.rename.failed_title', 'Hernoemen mislukt'), tr('editor.rename.chapter_failed', 'Het hoofdstuk is niet hernoemd.\n\n{error}', error=exc))
                 return
             self.populate_tree()
 
@@ -1326,11 +1321,19 @@ class EditorPage(QWidget):
             chapter_total = len(flat)
             if self.chapter:
                 chapter_index = next((i+1 for i,c in enumerate(flat) if c.id == self.chapter.id), 0)
-        book_word_label = 'woord' if total == 1 else 'woorden'
-        chapter_word_label = 'woord' if words == 1 else 'woorden'
-        book_text = f'Boek: {total:,}'.replace(',', '.') + f' {book_word_label}'
+        locale = current_locale()
+        def fmt_count(value):
+            text = f'{value:,}'
+            return text.replace(',', '.') if locale == 'nl' else text
+        book_key = 'editor.status.book.one' if total == 1 else 'editor.status.book.many'
+        book_text = tr(book_key, 'Boek: {count} woord' if total == 1 else 'Boek: {count} woorden', count=fmt_count(total))
         if chapter_total and self.chapter:
-            chapter_text = f'Hoofdstuk {chapter_index} van {chapter_total}: {words:,}'.replace(',', '.') + f' {chapter_word_label}'
+            chapter_key = 'editor.status.chapter.one' if words == 1 else 'editor.status.chapter.many'
+            chapter_text = tr(
+                chapter_key,
+                'Hoofdstuk {index} van {total}: {count} woord' if words == 1 else 'Hoofdstuk {index} van {total}: {count} woorden',
+                index=chapter_index, total=chapter_total, count=fmt_count(words),
+            )
             self.main.set_document_status(book_text + ' · ' + chapter_text)
         else:
             self.main.set_document_status(book_text if self.book else '')
@@ -1389,7 +1392,7 @@ class EditorPage(QWidget):
         except (ExternalModificationError, RevisionVerificationError) as exc:
             self._handle_concurrency_issue(exc); return
         except Exception as exc:
-            QMessageBox.critical(self, tr('editor.new_section', 'Nieuwe sectie'), f'De sectie is niet toegevoegd.\n\n{exc}')
+            QMessageBox.critical(self, tr('editor.new_section', 'Nieuwe sectie'), tr('editor.new_section.failed', 'De sectie is niet toegevoegd.\n\n{error}', error=exc))
             return
         self.populate_tree()
 
@@ -1414,7 +1417,7 @@ class EditorPage(QWidget):
         except (ExternalModificationError, RevisionVerificationError) as exc:
             self._handle_concurrency_issue(exc); return
         except Exception as exc:
-            QMessageBox.critical(self, tr('editor.new_chapter', 'Nieuw hoofdstuk'), f'Het hoofdstuk is niet toegevoegd.\n\n{exc}')
+            QMessageBox.critical(self, tr('editor.new_chapter', 'Nieuw hoofdstuk'), tr('editor.new_chapter.failed', 'Het hoofdstuk is niet toegevoegd.\n\n{error}', error=exc))
             return
         self._chapter_word_counts[c.id] = 0
         def open_new_chapter(chapter_id=c.id):
@@ -1900,9 +1903,9 @@ class EditorPage(QWidget):
 
     def _chapters_in_scope(self):
         if not self.book or not self.chapter: return []
-        scope=self.search.scope.currentText()
-        if scope=='Huidig hoofdstuk': return [self.chapter]
-        if scope=='Huidige sectie':
+        scope=str(self.search.scope.currentData() or 'chapter')
+        if scope=='chapter': return [self.chapter]
+        if scope=='section':
             section,_=self.find_chapter_in_book(self.chapter.id); return list(section.chapters) if section else [self.chapter]
         return [c for sec in self.book.sections for c in sec.chapters]
 
@@ -1938,7 +1941,7 @@ class EditorPage(QWidget):
         skipped = getattr(self, '_search_corrupt_skipped', [])
         if skipped:
             count = len(skipped)
-            self.main.status.showMessage(f'{count} beschadigd hoofdstuk' + (' is' if count == 1 else 'ken zijn') + ' overgeslagen. Herstel via Integriteit.', 5000)
+            self.main.status.showMessage(tr('editor.corrupt.skipped.one', '1 beschadigd hoofdstuk is overgeslagen. Herstel via Integriteit.') if count == 1 else tr('editor.corrupt.skipped.many', '{count} beschadigde hoofdstukken zijn overgeslagen. Herstel via Integriteit.', count=count), 5000)
 
     def do_search(self):
         self.search.show_results(self.collect_search_matches())
@@ -1992,7 +1995,7 @@ class EditorPage(QWidget):
             return
         rows=self.collect_search_matches()
         if not rows: return
-        if not confirm(self,'Alles vervangen',f'Wil je {len(rows)} voorkomens vervangen?'): return
+        if not confirm(self, tr('editor.replace_all.title', 'Alles vervangen'), tr('editor.replace_all.confirm', 'Wil je {count} voorkomens vervangen?', count=len(rows))): return
         replacement=self.search.replace.text(); rx=self._search_regex()
         if self.save() is False:
             return
@@ -2019,7 +2022,7 @@ class EditorPage(QWidget):
         self.main.search_index.rebuild_book(self.book); self.do_search(); self.update_counts(saved=True)
         if skipped:
             count=len(skipped)
-            self.main.status.showMessage(f'{count} beschadigd hoofdstuk' + (' is' if count == 1 else 'ken zijn') + ' overgeslagen bij vervangen. Herstel via Integriteit.', 5000)
+            self.main.status.showMessage(tr('editor.corrupt.replace_skipped.one', '1 beschadigd hoofdstuk is overgeslagen bij vervangen. Herstel via Integriteit.') if count == 1 else tr('editor.corrupt.replace_skipped.many', '{count} beschadigde hoofdstukken zijn overgeslagen bij vervangen. Herstel via Integriteit.', count=count), 5000)
 
 
     def _remember_panel_widths(self, *_):

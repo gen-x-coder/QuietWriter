@@ -16,12 +16,12 @@ class SearchPanel(QWidget):
         super().__init__()
         lay = QVBoxLayout(self); lay.setContentsMargins(18,18,18,18)
         lab = QLabel(tr('search.title', 'Zoeken en vervangen')); lab.setObjectName('sectionTitle')
-        self.scope = QComboBox(); self.scope.addItems(['Huidig hoofdstuk', 'Huidige sectie', 'Hele boek'])
-        self.query = QLineEdit(); self.query.setPlaceholderText('Zoeken…'); self.query.setClearButtonEnabled(True)
-        self.replace = QLineEdit(); self.replace.setPlaceholderText('Vervangen door…'); self.replace.setClearButtonEnabled(True)
+        self.scope = QComboBox(); self.scope.addItem(tr('search.scope.chapter', 'Huidig hoofdstuk'), 'chapter'); self.scope.addItem(tr('search.scope.section', 'Huidige sectie'), 'section'); self.scope.addItem(tr('search.scope.book', 'Hele boek'), 'book')
+        self.query = QLineEdit(); self.query.setPlaceholderText(tr('search.placeholder', 'Zoeken…')); self.query.setClearButtonEnabled(True)
+        self.replace = QLineEdit(); self.replace.setPlaceholderText(tr('search.replace_placeholder', 'Vervangen door…')); self.replace.setClearButtonEnabled(True)
         options = QHBoxLayout()
-        self.case_sensitive = QCheckBox('Hoofdlettergevoelig')
-        self.whole_word = QCheckBox('Heel woord')
+        self.case_sensitive = QCheckBox(tr('search.case_sensitive', 'Hoofdlettergevoelig'))
+        self.whole_word = QCheckBox(tr('search.whole_word', 'Heel woord'))
         options.addWidget(self.case_sensitive); options.addWidget(self.whole_word); options.addStretch()
         self.summary = QLabel(''); self.summary.setObjectName('muted')
         self.empty = QLabel(tr('search.no_results', 'Geen resultaten gevonden.')); self.empty.setObjectName('muted'); self.empty.setAlignment(Qt.AlignCenter); self.empty.hide()
@@ -38,7 +38,7 @@ class SearchPanel(QWidget):
         buttons.addWidget(self.next_btn); buttons.addWidget(self.replace_btn); buttons.addWidget(self.replace_all_btn)
         lay.addWidget(lab); lay.addWidget(self.scope); lay.addWidget(self.query); lay.addLayout(options)
         lay.addWidget(self.summary); lay.addWidget(self.empty); lay.addWidget(self.results, 1)
-        lay.addWidget(QLabel('Vervangen door')); lay.addWidget(self.replace); lay.addLayout(buttons)
+        lay.addWidget(QLabel(tr('search.replace_label', 'Vervangen door'))); lay.addWidget(self.replace); lay.addLayout(buttons)
         # Creation order differs from visual order because the replacement field
         # is constructed before the option row. Keep Tab/Shift+Tab predictable.
         tab_order = (
@@ -59,7 +59,7 @@ class SearchPanel(QWidget):
         active = bool(self.query.text().strip())
         self.empty.setVisible(active and not rows)
         self.results.setVisible(bool(rows) or not active)
-        self.summary.setText((f'{len(rows)} resultaat' if len(rows) == 1 else f'{len(rows)} resultaten') if active else '')
+        self.summary.setText((tr('search.result.one', '{count} resultaat', count=len(rows)) if len(rows) == 1 else tr('search.result.many', '{count} resultaten', count=len(rows))) if active else '')
         for row in rows:
             cid, title, snippet, start, length = row
             item = QListWidgetItem(f'{title}\n{snippet}')

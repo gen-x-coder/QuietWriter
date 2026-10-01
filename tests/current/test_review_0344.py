@@ -83,7 +83,8 @@ def test_future_planning_with_utf8_bom_is_still_recognised_as_newer_and_blocks_h
 
 def test_ai_ui_makes_chapter_planning_explicit_and_user_controllable():
     source = Path('quietwriter/ai/ui.py').read_text(encoding='utf-8')
-    assert "QCheckBox('Planning van dit hoofdstuk gebruiken')" in source
+    assert "ai.context.use_chapter_planning" in source
+    assert 'chapter_planning_check' in source
     assert "ai_use_chapter_planning" in source
     assert "wordt meegestuurd" in source
     assert "wordt niet meegestuurd" in source

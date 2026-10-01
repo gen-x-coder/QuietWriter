@@ -39,13 +39,13 @@ def test_rewrite_is_selection_only_and_preserves_story_intent():
 def test_ai_panel_exposes_quick_actions_without_auto_send():
     ai = Path('quietwriter/ai/ui.py').read_text(encoding='utf-8')
     editor = Path('quietwriter/ui/editor_page.py').read_text(encoding='utf-8')
-    assert "quick_label = QLabel('Snelacties')" in ai
+    assert "quick_label = QLabel(tr('ai.quick_actions', 'Snelacties'))" in ai
     assert "button.setObjectName('suggestionButton')" in ai
     assert 'def _apply_quick_action(self, key: str):' in ai
     start = ai.index('    def _apply_quick_action(self, key: str):')
     end = ai.index('    def _update_busy_buttons(self):', start)
     body = ai[start:end]
-    assert 'self.input.setPlainText(action.prompt)' in body
+    assert "self.input.setPlainText(tr(f'ai.quick.{action.key}.prompt', action.prompt))" in body
     assert 'self.send(' not in body
     assert 'action.requires_selection and not self._has_manuscript_selection()' in body
     assert 'self.editor.selectionChanged.connect(self.ai.refresh_quick_actions)' in editor

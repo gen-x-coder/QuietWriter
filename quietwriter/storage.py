@@ -15,6 +15,7 @@ from .revisions import BookRevision, ExternalModificationError, capture_book_rev
 from .persona_profile import default_persona_markdown
 from .book_profile import default_book_profile_markdown
 from .book_memory import default_book_memory_markdown
+from .i18n import tr
 
 
 class BookBlockedError(RuntimeError):
@@ -309,7 +310,7 @@ class Library:
             },
         )
         section = Section(id='root', title='Manuscript')
-        chapter = self.add_chapter(book, section, 'Hoofdstuk 1', persist=False)
+        chapter = self.add_chapter(book, section, tr('storage.default_chapter_1', 'Hoofdstuk 1'), persist=False)
         section.chapters.append(chapter)
         book.sections.append(section)
         self.save_manifest(book)
@@ -1189,7 +1190,7 @@ class Library:
             sec = Section(id=sec_id, title=section_title or ('Manuscript' if sec_id == 'root' else f'Sectie {idx+1}'))
             book.sections.append(sec)
             for item in chapters:
-                ch = self.add_chapter(book, sec, item.get('title') or 'Hoofdstuk', persist=False)
+                ch = self.add_chapter(book, sec, item.get('title') or tr('storage.default_chapter', 'Hoofdstuk'), persist=False)
                 sec.chapters.append(ch)
                 _safe_atomic_write_text(book.path / ch.file, item.get('text', ''))
         if not any(sec.chapters for sec in book.sections):

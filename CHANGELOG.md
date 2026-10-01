@@ -1,4 +1,56 @@
+## 0.36.0
+
+- Nieuwe allowlist-gebaseerde release-staging via `tools/prepare_release.py`; een rommelige ontwikkelmap kan niet meer rechtstreeks in de distributie terechtkomen.
+- `build_exe.cmd` bouwt voortaan uitsluitend vanuit `release/stage` en levert daarna een schone `release/QuietWriter-<versie>/` plus portable ZIP en SHA-256 op.
+- PyInstaller `onedir`-configuratie, Windows versie-informatie en Nederlandse Hunspell-download uit de packaging-review geïntegreerd.
+- Release-hygiene blokkeert onder meer `ppm`, tests, Git-metadata en review-/tussenrapporten.
+- Windows GitHub-build gebruikt dezelfde lokale buildroute, zodat CI en lokaal packaginggedrag niet uit elkaar lopen.
+- `release/` en PPM zijn expliciet uitgesloten via `.gitignore`.
+
+## 0.35.4
+
+- Herstelt aangepaste Planning-statussen en relatietypen bij bewerkbare keuzelijsten.
+- CI faalt bij pyflakes alleen nog op ongedefinieerde namen/syntaxfouten, niet op ongebruikte imports.
+- Python 3.12+ is nu het expliciete bron/runtimecontract; `main.py` controleert dit vóór de app-import.
+
 # Changelog
+
+## 0.35.3 — releasefundament afronden
+
+- Startblokker uit 0.35.2 opgelost: `ai/ui.py` importeert `tr` expliciet.
+- CI krijgt `pyflakes` als algemene undefined-name gate; daarnaast bewaakt een lokale AST-test modules die `tr()` gebruiken.
+- Resterende zichtbare Nederlandse teksten in Engelse modus vertaald: statusbalk, editor-contextmenu, AI-chat, spelling, vervangen, fout/statusmeldingen en boekenplank.
+- Planning-statussen en relatietypen worden alleen voor weergave vertaald; canonieke opgeslagen waarden blijven ongewijzigd.
+- Nieuwe boeken gebruiken de gelokaliseerde begintitel `Hoofdstuk 1` / `Chapter 1`.
+- Interne future-book context gebruikt stabiele ids en wordt pas in de dialoog vertaald.
+- Dode `MainWindow.build_ai_context` verwijderd.
+- Actiekolom in de Inhoudsboom verbreed zodat `wijzig` / `edit` niet onder het inklaptabje valt.
+- OFL-sjabloonplaceholders uit de vier fontlicenties verwijderd.
+- Nederlandse en Engelse locale hebben dezelfde 1091 sleutels.
+- Oude regressietests zijn bijgewerkt naar het vertaalde contract; hun functionele dekking blijft behouden.
+
+## 0.35.2 — vertaling, licenties en releasebronnen
+
+- Crash-cooldown herkent terugkerende fouten nu op exceptiontype + laatste tracebacklocatie, niet op wisselende fouttekst.
+- `nl.json` en `en.json` zijn gelijkgetrokken; alle gebruikte letterlijke `tr()`-sleutels bestaan in beide talen.
+- Zichtbare UI-teksten in de releasekritieke schermen lopen via `tr()`; contextkeuzes gebruiken stabiele interne ids zodat vertaling geen logica verandert.
+- Nieuwe regressiegates bewaken ontbrekende vertaalsleutels, dynamische AI-profielsecties en hardgecodeerde widgetteksten.
+- Fontmanifest voor Merriweather, Literata, Source Serif 4 en EB Garamond toegevoegd, inclusief lokale OFL 1.1-teksten.
+- CI haalt de gebundelde fontbestanden op vóór de testsets; de voormalige twee fontfailures horen nu groen te zijn.
+- Eigen `LICENSE` en `THIRD_PARTY_LICENSES.md` toegevoegd; Over toont beide licentieoverzichten naast de afzonderlijke fontlicenties.
+- First-run-contract aangescherpt: een bestaande standaardwerkmap is al voldoende om een bestaande gebruiker niet opnieuw door onboarding te sturen.
+
+## 0.35.1 — releasefundament II
+
+- Crashmeldingen worden samengevoegd: maximaal één venster tegelijk, extra fouten worden geteld en elke fout blijft afzonderlijk in het log staan.
+- Dezelfde herhalende fout opent na sluiten gedurende 60 seconden geen nieuw venster.
+- Opstartfouten vóór de normale Qt-eventloop krijgen een modale melding met toegang tot het lokale logbestand.
+- Het woordmerk op de Over-pagina gebruikt altijd de lichte hero-kleur, passend bij de donkere hero-achtergrond in alle thema's.
+- SVG-woordmerk en UI-iconen worden HiDPI-bewust gerenderd; QIcon bevat 1×- en 2×-pixmaps.
+- Qt-waarschuwingen blijven naast het log ook zichtbaar op stderr als er geen eerdere Qt-handler was.
+- First-run-contract gebruikt niet langer `workspace` als indicator maar een eigen `first_run_done` plus detectie van bestaande gebruikersdata.
+- CI installeert op Ubuntu expliciet de Qt-runtimebibliotheken die PySide6 offscreen nodig heeft.
+- Splash-tagline heeft iets meer ademruimte onder het woordmerk.
 
 ## 0.35.0 — releasefundament I
 

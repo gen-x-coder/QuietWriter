@@ -46,6 +46,7 @@ class Splash(QDialog):
         self.wordmark.setAccessibleName(APP_NAME)
         self.wordmark.setPixmap(themed_svg_pixmap('quietwriter-wordmark', 300))
         lay.addWidget(self.wordmark, 0, Qt.AlignLeft)
+        lay.addSpacing(5)
 
         tagline = QLabel(tr('splash.tagline', 'Rustig schrijven. Heldere boeken.'))
         tagline.setObjectName('splashTagline')

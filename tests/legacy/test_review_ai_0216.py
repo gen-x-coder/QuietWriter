@@ -62,7 +62,8 @@ def test_provider_models_are_saved_per_provider_not_cross_assigned():
 def test_context_has_stale_section_and_read_error_guards():
     source = _source('quietwriter/ai/context.py')
     assert 'if section is None:' in source
-    assert "ContextBundle('sectie niet beschikbaar', '', pieces)" in source
+    assert "ai.context.section_unavailable_label" in source
+    assert "ContextBundle(tr('ai.context.section_unavailable_label'" in source
     assert 'except (OSError, UnicodeError) as exc:' in source
     assert 'kon niet worden gelezen' in source
 

@@ -17,8 +17,8 @@ class EditorPolish0310Tests(unittest.TestCase):
     def test_book_and_chapter_word_counts_share_statusbar(self):
         src = (ROOT / "quietwriter/ui/editor_page.py").read_text(encoding="utf-8")
         self.assertNotIn("self.book_words", src)
-        self.assertIn("book_text = f'Boek: {total:,}'", src)
-        self.assertIn("chapter_text = f'Hoofdstuk {chapter_index} van {chapter_total}: {words:,}'", src)
+        self.assertIn("editor.status.book.one", src)
+        self.assertIn("editor.status.chapter.many", src)
 
     def test_navigation_has_subtle_groups(self):
         src = (ROOT / "quietwriter/ui/main_window.py").read_text(encoding="utf-8")

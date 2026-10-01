@@ -4,7 +4,9 @@ De first-run wizard wordt in 0.36 gebouwd. 0.35 legt alleen het contract vast zo
 
 ## Trigger
 
-- Alleen tonen wanneer de instelling `workspace` nog niet bestaat.
+- Gebruik een eigen instelling `first_run_done`; `workspace` is **geen** betrouwbare first-run-indicator.
+- Bij de eerste start van een versie met de wizard: zet `first_run_done=True` zonder wizard als er al bestaande QuietWriter-instellingen zijn, of als de standaardwerkmap al bestaat.
+- Alleen een werkelijk nieuwe installatie zonder bestaande QuietWriter-state én zonder bestaande standaardwerkmap krijgt de wizard.
 - Een bestaande gebruiker ziet de wizard nooit automatisch.
 - Iedere stap is over te slaan; alles blijft later wijzigbaar via Instellingen.
 
@@ -26,7 +28,9 @@ De first-run wizard wordt in 0.36 gebouwd. 0.35 legt alleen het contract vast zo
 ## Acceptatie voor 0.36
 
 - Nieuwe instellingenmap → wizard verschijnt precies één keer.
-- Bestaande `workspace` → direct normale start.
+- `first_run_done=True` → direct normale start.
+- Bestaande QuietWriter-state maar nog geen `first_run_done` → markeer als bestaande gebruiker en start normaal.
+- Geen bestaande state → toon de wizard en zet `first_run_done=True` zodra deze is afgerond of bewust overgeslagen.
 - Afbreken verandert geen bestaande werkmap.
 - AI blijft uit als de gebruiker niets kiest.
 - Taalkeuze wordt pas na herstart toegepast als dat technisch nog nodig is; dit wordt duidelijk vermeld.

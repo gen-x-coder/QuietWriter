@@ -4,8 +4,9 @@ from pathlib import Path
 def test_book_word_label_removed_from_contents_panel():
     source = Path('quietwriter/ui/editor_page.py').read_text(encoding='utf-8')
     assert 'self.book_words' not in source
-    assert "book_text = f'Boek: {total:,}'" in source
-    assert "chapter_text = f'Hoofdstuk {chapter_index} van {chapter_total}: {words:,}'" in source
+    assert "editor.status.book.one" in source
+    assert "editor.status.chapter.many" in source
+    assert "editor.status.chapter.one" in source
 
 
 def test_planning_validation_has_single_shared_validator():

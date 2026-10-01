@@ -47,5 +47,5 @@ class StorageSafety0282Tests(unittest.TestCase):
 
     def test_close_event_has_unexpected_save_fail_safe(self):
         src=Path('quietwriter/ui/main_window.py').read_text(encoding='utf-8')
-        self.assertIn("QMessageBox.critical(self, 'Afsluiten gestopt'", src)
+        self.assertIn("QMessageBox.critical(self, tr('app.close_blocked_title', 'Afsluiten gestopt')", src)
         self.assertIn('event.ignore()', src)

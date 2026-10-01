@@ -180,5 +180,5 @@ def test_trash_ui_and_text_prompt_source_contracts():
     assert 'errors = []' in trash
     assert "save.setText(tr('common.save', 'Opslaan'))" in dialogs
     assert "cancel.setText(tr('common.cancel', 'Annuleren'))" in dialogs
-    assert "prompt_text(self, 'Hoofdstuk hernoemen'" in editor
+    assert "prompt_text(self, tr('editor.rename_chapter.title', 'Hoofdstuk hernoemen')" in editor
     assert 'QInputDialog.getText' not in editor

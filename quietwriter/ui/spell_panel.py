@@ -102,8 +102,8 @@ class SpellPanel(QWidget):
     def show_current(self, *, select_in_editor: bool = True):
         if not self.rows: return
         source,word,start,end=self.rows[self.index]
-        where = 'Hoofdstuktitel' if source == 'title' else 'Hoofdstuktekst'
-        self.status.setText(f'{self.index+1} van {len(self.rows)} · {where}')
+        where = tr('spell.chapter_title', 'Hoofdstuktitel') if source == 'title' else tr('spell.chapter_text', 'Hoofdstuktekst')
+        self.status.setText(tr('spell.position', '{index} van {total} · {where}', index=self.index+1, total=len(self.rows), where=where))
         self.word.setText(word)
         self.suggestions.set_suggestions(self.editor_page.dictionary.suggest(word))
         self._configure_tab_order()

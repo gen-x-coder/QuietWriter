@@ -707,14 +707,14 @@ class ManuscriptEditor(QTextEdit):
         menu = self.createStandardContextMenu()
         if has_selection:
             menu.addSeparator()
-            formatting = menu.addMenu('Opmaak')
+            formatting = menu.addMenu(tr('format.menu', 'Opmaak'))
             states = selection_format_states(self.toPlainText(), *self._selection_range)
 
             inline = (
-                ('bold', 'Vet'),
-                ('italic', 'Cursief'),
-                ('underline', 'Onderstrepen'),
-                ('strike', 'Doorhalen'),
+                ('bold', tr('format.bold', 'Vet')),
+                ('italic', tr('format.italic', 'Cursief')),
+                ('underline', tr('format.underline', 'Onderstrepen')),
+                ('strike', tr('format.strike', 'Doorhalen')),
                 ('code', 'Code'),
             )
             for action_name, label in inline:
@@ -725,13 +725,13 @@ class ManuscriptEditor(QTextEdit):
                 formatting.addAction(action)
 
             formatting.addSeparator()
-            paragraph_menu = formatting.addMenu('Alineastijl')
+            paragraph_menu = formatting.addMenu(tr('format.paragraph_style', 'Alineastijl'))
             blocks = (
-                ('paragraph', 'Normale alinea'),
-                ('heading', 'Tussenkop'),
-                ('quote', 'Citaat'),
-                ('bullet', 'Opsomming'),
-                ('numbered', 'Genummerde lijst'),
+                ('paragraph', tr('format.normal_paragraph', 'Normale alinea')),
+                ('heading', tr('format.heading', 'Tussenkop')),
+                ('quote', tr('format.quote', 'Citaat')),
+                ('bullet', tr('format.bulleted_list', 'Opsomming')),
+                ('numbered', tr('format.numbered_list', 'Genummerde lijst')), 
             )
             for action_name, label in blocks:
                 action = QAction(label, paragraph_menu)

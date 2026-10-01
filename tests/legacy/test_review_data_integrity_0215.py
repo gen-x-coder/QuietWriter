@@ -58,14 +58,14 @@ class ReviewDataIntegrity0215Tests(unittest.TestCase):
         self.assertIn('if self.planning_page.save_pending() is False:', main)
         self.assertIn('if self.editor_page.save() is False:', main)
 
-    def test_python_311_compatible_character_relation_label(self):
+    def test_character_relation_label_uses_precomputed_translation(self):
         source = self.source('quietwriter/ui/planning/characters_page.py')
         self.assertIn("unknown_label = tr('planning.characters.unknown', 'Onbekend personage')", source)
         self.assertNotIn("names.get(relation.target_id, tr('planning.characters.unknown'", source)
 
-    def test_characters_page_parses_as_python_311(self):
+    def test_characters_page_parses_as_project_python_312(self):
         source = self.source('quietwriter/ui/planning/characters_page.py')
-        ast.parse(source, feature_version=(3, 11))
+        ast.parse(source, feature_version=(3, 12))
 
 
 if __name__ == '__main__':

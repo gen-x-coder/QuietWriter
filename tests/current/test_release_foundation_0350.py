@@ -31,14 +31,15 @@ def test_crash_logger_covers_python_threads_and_qt_messages():
     assert 'sys.excepthook = exception_hook' in source
     assert 'threading.excepthook = thread_exception_hook' in source
     assert 'qInstallMessageHandler' in source
-    assert "_notify('Er ging iets mis in QuietWriter.'" in source
+    assert 'log_exception(exc_type, exc_value, exc_tb)' in source
 
 
 def test_splash_and_about_use_wordmark():
     splash = (ROOT / 'quietwriter' / 'ui' / 'splash.py').read_text(encoding='utf-8')
     about = (ROOT / 'quietwriter' / 'ui' / 'about_page.py').read_text(encoding='utf-8')
     assert "themed_svg_pixmap('quietwriter-wordmark', 300)" in splash
-    assert "themed_svg_pixmap('quietwriter-wordmark', 360)" in about
+    assert "themed_svg_pixmap('quietwriter-wordmark', 360" in about
+    assert "colour_key='hero_text'" in about
 
 
 @pytest.fixture
@@ -54,8 +55,8 @@ def test_crash_notice_is_non_modal_and_offers_log_button(app, tmp_path):
     bridge = CrashUiBridge(tmp_path / 'crash.log')
     bridge.notify('Testfout', 'detailregel')
     app.processEvents()
-    assert len(bridge._boxes) == 1
-    box = bridge._boxes[0]
+    assert bridge._box is not None
+    box = bridge._box
     assert not box.isModal()
     assert 'detailregel' in box.informativeText()
     texts = [button.text() for button in box.buttons()]

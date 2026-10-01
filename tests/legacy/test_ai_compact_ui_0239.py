@@ -53,11 +53,13 @@ def test_openrouter_thinking_off_uses_reasoning_request_field():
 
 def test_ai_panel_uses_compact_bottom_controls():
     source = Path('quietwriter/ai/ui.py').read_text(encoding='utf-8')
-    assert "self.context_toggle = QPushButton('Context')" in source
-    assert "self.quick_toggle = QPushButton('Snelacties')" in source
+    assert "self.context_toggle = QPushButton(tr('ai.context.toggle', 'Context'))" in source
+    assert "self.quick_toggle = QPushButton(tr('ai.quick_actions', 'Snelacties'))" in source
     assert "self.context_panel.hide()" in source
     assert "ai_quick_actions_expanded" in source
-    assert "self.context = QComboBox(); self.context.addItems(['Huidig hoofdstuk', 'Huidige sectie', 'Hele boek'])" in source
+    assert "self.context.addItem(tr('search.scope.chapter', 'Huidig hoofdstuk'), 'chapter')" in source
+    assert "self.context.addItem(tr('search.scope.section', 'Huidige sectie'), 'section')" in source
+    assert "self.context.addItem(tr('search.scope.book', 'Hele boek'), 'book')" in source
     assert "self.context_view_button.clicked.connect(self._show_context_dialog)" in source
     assert 'def _toggle_context_controls' in source
     assert 'def _toggle_quick_actions' in source

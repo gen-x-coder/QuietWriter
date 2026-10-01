@@ -21,7 +21,7 @@ class ManuscriptTree(QTreeWidget):
         self.header().setSectionResizeMode(0, QHeaderView.Stretch)
         self.header().setSectionResizeMode(1, QHeaderView.Fixed)
         self.header().setMinimumSectionSize(0)
-        self.setColumnWidth(1, 58)
+        self.setColumnWidth(1, 78)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(False)

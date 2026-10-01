@@ -123,7 +123,7 @@ class PersonaPage(QWidget):
         self.sections = QListWidget(); self.sections.setObjectName('personaSectionList')
         self.sections.setMinimumWidth(230); self.sections.setMaximumWidth(280)
         for section in SECTIONS:
-            item = QListWidgetItem(section.title)
+            item = QListWidgetItem(tr(f'persona.section.{section.key}.title', section.title))
             item.setData(Qt.UserRole, section.key)
             self.sections.addItem(item)
         nav_layout.addWidget(self.sections, 1)
@@ -169,8 +169,8 @@ class PersonaPage(QWidget):
         self._current_key = key
         self._loading = True
         try:
-            self.section_title.setText(section.title)
-            self.section_help.setText(section.help)
+            self.section_title.setText(tr(f'persona.section.{section.key}.title', section.title))
+            self.section_help.setText(tr(f'persona.section.{section.key}.help', section.help))
             self.edit.setPlainText(self.profile.get(key, ''))
         finally:
             self._loading = False
@@ -204,8 +204,8 @@ class PersonaPage(QWidget):
                 key = item.data(Qt.UserRole)
                 section = self._section_for_key(key)
                 self._current_key = key
-                self.section_title.setText(section.title)
-                self.section_help.setText(section.help)
+                self.section_title.setText(tr(f'persona.section.{section.key}.title', section.title))
+                self.section_help.setText(tr(f'persona.section.{section.key}.help', section.help))
                 self.edit.setPlainText(self.profile.get(key, ''))
         finally:
             self._loading = False
