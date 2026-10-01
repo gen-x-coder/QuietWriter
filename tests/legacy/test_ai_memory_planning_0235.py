@@ -41,7 +41,8 @@ def test_ai_ui_exposes_memory_save_result_and_exact_planning_context():
     assert "Niet opgeslagen:" in ai
     assert "page.adopt_book(book)" in ai
     assert "Geselecteerde Planning-context:" in ai
-    assert "lines.extend(['', 'Geselecteerde Planning-context:', self._compact_planning_display(planning.text)])" in ai
+    assert "ai.context.selected_planning_heading" in ai
+    assert 'self._compact_planning_display(planning.text)' in ai
     assert "build_system_prompt(" in ai
 
 

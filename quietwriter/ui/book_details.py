@@ -364,7 +364,7 @@ class BookDetailsPage(QWidget):
         except FutureBookFormatError:
             recovery = self._candidate_with_form_values(self.book, self._form_values())
             return self.main.preserve_local_and_close_future_book(
-                self.book, state_book=recovery, context='boekgegevens'
+                self.book, state_book=recovery, context='book_details'
             ) if self.main else False
         except ExternalModificationError:
             # A normal Dropbox/external change must not turn the save guard into
@@ -375,7 +375,7 @@ class BookDetailsPage(QWidget):
             except FutureBookFormatError:
                 recovery = self._candidate_with_form_values(self.book, self._form_values())
                 return self.main.preserve_local_and_close_future_book(
-                    self.book, state_book=recovery, context='boekgegevens'
+                    self.book, state_book=recovery, context='book_details'
                 ) if self.main else False
             except Exception as e:
                 QMessageBox.warning(

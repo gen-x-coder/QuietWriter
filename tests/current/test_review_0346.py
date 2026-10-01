@@ -9,4 +9,5 @@ def test_ai_panel_initializes_busy_button_state_on_cold_start():
 
 def test_planning_error_context_is_self_describing_in_conversation_context():
     source = Path('quietwriter/ai/ui.py').read_text(encoding='utf-8')
-    assert "manuscript_context.pieces.append('Planning niet beschikbaar — ' + planning.error)" in source
+    assert "ai.context.planning_unavailable_piece" in source
+    assert 'error=planning.error' in source

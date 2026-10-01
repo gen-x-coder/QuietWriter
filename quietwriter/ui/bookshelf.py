@@ -294,7 +294,8 @@ class StartPage(QWidget):
         self.no_results.setVisible(bool(query) and not books)
         if load_errors:
             names = ', '.join(str(row.get('title') or '?') for row in load_errors[:3])
-            suffix = f' • {len(load_errors)} boek(en) niet geopend: {names}'
+            count = len(load_errors)
+            suffix = ' ' + (tr('bookshelf.load_errors.one', '• 1 boek niet geopend: {names}', names=names) if count == 1 else tr('bookshelf.load_errors.many', '• {count} boeken niet geopend: {names}', count=count, names=names))
             self.count.setText(self.count.text() + suffix)
 
         create = QFrame()

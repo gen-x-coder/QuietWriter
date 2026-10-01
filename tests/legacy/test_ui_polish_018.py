@@ -50,10 +50,10 @@ def test_editor_context_menu_keeps_standard_edit_actions_and_adds_formatting():
     source = EDITOR.read_text(encoding='utf-8')
     assert 'def contextMenuEvent(self, event):' in source
     assert 'menu = self.createStandardContextMenu()' in source
-    assert "formatting = menu.addMenu('Opmaak')" in source
-    assert "paragraph_menu = formatting.addMenu('Alineastijl')" in source
-    assert "('bold', 'Vet')" in source
-    assert "('heading', 'Tussenkop')" in source
+    assert "formatting = menu.addMenu(tr('format.menu', 'Opmaak'))" in source
+    assert "paragraph_menu = formatting.addMenu(tr('format.paragraph_style', 'Alineastijl'))" in source
+    assert "('bold', tr('format.bold', 'Vet'))" in source
+    assert "('heading', tr('format.heading', 'Tussenkop'))" in source
 
 
 def test_settings_theme_has_shared_row_styles():

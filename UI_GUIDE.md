@@ -376,3 +376,10 @@ Nieuwe hoofdstukplanning wordt niet stil geactiveerd. Zolang `ai_use_chapter_pla
 - Essentie: hoofdstukplanning is nieuw, staat standaard uit en kan bij een externe provider de computer verlaten.
 - **Begrepen** bevestigt bewust uit blijven; de checkbox blijft de expliciete keuze om context wel mee te sturen.
 
+
+
+## Vertaling en licenties (0.35.2)
+
+- Zichtbare UI-tekst loopt via `tr()`; logica mag nooit afhangen van een vertaald label. Gebruik stabiele ids in item data voor comboboxen/lijsten.
+- Persistente Markdown-koppen blijven broncompatibel; alleen de UI-labels worden vertaald.
+- De Over-pagina toont eerst de product-/derdenlicenties en daarna de individuele fontlicenties. Licentieteksten zijn inklapbaar om de pagina rustig te houden.

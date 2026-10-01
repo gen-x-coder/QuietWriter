@@ -24,7 +24,7 @@ def test_chapter_drop_is_deferred_until_after_native_drag_loop():
 def test_ai_visibility_is_reapplied_after_restored_window_state():
     source = (ROOT / 'quietwriter' / 'ui' / 'main_window.py').read_text(encoding='utf-8')
     assert 'self.restore_state(); self._apply_feature_visibility();' in source
-    sync = source[source.index('    def sync_tool_buttons'):source.index('    def build_ai_context')]
+    sync = source[source.index('    def sync_tool_buttons'):source.index('    def closeEvent')]
     assert "ai_enabled = self.settings.value('ai_enabled', True, bool)" in sync
     assert 'self.ai_button.setVisible(ai_enabled)' in sync
     commit = source[source.index('    def _apply_committed_navigation_effects'):source.index('    def _set_feature_visibility')]

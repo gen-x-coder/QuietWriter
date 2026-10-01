@@ -10,7 +10,8 @@ De featurefase is afgesloten. Vanaf 0.35 geldt één harde regel: alleen werk da
 - Vertaalcontrole, licentie-inventaris, first-run ontwerp en CI op Ubuntu/Windows.
 
 **0.36 — Windows en verpakking**
-- Portable PyInstaller-onedir build, first-run wizard en eerste Windows-testmatrix.
+- **0.36.0:** schone allowlist-staging + lokale/CI PyInstaller-onedir bouwroute; ontwikkelmap en distributiemap zijn fysiek gescheiden.
+- Volgende stap: first-run wizard, daarna echte portable Windows-smoketest en eerste Windows-testmatrix.
 
 **0.37 — praktijkgebruik**
 - Echte oude boeken, groot boek, Dropbox/OneDrive, compacte documentatie en dagelijkse praktijktests.
@@ -521,3 +522,26 @@ Status: geïmplementeerd. Nieuwe gebruikers/contextinstellingen starten uit; bes
 - [x] Compactere privacytekst bij de opt-in voor hoofdstukplanning.
 - [x] Geen productlogica gewijzigd; kandidaat om 0.34 af te sluiten na groene externe PySide6-review.
 
+
+
+## Releasepad-status 0.35.1
+
+- Crashvangnet: logging + crashstormbeveiliging + zichtbare startup-crash afgerond; wacht op echte Qt-review.
+- Branding: logo, splash, Over-contrast en HiDPI-rendering ingebouwd; wacht op Windows/DPI-review.
+- First-run: triggercontract gecorrigeerd; bouw volgt in 0.36.
+- CI: matrix en Ubuntu Qt-runtimevoorwaarden aanwezig; fontresources volgen met licentie-inventaris in 0.35.2.
+- Vertaling/licenties: volgende 0.35-slice.
+
+
+## Releasepad-status 0.35.2
+
+- Crash-cooldown is brongebaseerd (exceptiontype + tracebacklocatie).
+- Vertaalbestanden zijn sleutelsymmetrisch en worden door AST-regressiegates bewaakt.
+- Fontmanifest + OFL-bronnen zijn aanwezig; de twee historische fontfailures zijn lokaal groen.
+- Eigen en derde-partijlicenties zijn geïnventariseerd en vanuit Over bereikbaar.
+- First-run-ontwerp behandelt ook een lege bestaande standaardwerkmap als bestaand gebruik.
+- Open voor afronding 0.35: echte Engelse UI-rondgang en CI-run door Claude/GitHub; eventuele bevindingen daaruit repareren.
+
+
+### 0.35.4 — afsluiting 0.35
+Planning custom values behouden; undefined-name CI-gate; Python 3.12+ officieel vastgelegd.

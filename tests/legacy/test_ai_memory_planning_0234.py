@@ -91,13 +91,13 @@ def test_ai_source_has_active_memory_check_user_approval_and_planning_picker():
     memory_page = Path('quietwriter/ui/book_memory_page.py').read_text(encoding='utf-8')
     dialog = Path('quietwriter/ui/planning_context_dialog.py').read_text(encoding='utf-8')
     assert 'vergelijk relevante feiten en besluiten uit het boekgeheugen actief' in prompting
-    assert "self.memory_accept = QPushButton('Onthouden')" in ai
-    assert "self.memory_edit = QPushButton('Bewerken')" in ai
-    assert "self.memory_ignore = QPushButton('Negeren')" in ai
+    assert "self.memory_accept = QPushButton(tr('ai.memory.remember', 'Onthouden'))" in ai
+    assert "self.memory_edit = QPushButton(tr('common.edit', 'Bewerken'))" in ai
+    assert "self.memory_ignore = QPushButton(tr('common.ignore', 'Negeren'))" in ai
     assert 'extract_memory_suggestions(self.current_assistant)' in ai
     assert 'page.add_suggestion' in ai
     assert 'def add_suggestion(self, section_key: str, text: str)' in memory_page
-    assert "QPushButton('Planning-context…')" in ai
+    assert "QPushButton(tr('ai.context.planning_button', 'Planning-context…'))" in ai
     assert 'PlanningContextDialog' in ai
     assert 'Qt.ItemIsUserCheckable' in dialog
     assert 'GESELECTEERDE PLANNINGCONTEXT' in prompting

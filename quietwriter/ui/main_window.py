@@ -297,13 +297,14 @@ class MainWindow(QMainWindow):
         }
 
 
-    def preserve_local_and_close_future_book(self, book, *, file_overrides=None, state_book=None, context='wijzigingen'):
+    def preserve_local_and_close_future_book(self, book, *, file_overrides=None, state_book=None, context='changes'):
         """Safely detach a book that became newer than this QuietWriter.
 
         Every caller must first preserve the local UI state in History.  The
         incompatible live manifest is never loaded or rewritten.  If creating
         the recovery snapshot fails, the workspace deliberately stays open.
         """
+        context_label = tr(f'future.context.{context}', context)
         try:
             if state_book is not None:
                 self.library.create_version_from_state(state_book, kind='conflict_local')
@@ -313,15 +314,13 @@ class MainWindow(QMainWindow):
                 self.library.create_version_from_state(book, kind='conflict_local')
         except Exception as exc:
             QMessageBox.critical(
-                self, 'Lokale invoer niet veiliggesteld',
-                f'Je lokale {context} konden niet in Versiegeschiedenis worden bewaard. '
-                f'Het boek blijft open. Kopieer je invoer desnoods handmatig en probeer het opnieuw.\n\n{exc}'
+                self, tr('main.future.local_not_preserved_title', 'Lokale invoer niet veiliggesteld'),
+                tr('main.future.local_not_preserved_text', 'Je lokale {context} konden niet in Versiegeschiedenis worden bewaard. Het boek blijft open. Kopieer je invoer desnoods handmatig en probeer het opnieuw.\n\n{error}', context=context_label, error=exc)
             )
             return False
         QMessageBox.warning(
-            self, 'Nieuwere QuietWriter nodig',
-            f'Dit boek gebruikt inmiddels een nieuwere QuietWriter-versie. Je lokale {context} zijn '
-            'bewaard in Versiegeschiedenis. Het boek wordt gesloten; werk QuietWriter bij voordat je verdergaat.'
+            self, tr('main.future.title', 'Nieuwere QuietWriter nodig'),
+            tr('main.future.text', 'Dit boek gebruikt inmiddels een nieuwere QuietWriter-versie. Je lokale {context} zijn bewaard in Versiegeschiedenis. Het boek wordt gesloten; werk QuietWriter bij voordat je verdergaat.', context=context_label)
         )
         self.force_return_to_bookshelf(book)
         return True
@@ -697,18 +696,18 @@ class MainWindow(QMainWindow):
         self._sync_nav_selection()
 
     def new_book(self):
-        title, ok = QInputDialog.getText(self, 'Nieuw boek', 'Titel van het boek:')
+        title, ok = QInputDialog.getText(self, tr('book.new.title', 'Nieuw boek'), tr('book.new.prompt', 'Titel van het boek:'))
         if ok:
-            book = self.library.create_book(title or 'Naamloos boek'); self.start.refresh(); self.open_book(book)
+            book = self.library.create_book(title or tr('book.untitled', 'Naamloos boek')); self.start.refresh(); self.open_book(book)
 
     def import_book(self):
-        path, _ = QFileDialog.getOpenFileName(self, 'Boek importeren', str(Path.home()), 'Markdown (*.md);;Alle bestanden (*)')
+        path, _ = QFileDialog.getOpenFileName(self, tr('book.import.title', 'Boek importeren'), str(Path.home()), tr('book.import.filter', 'Markdown (*.md);;Alle bestanden (*)'))
         if not path:
             return
         try:
             book = self.library.import_markdown_book(Path(path))
         except Exception as e:
-            QMessageBox.critical(self, 'Boek importeren', f'Importeren mislukt:\n{e}')
+            QMessageBox.critical(self, tr('book.import.title', 'Boek importeren'), tr('book.import.failed', 'Importeren mislukt:\n{error}', error=e))
             return
         self.start.refresh()
         self.open_book(book)
@@ -1106,8 +1105,8 @@ class MainWindow(QMainWindow):
         )
         self.editor_page.ai.apply_settings()
         if self.settings.value('workspace') != old_root:
-            QMessageBox.information(self,'Werkmap gewijzigd','De nieuwe werkmap wordt gebruikt nadat de applicatie opnieuw is gestart.')
-        self.status.showMessage('Instellingen opgeslagen', 2500)
+            QMessageBox.information(self, tr('settings.workspace_changed_title', 'Werkmap gewijzigd'), tr('settings.workspace_changed_text', 'De nieuwe werkmap wordt gebruikt nadat de applicatie opnieuw is gestart.'))
+        self.status.showMessage(tr('settings.saved', 'Instellingen opgeslagen'), 2500)
 
     def sync_tool_buttons(self):
         if not hasattr(self, 'search_button'): return
@@ -1135,28 +1134,6 @@ class MainWindow(QMainWindow):
             total = sum(len(sec.chapters) for sec in self.editor_page.book.sections) if self.editor_page.book else 0
             self.delete_chapter_button.setEnabled(bool(in_editor and self.editor_page.chapter and not self.editor_page.preview_live_book and total > 1))
 
-    def build_ai_context(self, mode: str, prompt: str):
-        ep=self.editor_page; book=ep.book; chapter=ep.chapter
-        if not book or not chapter: return '', 'geen manuscript geopend'
-        selected = ep.editor.textCursor().selectedText().replace('\u2029','\n')
-        if selected: return selected, 'geselecteerde tekst'
-        if mode=='Huidig hoofdstuk': return ep.editor.toPlainText(), f'hoofdstuk: {chapter.title}'
-        if mode=='Huidige sectie':
-            section,_=ep.find_chapter_in_book(chapter.id); parts=[]
-            for c in section.chapters:
-                txt = ep.editor.toPlainText() if c.id==chapter.id else self.library.read_chapter(book,c)
-                parts.append(f'# {c.title}\n{txt}')
-            return '\n\n'.join(parts), f'sectie: {section.title}'
-        if mode=='Hele boek':
-            parts=[]
-            for s in book.sections:
-                if s.id != 'root': parts.append(f'## {s.title}')
-                for c in s.chapters:
-                    txt=ep.editor.toPlainText() if c.id==chapter.id else self.library.read_chapter(book,c)
-                    parts.append(f'# {c.title}\n{txt}')
-            return '\n\n'.join(parts), f'boek: {book.title}'
-        return ep.editor.toPlainText(), f'hoofdstuk: {chapter.title}'
-
     def closeEvent(self, event):
         try:
             if not self._save_book_details_if_pending():
@@ -1171,12 +1148,12 @@ class MainWindow(QMainWindow):
                 event.ignore(); return
         except Exception as exc:
             event.ignore()
-            QMessageBox.critical(self, 'Afsluiten gestopt', f'QuietWriter kon niet alle wijzigingen veilig opslaan. Het venster blijft open.\n\n{exc}')
+            QMessageBox.critical(self, tr('app.close_blocked_title', 'Afsluiten gestopt'), tr('app.close_blocked_all', 'QuietWriter kon niet alle wijzigingen veilig opslaan. Het venster blijft open.\n\n{error}', error=exc))
             return
         # AI-workers moeten echt gestopt zijn voordat Qt widgets/QThreads vernietigt.
         # Anders kan Qt afsluiten met: QThread: Destroyed while thread is still running.
         if hasattr(self.editor_page, 'ai') and not self.editor_page.ai.shutdown(4500):
-            QMessageBox.warning(self, 'AI is nog bezig', 'QuietWriter kon het lopende AI-verzoek nog niet veilig stoppen. Klik op “Stop AI” en probeer daarna opnieuw af te sluiten.')
+            QMessageBox.warning(self, tr('app.ai_still_running_title', 'AI is nog bezig'), tr('app.ai_still_running_text', 'QuietWriter kon het lopende AI-verzoek nog niet veilig stoppen. Klik op “Stop AI” en probeer daarna opnieuw af te sluiten.'))
             event.ignore()
             return
         try:
@@ -1185,7 +1162,7 @@ class MainWindow(QMainWindow):
                 return
         except Exception as exc:
             event.ignore()
-            QMessageBox.critical(self, 'Afsluiten gestopt', f'QuietWriter kon je laatste wijzigingen niet veilig opslaan. Het venster blijft open.\n\n{exc}')
+            QMessageBox.critical(self, tr('app.close_blocked_title', 'Afsluiten gestopt'), tr('app.close_blocked_last', 'QuietWriter kon je laatste wijzigingen niet veilig opslaan. Het venster blijft open.\n\n{error}', error=exc))
             return
         # Window geometry/state blijft volledig bij Qt. De layout zelf houdt
         # minimum-size hints nu binnen de beschikbare viewport; er is dus geen

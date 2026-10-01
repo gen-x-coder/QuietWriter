@@ -1,0 +1,74 @@
+name: windows-build
+
+# Bouwt exact dezelfde schone portable release als build_exe.cmd lokaal doet.
+# De ontwikkel/repository-root is nooit de distributiemap; tools/prepare_release.py
+# maakt eerst release/stage op basis van een expliciete allowlist.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build clean portable release
+        shell: cmd
+        run: build_exe.cmd
+
+      - name: Smoke test executable
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $v = (Select-String -Path quietwriter\__init__.py -Pattern '__version__\s*=\s*"(.+)"').Matches[0].Groups[1].Value
+          $exe = "release\QuietWriter-$v\QuietWriter.exe"
+          if (-not (Test-Path $exe)) { Write-Error "Executable ontbreekt: $exe"; exit 1 }
+          $p = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 15
+          if ($p.HasExited) { Write-Error "QuietWriter.exe stopte binnen 15 s (exitcode $($p.ExitCode))"; exit 1 }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "QuietWriter.exe draait."
+
+      - name: Verify release hygiene
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path quietwriter\__init__.py -Pattern '__version__\s*=\s*"(.+)"').Matches[0].Groups[1].Value
+          $out = "release\QuietWriter-$v"
+          foreach ($bad in @('ppm','tests','.git')) {
+            if (Test-Path (Join-Path $out $bad)) { Write-Error "Verboden release-item: $bad"; exit 1 }
+          }
+          $reports = Get-ChildItem $out -Recurse -File | Where-Object { $_.Name -match '^(REVIEW_NOTES_|QUIETWRITER_REVIEW_FINDINGS_|TUSSENTIJDS_RAPPORT_)' }
+          if ($reports) { $reports | ForEach-Object { Write-Error "Ontwikkelrapport in release: $($_.FullName)" }; exit 1 }
+          Write-Host "Release hygiene: OK"
+
+      - name: Resolve artifact name
+        id: artifact
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path quietwriter\__init__.py -Pattern '__version__\s*=\s*"(.+)"').Matches[0].Groups[1].Value
+          "name=QuietWriter-$v-windows-portable.zip" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: |
+            release/${{ steps.artifact.outputs.name }}
+            release/${{ steps.artifact.outputs.name }}.sha256
+
+      - name: GitHub Release (alleen bij een tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/${{ steps.artifact.outputs.name }}
+            release/${{ steps.artifact.outputs.name }}.sha256
+          prerelease: ${{ contains(github.ref_name, 'rc') || startsWith(github.ref_name, 'v0.') }}

@@ -12,7 +12,7 @@ from typing import Callable
 
 _LOG_HANDLE = None
 _LOG_PATH: Path | None = None
-_ERROR_NOTIFIER: Callable[[str, str], None] | None = None
+_ERROR_NOTIFIER: Callable[..., None] | None = None
 _ORIGINAL_EXCEPTHOOK = sys.excepthook
 _ORIGINAL_THREADING_EXCEPTHOOK = getattr(threading, 'excepthook', None)
 _ORIGINAL_QT_MESSAGE_HANDLER = None
@@ -67,11 +67,13 @@ def current_log_path() -> Path | None:
     return _LOG_PATH
 
 
-def set_error_notifier(callback: Callable[[str, str], None] | None) -> None:
+def set_error_notifier(callback: Callable[..., None] | None) -> None:
     """Set the UI notification callback used for uncaught Python errors.
 
-    The callback receives ``(short_message, details)``. It may be called from a
-    worker thread, so GUI clients should bridge this through a Qt signal.
+    New callbacks receive ``(short_message, details, fingerprint)``.  For
+    compatibility with older/lightweight test callbacks, two-argument
+    callbacks are still accepted.  The callback may be invoked from a worker
+    thread, so GUI clients should bridge this through a Qt signal.
     """
     global _ERROR_NOTIFIER
     _ERROR_NOTIFIER = callback
@@ -86,15 +88,42 @@ def _write(text: str) -> None:
         pass
 
 
-def _notify(short_message: str, details: str) -> None:
+def _notify(short_message: str, details: str, fingerprint: str = '') -> None:
     callback = _ERROR_NOTIFIER
     if callback is None:
         return
     try:
-        callback(short_message, details)
+        callback(short_message, details, fingerprint)
+    except TypeError:
+        # Keep small test doubles and third-party integrations compatible with
+        # the pre-0.35.2 two-argument notifier contract.
+        try:
+            callback(short_message, details)
+        except Exception:
+            pass
     except Exception:
         # The crash reporter must never cause a second crash.
         pass
+
+
+def _exception_fingerprint(exc_type, exc_tb) -> str:
+    """Identify a repeating failure by exception type and source location.
+
+    Exception text is deliberately excluded: recurring UI failures often embed
+    a changing chapter/id/value in their message.  Those must still count as
+    the same source failure for the notification cooldown.
+    """
+    type_name = getattr(exc_type, '__name__', str(exc_type))
+    last_tb = exc_tb
+    while getattr(last_tb, 'tb_next', None) is not None:
+        last_tb = last_tb.tb_next
+    if last_tb is not None:
+        try:
+            code = last_tb.tb_frame.f_code
+            return f'{type_name}|{code.co_filename}:{last_tb.tb_lineno}'
+        except Exception:
+            pass
+    return str(type_name)
 
 
 def _install_qt_message_handler() -> None:
@@ -130,6 +159,12 @@ def _install_qt_message_handler() -> None:
                 previous(msg_type, context, message)
             except Exception:
                 pass
+        else:
+            try:
+                sys.__stderr__.write(f'Qt {label}{source}: {message}\n')
+                sys.__stderr__.flush()
+            except Exception:
+                pass
 
     try:
         _ORIGINAL_QT_MESSAGE_HANDLER = qInstallMessageHandler(qt_message_handler)
@@ -137,7 +172,20 @@ def _install_qt_message_handler() -> None:
     except Exception:
         _ORIGINAL_QT_MESSAGE_HANDLER = None
         _QT_HANDLER_INSTALLED = False
-_QT_HANDLER_INSTALLED = False
+
+
+def log_exception(exc_type, exc_value, exc_tb, *, label: str = 'Onverwerkte Python-exception', notify: bool = True, summary: str = 'Er ging iets mis in QuietWriter.') -> None:
+    stamp = datetime.now().isoformat(timespec='seconds')
+    _write(f'\n--- {label} {stamp} ---\n')
+    try:
+        if _LOG_HANDLE is not None:
+            traceback.print_exception(exc_type, exc_value, exc_tb, file=_LOG_HANDLE)
+            _LOG_HANDLE.flush()
+    except Exception:
+        pass
+    if notify:
+        details = ''.join(traceback.format_exception_only(exc_type, exc_value)).strip()
+        _notify(summary, details, _exception_fingerprint(exc_type, exc_tb))
 
 
 def enable_crash_logging(log_path: Path) -> Path:
@@ -182,16 +230,7 @@ def enable_crash_logging(log_path: Path) -> Path:
         _write(f'faulthandler kon niet worden geactiveerd: {exc!r}\n')
 
     def exception_hook(exc_type, exc_value, exc_tb):
-        stamp = datetime.now().isoformat(timespec='seconds')
-        _write(f'\n--- Onverwerkte Python-exception {stamp} ---\n')
-        try:
-            if _LOG_HANDLE is not None:
-                traceback.print_exception(exc_type, exc_value, exc_tb, file=_LOG_HANDLE)
-                _LOG_HANDLE.flush()
-        except Exception:
-            pass
-        details = ''.join(traceback.format_exception_only(exc_type, exc_value)).strip()
-        _notify('Er ging iets mis in QuietWriter.', details)
+        log_exception(exc_type, exc_value, exc_tb)
         try:
             _ORIGINAL_EXCEPTHOOK(exc_type, exc_value, exc_tb)
         except Exception:
@@ -201,17 +240,12 @@ def enable_crash_logging(log_path: Path) -> Path:
 
     if _ORIGINAL_THREADING_EXCEPTHOOK is not None:
         def thread_exception_hook(args):
-            stamp = datetime.now().isoformat(timespec='seconds')
             name = getattr(args.thread, 'name', 'thread')
-            _write(f'\n--- Onverwerkte thread-exception {stamp} ({name}) ---\n')
-            try:
-                if _LOG_HANDLE is not None:
-                    traceback.print_exception(args.exc_type, args.exc_value, args.exc_traceback, file=_LOG_HANDLE)
-                    _LOG_HANDLE.flush()
-            except Exception:
-                pass
-            details = ''.join(traceback.format_exception_only(args.exc_type, args.exc_value)).strip()
-            _notify('Er ging iets mis in een achtergrondtaak.', details)
+            log_exception(
+                args.exc_type, args.exc_value, args.exc_traceback,
+                label=f'Onverwerkte thread-exception ({name})',
+                summary='Er ging iets mis in een achtergrondtaak.',
+            )
             try:
                 _ORIGINAL_THREADING_EXCEPTHOOK(args)
             except Exception:

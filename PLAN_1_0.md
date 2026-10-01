@@ -37,7 +37,7 @@ Een paar onderdelen bestaan al. Het werk daaraan is daardoor kleiner dan de road
 | Splash behouden | **Must** | 0.35 | Met logo. Blijft alleen in beeld tot het hoofdvenster verschijnt (zoals nu) en verbergt nooit een foutdialoog. Test: een foutmelding tijdens de start is zichtbaar en bedienbaar. |
 | Vertaalcontrole | **Must** | 0.35 | De 74 ontbrekende `en`-sleutels zijn aangevuld en de hardgecodeerde teksten lopen via `tr()`. **Twee tests maken dit blijvend:** één faalt als een `tr()`-sleutel in `en.json` ontbreekt, één AST-test faalt op letterlijke tekst in `QLabel`/`setText`/`setToolTip`/`QPushButton`/`setPlaceholderText`. Extra aandacht voor het rechtermenu, Boekdetails, Boekprofiel en het AI-paneel. |
 | Licentie-inventaris | **Must** | 0.35 | Er is een eigen `LICENSE` en een `THIRD_PARTY_LICENSES.md` met PySide6/Qt (LGPL), elk meegeleverd lettertype, elk Hunspell-woordenboek en Python. Beide zijn zichtbaar vanaf de Over-pagina. |
-| First-run | **Must** (klein) | 0.35 ontwerp, 0.36 bouw | Maximaal 4 stappen: taal en thema → werkmap → spelling → AI (standaard **uit**). Elke stap is over te slaan en alles is later te wijzigen in Instellingen. **Bestaande gebruikers zien hem nooit**: de test is dat er al een `workspace`-instelling bestaat. |
+| First-run | **Must** (klein) | 0.35 ontwerp, 0.36 bouw | Maximaal 4 stappen: taal en thema → werkmap → spelling → AI (standaard **uit**). Elke stap is over te slaan en alles is later te wijzigen in Instellingen. **Bestaande gebruikers zien hem nooit**: gebruik `first_run_done`; bij migratie geldt bestaande QuietWriter-instellingen of het bestaan van de standaardwerkmap al als bestaand gebruik. |
 | CI | **Must** | 0.35 (uiterlijk RC1) | GitHub Actions draait `pytest`, `-m qt`, `tests/legacy` en `tests/legacy -m qt` offscreen, op **Ubuntu én Windows**. De Windows-runner test dan echte Windows-bestandssemantiek bij elke push. |
 | Portable Windows-build | **Must** | 0.36 | PyInstaller in **onedir**-modus (sneller opstarten en minder vals alarm bij antivirus dan onefile). Meegebundeld: lettertypen (dan worden ook de 2 fonttests groen), woordenboeken, de Qt-plugins `platforms`, `imageformats`, `iconengines` en `styles`, versie-informatie in het `.exe`, en het `.ico`. Start op een schone Windows 10 **en** 11 zonder Python. |
 | Uitleg over SmartScreen | **Must** | 0.36 | Eén alinea in "Aan de slag": waarom Windows waarschuwt en hoe je verdergaat. |
@@ -80,8 +80,9 @@ Crashvangnet · logo en splash · vertaalcontrole met twee tests · licentie-inv
 Nederlandse resten, en de crashmelding is gedemonstreerd.
 
 ### 0.36: Windows en verpakking
-Portable build · first-run gebouwd · SmartScreen-alinea · eerste helft van de Windows-matrix (DPI, paden, vergrendeling,
-schone machine).
+**0.36.0:** release-staging op allowlist en lokale/CI PyInstaller-buildroute. De ontwikkelmap mag vervuild zijn; de build wordt altijd uit een nieuw aangemaakte `release/stage` gemaakt.
+
+Daarna: first-run gebouwd · portable build op echte Windows-machine · SmartScreen-alinea · eerste helft van de Windows-matrix (DPI, paden, vergrendeling, schone machine).
 **Klaar als:** de build start op een schone Windows 10 en 11 en de matrixregels voor 0.36 zijn afgevinkt.
 
 ### 0.37: praktijkgebruik
@@ -108,3 +109,7 @@ Pas als alle vijf de voorwaarden gelden:
   typen, opslaan, afsluiten).
 - Claude blijft testen wat CI niet kan: runtime-scenario's, foutinjectie, bytevergelijkingen en onderschepping van de
   prompt.
+
+
+## Runtimecontract
+QuietWriter 1.0 ondersteunt Python 3.12 en nieuwer. De portable Windows-build bundelt zijn eigen Python-runtime.

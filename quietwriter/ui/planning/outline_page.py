@@ -12,6 +12,7 @@ from ...storage import CorruptSourceError
 from ...planning_validation import FuturePlanningFormatError
 from ...i18n import tr
 from ..dialogs import confirm
+from .combo_value import editable_combo_value
 
 
 class SceneDialog(QDialog):
@@ -22,7 +23,19 @@ class SceneDialog(QDialog):
         self.chapter=QComboBox(); self.chapter.addItem(tr('planning.outline.loose_idea', 'Los idee'), None)
         for ch in chapters: self.chapter.addItem(ch.title, ch.id)
         idx=self.chapter.findData(scene.chapter_id); self.chapter.setCurrentIndex(max(0,idx))
-        self.location=QLineEdit(scene.location); self.status=QComboBox(); self.status.setEditable(True); self.status.addItems(['idee','uitgewerkt','geschreven']); self.status.setCurrentText(scene.status)
+        self.location=QLineEdit(scene.location); self.status=QComboBox(); self.status.setEditable(True)
+        for value, key, label in (
+            ('idee', 'planning.status.idea', 'idee'),
+            ('uitgewerkt', 'planning.status.developed', 'uitgewerkt'),
+            ('geschreven', 'planning.status.written', 'geschreven'),
+        ):
+            self.status.addItem(tr(key, label), value)
+        known_status_index = self.status.findData(scene.status)
+        if known_status_index >= 0:
+            self.status.setCurrentIndex(known_status_index)
+        else:
+            self.status.setCurrentIndex(-1)
+            self.status.setEditText(scene.status)
         form.addRow(tr('planning.outline.field.title', 'Titel'),self.title); form.addRow(tr('planning.outline.field.chapter', 'Hoofdstuk'),self.chapter); form.addRow(tr('planning.outline.field.synopsis', 'Synopsis'),self.synopsis); form.addRow(tr('planning.outline.field.location', 'Locatie'),self.location); form.addRow(tr('planning.outline.field.status', 'Status'),self.status)
         self.character_checks=[]; chars=QWidget(); cl=QVBoxLayout(chars); cl.setContentsMargins(0,0,0,0)
         for char in characters:
@@ -34,7 +47,7 @@ class SceneDialog(QDialog):
     def _text(self,value):
         e=QTextEdit(); e.setPlainText(value); e.setFixedHeight(74); return e
     def apply(self):
-        s=self.scene; s.title=self.title.text().strip() or tr('planning.outline.untitled_scene', 'Naamloze scène'); s.chapter_id=self.chapter.currentData(); s.synopsis=self.synopsis.toPlainText().strip(); s.location=self.location.text().strip(); s.status=self.status.currentText().strip() or 'idee'; s.character_ids=[cb.property('characterId') for cb in self.character_checks if cb.isChecked()]; s.goal=self.goal.toPlainText().strip(); s.conflict=self.conflict.toPlainText().strip(); s.outcome=self.outcome.toPlainText().strip(); s.notes=self.notes.toPlainText().strip(); return s
+        s=self.scene; s.title=self.title.text().strip() or tr('planning.outline.untitled_scene', 'Naamloze scène'); s.chapter_id=self.chapter.currentData(); s.synopsis=self.synopsis.toPlainText().strip(); s.location=self.location.text().strip(); s.status=editable_combo_value(self.status, default='idee'); s.character_ids=[cb.property('characterId') for cb in self.character_checks if cb.isChecked()]; s.goal=self.goal.toPlainText().strip(); s.conflict=self.conflict.toPlainText().strip(); s.outcome=self.outcome.toPlainText().strip(); s.notes=self.notes.toPlainText().strip(); return s
 
 
 class SceneCard(QFrame):
@@ -47,7 +60,13 @@ class SceneCard(QFrame):
         names=[character_names.get(cid) for cid in scene.character_ids if character_names.get(cid)]
         if names: meta.append(tr('planning.outline.meta.characters', 'personages: {names}', names=', '.join(names)))
         if scene.location: meta.append(tr('planning.outline.meta.location', 'locatie: {location}', location=scene.location))
-        if scene.status: meta.append(tr('planning.outline.meta.status', 'status: {status}', status=scene.status))
+        if scene.status:
+            status_display = {
+                'idee': tr('planning.status.idea', 'idee'),
+                'uitgewerkt': tr('planning.status.developed', 'uitgewerkt'),
+                'geschreven': tr('planning.status.written', 'geschreven'),
+            }.get(scene.status, scene.status)
+            meta.append(tr('planning.outline.meta.status', 'status: {status}', status=status_display))
         if meta: m=QLabel(' · '.join(meta)); m.setObjectName('muted'); m.setWordWrap(True); lay.addWidget(m)
 
 

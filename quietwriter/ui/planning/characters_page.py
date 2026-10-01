@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 
 from ..current_page_stack import CurrentPageStack
 from ..dialogs import confirm
+from .combo_value import editable_combo_value
 from ...planning_models import Character, Relation
 from ...storage import CorruptSourceError
 from ...planning_validation import FuturePlanningFormatError
@@ -22,6 +23,19 @@ RELATION_PAIRS = {
     'partner van': 'partner van', 'vriend van': 'vriend van',
     'collega van': 'collega van', 'mentor van': 'leerling van', 'leerling van': 'mentor van',
 }
+
+RELATION_TRANSLATION_KEYS = {
+    'ouder van': 'planning.relation.parent_of', 'kind van': 'planning.relation.child_of',
+    'vader van': 'planning.relation.father_of', 'moeder van': 'planning.relation.mother_of',
+    'zoon van': 'planning.relation.son_of', 'dochter van': 'planning.relation.daughter_of',
+    'partner van': 'planning.relation.partner_of', 'vriend van': 'planning.relation.friend_of',
+    'collega van': 'planning.relation.colleague_of', 'mentor van': 'planning.relation.mentor_of',
+    'leerling van': 'planning.relation.student_of',
+}
+
+def relation_display(value: str) -> str:
+    key = RELATION_TRANSLATION_KEYS.get(value)
+    return tr(key, value) if key else value
 
 
 class CharacterDetail(QWidget):
@@ -65,7 +79,9 @@ class CharacterDetail(QWidget):
         rel_title = QLabel(tr('planning.characters.relations', 'Relaties')); rel_title.setObjectName('sectionTitle'); self.form.addWidget(rel_title)
         self.relations_box = QVBoxLayout(); self.relations_box.setSpacing(6); self.form.addLayout(self.relations_box)
         add = QHBoxLayout()
-        self.rel_type = QComboBox(); self.rel_type.setEditable(True); self.rel_type.addItems(sorted(RELATION_PAIRS))
+        self.rel_type = QComboBox(); self.rel_type.setEditable(True)
+        for relation_value in sorted(RELATION_PAIRS):
+            self.rel_type.addItem(relation_display(relation_value), relation_value)
         self.rel_target = QComboBox()
         add_btn = QPushButton(tr('planning.characters.add_relation', 'Relatie toevoegen')); add_btn.clicked.connect(self._add_relation)
         add.addWidget(self.rel_type, 1); add.addWidget(self.rel_target, 1); add.addWidget(add_btn)
@@ -122,7 +138,7 @@ class CharacterDetail(QWidget):
         for relation in self.character.relations:
             holder = QWidget(); hl = QHBoxLayout(holder); hl.setContentsMargins(0,0,0,0); hl.setSpacing(4)
             unknown_label = tr('planning.characters.unknown', 'Onbekend personage')
-            row = QPushButton(f'→  {relation.type}  {names.get(relation.target_id, unknown_label)}')
+            row = QPushButton(f'→  {relation_display(relation.type)}  {names.get(relation.target_id, unknown_label)}')
             row.setObjectName('relationChip'); row.setCursor(Qt.PointingHandCursor)
             row.clicked.connect(lambda _=False, cid=relation.target_id: self.navigateCharacter.emit(cid))
             remove = QPushButton('×'); remove.setObjectName('compactButton'); remove.setToolTip(tr('planning.characters.remove_relation', 'Relatie verwijderen'))
@@ -153,7 +169,7 @@ class CharacterDetail(QWidget):
 
     def _add_relation(self):
         if not self.character or self.rel_target.currentIndex() < 0: return
-        relation_type = self.rel_type.currentText().strip() or 'kent'
+        relation_type = editable_combo_value(self.rel_type, default='kent')
         self.relationRequested.emit(self.character.id, self.rel_target.currentData(), relation_type)
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import platform
 import sys
+from pathlib import Path
 
 from PySide6 import __version__ as pyside_version
 from PySide6.QtCore import Qt, QUrl, qVersion
@@ -15,6 +16,14 @@ from .. import APP_NAME, __version__
 from ..font_catalog import bundled_fonts
 from ..i18n import tr
 from ..icon_theme import themed_svg_pixmap
+
+
+def _root_text(filename: str, fallback_key: str, fallback: str) -> str:
+    path = Path(__file__).resolve().parents[2] / filename
+    try:
+        return path.read_text(encoding='utf-8')
+    except OSError:
+        return tr(fallback_key, fallback)
 
 
 class LicenseCard(QFrame):
@@ -91,7 +100,7 @@ class AboutPage(QWidget):
         self.wordmark = QLabel()
         self.wordmark.setObjectName('aboutWordmark')
         self.wordmark.setAccessibleName(APP_NAME)
-        self.wordmark.setPixmap(themed_svg_pixmap('quietwriter-wordmark', 360))
+        self.wordmark.setPixmap(themed_svg_pixmap('quietwriter-wordmark', 360, colour_key='hero_text'))
         hero_layout.addWidget(self.wordmark, 0, Qt.AlignLeft)
         tagline = QLabel(tr('about.tagline', 'Rustig schrijven. Heldere boeken.'))
         tagline.setObjectName('aboutHeroTagline')
@@ -145,6 +154,35 @@ class AboutPage(QWidget):
         layout.addWidget(runtime)
 
         layout.addSpacing(10)
+        product_license_heading = QLabel(tr('about.product_licenses', 'Licenties'))
+        product_license_heading.setObjectName('settingsFieldLabel')
+        layout.addWidget(product_license_heading)
+        product_license_intro = QLabel(tr(
+            'about.product_licenses_help',
+            'QuietWriter en gebruikte componenten hebben elk hun eigen licentie. De volledige teksten en verwijzingen zijn hieronder beschikbaar.',
+        ))
+        product_license_intro.setObjectName('muted')
+        product_license_intro.setWordWrap(True)
+        product_license_intro.setMaximumWidth(790)
+        layout.addWidget(product_license_intro)
+
+        own_license = LicenseCard(
+            tr('about.quietwriter_license', 'QuietWriter-licentie'),
+            tr('about.quietwriter_license_help', 'Copyright © 2026 Lucas Bonsel. Alle rechten voorbehouden.'),
+            _root_text('LICENSE', 'about.license.load_error', 'De licentietekst kon niet worden geladen.'),
+        )
+        own_license.setMaximumWidth(820)
+        layout.addWidget(own_license)
+
+        third_party = LicenseCard(
+            tr('about.third_party_licenses', 'Licenties van derden'),
+            tr('about.third_party_licenses_help', 'Overzicht van software, lettertypen en andere componenten die QuietWriter gebruikt of kan meeleveren.'),
+            _root_text('THIRD_PARTY_LICENSES.md', 'about.license.load_error', 'De licentietekst kon niet worden geladen.'),
+        )
+        third_party.setMaximumWidth(820)
+        layout.addWidget(third_party)
+
+        layout.addSpacing(10)
         license_heading = QLabel(tr('about.font_licenses', 'Fontlicenties'))
         license_heading.setObjectName('settingsFieldLabel')
         layout.addWidget(license_heading)
@@ -171,4 +209,4 @@ class AboutPage(QWidget):
         layout.addStretch(1)
 
     def refresh_branding(self, theme_name: str | None = None):
-        self.wordmark.setPixmap(themed_svg_pixmap('quietwriter-wordmark', 360, theme_name=theme_name))
+        self.wordmark.setPixmap(themed_svg_pixmap('quietwriter-wordmark', 360, theme_name=theme_name, colour_key='hero_text'))

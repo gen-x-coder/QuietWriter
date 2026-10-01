@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..media.markup import text_for_ai
+from ..i18n import tr
 
 
 @dataclass
@@ -30,36 +31,36 @@ class ContextBuilder:
         book = ep.book
         chapter = ep.chapter
         if not book or not chapter:
-            return ContextBundle('geen manuscript geopend', '', ['Schrijverspersona'])
+            return ContextBundle(tr('ai.context.none_open', 'geen manuscript geopend'), '', [tr('context.persona', 'Schrijverspersona')])
 
         selected = ep.editor.textCursor().selectedText().replace('\u2029', '\n').strip()
-        pieces = ['Schrijverspersona', 'Boekprofiel', 'Boekgeheugen']
+        pieces = [tr('context.persona', 'Schrijverspersona'), tr('context.book_profile', 'Boekprofiel'), tr('context.book_memory', 'Boekgeheugen')]
         if selected:
-            pieces.append('Geselecteerde tekst')
-            return ContextBundle('geselecteerde tekst', text_for_ai(selected), pieces)
+            pieces.append(tr('ai.context.selected_text', 'Geselecteerde tekst'))
+            return ContextBundle(tr('ai.context.selected_text_label', 'geselecteerde tekst'), text_for_ai(selected), pieces)
 
-        if mode == 'Huidig hoofdstuk':
-            pieces.append(f'Hoofdstuk: {chapter.title}')
-            return ContextBundle(f'hoofdstuk: {chapter.title}', text_for_ai(ep.editor.toPlainText()), pieces)
+        if mode in ('chapter', 'Huidig hoofdstuk'):
+            pieces.append(tr('ai.context.chapter_piece', 'Hoofdstuk: {title}', title=chapter.title))
+            return ContextBundle(tr('ai.context.chapter_label', 'hoofdstuk: {title}', title=chapter.title), text_for_ai(ep.editor.toPlainText()), pieces)
 
-        if mode == 'Huidige sectie':
+        if mode in ('section', 'Huidige sectie'):
             section, _ = ep.find_chapter_in_book(chapter.id)
             if section is None:
-                pieces.append('Sectie niet beschikbaar')
-                return ContextBundle('sectie niet beschikbaar', '', pieces)
+                pieces.append(tr('ai.context.section_unavailable_piece', 'Sectie niet beschikbaar'))
+                return ContextBundle(tr('ai.context.section_unavailable_label', 'sectie niet beschikbaar'), '', pieces)
             parts = [f'# {c.title}\n{self._chapter_text(book, chapter, c)}' for c in section.chapters]
-            pieces.append(f'Sectie: {section.title}')
-            return ContextBundle(f'sectie: {section.title}', '\n\n'.join(parts), pieces)
+            pieces.append(tr('ai.context.section_piece', 'Sectie: {title}', title=section.title))
+            return ContextBundle(tr('ai.context.section_label', 'sectie: {title}', title=section.title), '\n\n'.join(parts), pieces)
 
-        if mode == 'Hele boek':
+        if mode in ('book', 'Hele boek'):
             parts = []
             for section in book.sections:
                 if section.id != 'root':
                     parts.append(f'## {section.title}')
                 for c in section.chapters:
                     parts.append(f'# {c.title}\n{self._chapter_text(book, chapter, c)}')
-            pieces.append(f'Boek: {book.title}')
-            return ContextBundle(f'boek: {book.title}', '\n\n'.join(parts), pieces)
+            pieces.append(tr('ai.context.book_piece', 'Boek: {title}', title=book.title))
+            return ContextBundle(tr('ai.context.book_label', 'boek: {title}', title=book.title), '\n\n'.join(parts), pieces)
 
-        pieces.append(f'Hoofdstuk: {chapter.title}')
-        return ContextBundle(f'hoofdstuk: {chapter.title}', text_for_ai(ep.editor.toPlainText()), pieces)
+        pieces.append(tr('ai.context.chapter_piece', 'Hoofdstuk: {title}', title=chapter.title))
+        return ContextBundle(tr('ai.context.chapter_label', 'hoofdstuk: {title}', title=chapter.title), text_for_ai(ep.editor.toPlainText()), pieces)

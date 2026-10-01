@@ -83,7 +83,9 @@ def test_book_memory_navigation_and_ai_layering_are_wired():
     assert 'render_book_memory(self.memory)' in page
     assert 'BOEKGEHEUGEN (dit boek)' in prompting
     assert 'read_book_memory(active_book)' in ai
-    assert "['Schrijverspersona', 'Boekprofiel', 'Boekgeheugen']" in context
+    assert "tr('context.persona', 'Schrijverspersona')" in context
+    assert "tr('context.book_profile', 'Boekprofiel')" in context
+    assert "tr('context.book_memory', 'Boekgeheugen')" in context
     assert "'ai/memory.md'" in revisions
 
 

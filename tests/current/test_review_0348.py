@@ -18,7 +18,7 @@ def test_context_budget_is_deferred_not_silently_truncated():
 
 def test_opt_in_notice_can_be_acknowledged_without_enabling_context():
     source = Path("quietwriter/ai/ui.py").read_text(encoding="utf-8")
-    assert "self.chapter_planning_notice_ack = QPushButton('Begrepen')" in source
+    assert "self.chapter_planning_notice_ack = QPushButton(tr('common.understood', 'Begrepen'))" in source
     assert "def _acknowledge_chapter_planning_notice" in source
     acknowledge = source[source.index("def _acknowledge_chapter_planning_notice"):source.index("def _chapter_planning_toggled") ]
     assert "setValue('ai_use_chapter_planning', False)" in acknowledge
