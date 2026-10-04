@@ -1,4 +1,62 @@
+## 1.0.1 — Darlings opslagbasis en reviewhardening
+
+- Eerste interne v2-bouwsteen voor Darlings: één Markdownbestand per fragment, zonder UI of editorkoppeling.
+- Fragmentlijsten en zoekresultaten blijven bruikbaar wanneer één bestand corrupt, afwijkend of een sync-conflictkopie is; fouten worden per bestand gerapporteerd.
+- Fragmenttekst bewaart nu ook witregels aan begin en einde exact.
+- Metadatawijzigingen ondersteunen optimistic concurrency via file revisions en weigeren stale writes.
+- Fragment-id's worden gevalideerd vóór padgebruik zodat create/restore nooit buiten de werkmap kan schrijven.
+- Sortering gebruikt echte datetimes en UTC-timestamps om DST-/timezonefouten te voorkomen.
+- Alleen openen van de fragmentopslag maakt geen mappen meer aan.
+- DOCX-export is expliciet opgenomen in de v2-roadmap naast DOCX-import.
+
+## 1.0.0 — eerste stabiele release
+
+- Eerste stabiele QuietWriter-release na de RC1–RC5 hardening.
+- Geen nieuwe productfunctionaliteit ten opzichte van de gevalideerde RC5-baseline.
+- Praktijkvalidatie afgerond voor groot boek, Windows 150% DPI, Ollama, OpenRouter en twee-computer conflictgedrag.
+- Persona-, woordenboek-, locale-, corrupte optionele context- en releasehardening uit de RC-rondes zijn onderdeel van deze baseline.
+- Nieuwe productfunctionaliteit gaat vanaf hier via de v2-roadmap; Darlings is de eerste geplande v2-feature.
+
+## 1.0.0-rc5 — corrupte optionele context mag de app niet blokkeren
+
+- Beschadigd `persona/schrijver.md` blokkeert de applicatiestart niet meer; de Schrijverspersona opent alleen-lezen.
+- De Meelezer slaat een beschadigde Schrijverspersona, Boekprofiel of Boekgeheugen veilig over in plaats van te crashen.
+- Contextoverzicht en verzonden context melden expliciet welke beschadigde bron niet is meegestuurd.
+- Nieuwe regressietests bewaken zowel de startup-fallback als de AI-contextfallback.
+
 # Changelog
+
+## 1.0.0-rc4 — laatste conflict- en localehardening
+
+- Schrijverspersona kan nu ook veilig omgaan met een extern verwijderd `schrijver.md`: ontbrekend op schijf is een echte revision-state en wordt niet stil overschreven als het bestand intussen terugkomt.
+- Een corrupte globale persona wordt niet overschreven; lokale wijzigingen worden onder `archive/persona/` veiliggesteld zodat afsluiten niet vastloopt zodra de herstelkopie gelukt is.
+- Twaalf foutief dubbel-geëscapete locale-meldingen tonen weer echte witregels; een regressietest verbiedt letterlijke `\\n` in vertaalwaarden.
+- Persoonlijk woordenboek en `altijd_negeren.txt` worden vóór schrijven opnieuw ingelezen, samengevoegd en atomair opgeslagen zodat syncwijzigingen van een andere computer niet verdwijnen.
+- De write-auditdocumentatie omvat voortaan ook directe `write_text`/`write_bytes`/serializer-routes.
+- Darlings-ontwerp aangescherpt: bij mislukte Knippen-flow is dubbel beter dan kwijt; geen `pending`-status in het MVP en geen tweede zelfgeschreven YAML-parser.
+
+## 1.0.0-rc3 — persona-conflictbeveiliging
+
+- Schrijverspersona detecteert externe wijzigingen vóór opslaan.
+- Conflictkeuze bewaart de versie die anders verloren zou gaan onder `archive/persona/`.
+- Meelezer-gesprekslog is expliciet gedocumenteerd als last-writer-wins uitzondering voor 1.0.
+- V2-implementatie blijft bevroren tot na stabiele 1.0.0.
+
+## 1.0.0-rc2 — release- en Windows-hardening
+
+- Tweede release candidate op dezelfde feature-frozen 1.0-lijn; geen nieuwe grote productfunctionaliteit.
+- Publieke distributie bevat geen interne DEV/PROD-launchers meer.
+- Windows-build/smoke en release-hygiene zijn verder aangescherpt.
+- Zoekcache/SQLite-afhandeling sluit mislukte connecties en cachehandles expliciet en kan een ongeldige cache veilig weggooien/herbouwen.
+- Het hoofdvenster sluit de zoekindex expliciet bij normaal afsluiten.
+- Documentatie is na RC2 geconsolideerd tot een kleine canonieke set; de chronologische review findings, review notes en tussentijdse rapporten zijn uit de actieve ontwikkelset verwijderd.
+- De historische `tests/legacy`-suite is opgeheven; relevante regressies zijn naar de actieve suite overgenomen en verouderde implementatietests zijn verwijderd.
+- Overdraagbaarheidsreview 56: CI-workflows terug in de bronset, volledige OFL 1.1-fontlicenties hersteld en met regressietest bewaakt.
+- LEESMIJ is versieneutraal gemaakt; de OpenRouter API-keyopslag als gewone lokale setting is expliciet gedocumenteerd.
+- De editor-keuze voor tekstbreedte is iets verbreed zodat `Normaal` niet wordt afgekapt, zonder de lange-titel/minimum-width fix terug te draaien.
+- Brandingdocumentatie is herschreven rond de echte bron/generator en `shapely` staat in de devrequirements.
+- `DEVELOPER_REFERENCE.md`, `UI_REFERENCE.md` en `VALIDATION.md` maken runtimepaden, boekstructuur, concrete UI-regels en de basis voor groene claims overdraagbaar.
+- Packagingtests gebruiken een tijdelijke stage via `QUIETWRITER_STAGE_DIR`, zodat `pytest` geen `release/stage` in de bronboom achterlaat.
 
 ## 1.0.0-rc1 — eerste publieke release candidate
 

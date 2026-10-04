@@ -4,6 +4,8 @@ import difflib
 import re
 from pathlib import Path
 
+from .storage import _safe_atomic_write_text
+
 WORD_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿĀ-ž]+(?:['’-][A-Za-zÀ-ÖØ-öø-ÿĀ-ž]+)?")
 
 try:
@@ -92,10 +94,13 @@ class WordDictionary:
         if not path.exists(): return set()
         return {line.strip().lower() for line in path.read_text(encoding='utf-8', errors='ignore').splitlines() if line.strip() and not line.lstrip().startswith('#')}
 
-    @staticmethod
-    def _write_word_list(path: Path, values: set[str]):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text('\n'.join(sorted(values, key=str.casefold)) + ('\n' if values else ''), encoding='utf-8')
+    @classmethod
+    def _write_word_list(cls, path: Path, values: set[str]) -> set[str]:
+        path = Path(path)
+        merged = cls._read_word_list(path) | {value.strip().lower() for value in values if value.strip()}
+        payload = '\n'.join(sorted(merged, key=str.casefold)) + ('\n' if merged else '')
+        _safe_atomic_write_text(path, payload)
+        return merged
 
     def load_personal(self, path: Path):
         self.personal_path = Path(path); self.personal_words = self._read_word_list(self.personal_path); self._clear_caches()
@@ -107,7 +112,8 @@ class WordDictionary:
         word = word.strip().lower()
         if not word: return
         self.personal_words.add(word)
-        if self.personal_path: self._write_word_list(self.personal_path, self.personal_words)
+        if self.personal_path:
+            self.personal_words = self._write_word_list(self.personal_path, self.personal_words)
         self._clear_caches()
 
     def ignore(self, word: str):
@@ -117,7 +123,8 @@ class WordDictionary:
         word = word.strip().lower()
         if not word: return
         self.persistent_ignored_words.add(word)
-        if self.ignore_path: self._write_word_list(self.ignore_path, self.persistent_ignored_words)
+        if self.ignore_path:
+            self.persistent_ignored_words = self._write_word_list(self.ignore_path, self.persistent_ignored_words)
         self._clear_caches()
 
     def known(self, word: str) -> bool:

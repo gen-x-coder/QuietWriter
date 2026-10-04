@@ -1181,6 +1181,10 @@ class MainWindow(QMainWindow):
         self.settings.setValue('manuscript_visible', self.editor_page.manuscript.isVisible())
         self.settings.setValue('right_visible', self.editor_page.right.isVisible())
         self.settings.setValue('nav_expanded', self.rail_expanded)
+        try:
+            self.search_index.close()
+        except Exception:
+            pass
         super().closeEvent(event)
 
     def restore_state(self):

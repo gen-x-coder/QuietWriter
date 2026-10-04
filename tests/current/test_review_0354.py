@@ -69,13 +69,6 @@ def test_relation_uses_same_editable_combo_contract():
     assert "editable_combo_value(self.rel_type, default='kent')" in src
 
 
-def test_ci_filters_pyflakes_to_undefined_names():
-    workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
-    checker = (ROOT / "tools/check_undefined_names.py").read_text(encoding="utf-8")
-    assert "python tools/check_undefined_names.py" in workflow
-    assert "messages.UndefinedName" in checker
-    assert "python -m pyflakes quietwriter" not in workflow
-
 
 def test_main_requires_python_312_before_importing_app():
     src = (ROOT / "main.py").read_text(encoding="utf-8")

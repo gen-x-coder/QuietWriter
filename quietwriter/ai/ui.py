@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QTextBrowser, QMessageBox, QFrame, QDialog, QDialogButtonBox, QCheckBox
 )
 from .providers import ProviderFactory
-from .context import ContextBuilder, ContextBundle
+from .context import ContextBuilder, ContextBundle, read_optional_source
 from .conversations import ConversationStore
 from .memory_suggestions import extract_memory_suggestions, proposal_instruction
 from .planning_context import PlanningSelection, build_planning_context_result, chapter_planning_preview
@@ -433,10 +433,27 @@ class AIPanel(QWidget):
         context = builder.build(str(self.context.currentData() or 'chapter'))
         planning = self._planning_context_result()
         chapter_preview = self._chapter_planning_preview()
+        active_book = self.main.active_book()
+        fixed_sources = [
+            (tr('context.persona', 'Schrijverspersona'), read_optional_source(self.main.library.read_persona)[1]),
+        ]
+        if active_book:
+            fixed_sources.extend([
+                (tr('context.book_profile', 'Boekprofiel'), read_optional_source(lambda: self.main.library.read_book_profile(active_book))[1]),
+                (tr('context.book_memory', 'Boekgeheugen'), read_optional_source(lambda: self.main.library.read_book_memory(active_book))[1]),
+            ])
+        available = [label for label, ok in fixed_sources if ok]
+        unavailable = [label for label, ok in fixed_sources if not ok]
         lines = [
-            tr('ai.context.fixed_preview', 'Vaste context: Schrijverspersona · Boekprofiel · Boekgeheugen'),
+            tr('ai.context.fixed_preview_dynamic', 'Vaste context: {sources}', sources=' · '.join(available) if available else tr('ai.context.none_available', 'geen')),
             tr('ai.context.manuscript_preview', 'Manuscriptcontext: {label}', label=context.label),
         ]
+        if unavailable:
+            lines.append(tr(
+                'ai.context.corrupt_sources_preview',
+                'Niet meegestuurd vanwege beschadiging: {sources}',
+                sources=' · '.join(unavailable),
+            ))
         if planning.error:
             lines.extend(['', planning.error])
         elif planning.labels:
@@ -635,10 +652,32 @@ class AIPanel(QWidget):
     def _continue_send(self, provider, model: str, prompt: str, context, planning_text: str = '', chapter_planning_text: str = '', *, warmup: bool = False):
         self._active_context = context
         self._refresh_idle_context_summary()
-        persona=self.main.library.read_persona()
         active_book = self.main.active_book()
-        book_profile = self.main.library.read_book_profile(active_book) if active_book else ''
-        book_memory = self.main.library.read_book_memory(active_book) if active_book else ''
+        persona, persona_ok = read_optional_source(self.main.library.read_persona)
+        if active_book:
+            book_profile, profile_ok = read_optional_source(lambda: self.main.library.read_book_profile(active_book))
+            book_memory, memory_ok = read_optional_source(lambda: self.main.library.read_book_memory(active_book))
+        else:
+            book_profile, profile_ok = '', True
+            book_memory, memory_ok = '', True
+
+        source_states = [
+            (tr('context.persona', 'Schrijverspersona'), persona_ok),
+            (tr('context.book_profile', 'Boekprofiel'), profile_ok),
+            (tr('context.book_memory', 'Boekgeheugen'), memory_ok),
+        ]
+        for label, ok in source_states:
+            if ok:
+                continue
+            try:
+                context.pieces.remove(label)
+            except ValueError:
+                pass
+            context.pieces.append(tr(
+                'ai.context.source_corrupt_piece',
+                '{source} beschadigd — niet meegestuurd',
+                source=label,
+            ))
         context_text=context.text
 
         system_prompt = build_system_prompt(
