@@ -5,6 +5,18 @@ from ..media.markup import text_for_ai
 from ..i18n import tr
 
 
+def read_optional_source(reader) -> tuple[str, bool]:
+    """Read optional AI context without letting corrupt UTF-8 break the Meelezer.
+
+    Corrupt optional context is omitted from the prompt. The caller remains
+    responsible for making that omission visible to the user.
+    """
+    try:
+        return reader(), True
+    except UnicodeDecodeError:
+        return '', False
+
+
 @dataclass
 class ContextBundle:
     label: str

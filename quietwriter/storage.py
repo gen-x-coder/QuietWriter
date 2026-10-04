@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from .revisions import BookRevision, ExternalModificationError, capture_book_revision
+from .revisions import BookRevision, ExternalModificationError, FileRevision, capture_book_revision, file_revision
 from .persona_profile import default_persona_markdown
 from .book_profile import default_book_profile_markdown
 from .book_memory import default_book_memory_markdown
@@ -20,6 +20,21 @@ from .i18n import tr
 
 class BookBlockedError(RuntimeError):
     """A detached/incompatible book is deliberately closed for writes."""
+
+
+
+
+_UNSET_REVISION = object()
+
+
+class PersonaExternalModificationError(RuntimeError):
+    """Raised before overwriting the global writer persona after an external change."""
+
+    def __init__(self, path: Path, expected: FileRevision | None, current: FileRevision | None):
+        self.path = Path(path)
+        self.expected = expected
+        self.current = current
+        super().__init__(f'Schrijverspersona is buiten QuietWriter gewijzigd: {self.path.name}')
 
 
 class CorruptSourceError(RuntimeError):
@@ -166,7 +181,7 @@ class Library:
             d.mkdir(parents=True, exist_ok=True)
         persona = self.persona_dir / 'schrijver.md'
         if not persona.exists():
-            persona.write_text(default_persona_markdown(), encoding='utf-8')
+            _safe_atomic_write_text(persona, default_persona_markdown())
 
     def _chapter_files(self, book: Book) -> list[str]:
         return [chapter.file for section in book.sections for chapter in section.chapters]
@@ -1366,8 +1381,38 @@ class Library:
     def persona_path(self) -> Path:
         return self.persona_dir / 'schrijver.md'
 
-    def read_persona(self) -> str:
-        return self.persona_path().read_text(encoding='utf-8')
+    def capture_persona_revision(self) -> FileRevision | None:
+        return file_revision(self.persona_path())
 
-    def save_persona(self, text: str):
-        _safe_atomic_write_text(self.persona_path(), text)
+    def read_persona(self) -> str:
+        path = self.persona_path()
+        if not path.exists():
+            return default_persona_markdown()
+        return path.read_text(encoding='utf-8')
+
+    def create_persona_recovery(self, text: str, *, kind: str = 'conflict_local') -> Path:
+        """Store a global persona recovery copy outside the live persona file."""
+        root = self.archive_dir / 'persona'
+        root.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime('%Y-%m-%dT%H-%M-%S-%f')
+        target = root / f'{stamp}__{kind}.md'
+        counter = 2
+        while target.exists():
+            target = root / f'{stamp}-{counter}__{kind}.md'
+            counter += 1
+        _safe_atomic_write_text(target, text)
+        return target
+
+    def save_persona(
+        self,
+        text: str,
+        *,
+        expected_revision: FileRevision | None | object = _UNSET_REVISION,
+    ):
+        path = self.persona_path()
+        _guard_existing_utf8(path)
+        current = file_revision(path)
+        if expected_revision is not _UNSET_REVISION and current != expected_revision:
+            raise PersonaExternalModificationError(path, expected_revision, current)
+        _safe_atomic_write_text(path, text)
+        return file_revision(path)

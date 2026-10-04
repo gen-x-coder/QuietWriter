@@ -10,12 +10,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_ROOT = ROOT / "release"
-STAGE = RELEASE_ROOT / "stage"
+STAGE = Path(os.environ.get("QUIETWRITER_STAGE_DIR", str(RELEASE_ROOT / "stage")))
 
 # Complete directories that belong to the application/runtime source.
 ALLOWED_DIRS = (

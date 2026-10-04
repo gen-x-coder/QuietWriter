@@ -1,65 +1,55 @@
-# QuietWriter: logo- en iconenpakket
+# QuietWriter branding
 
-Alle bestanden komen uit de twee originele logo-SVG's. De vorm is niet opnieuw getekend. Alleen de kleine variant (16–24
-px) is vereenvoudigd: dikkere lijnen, bredere spleten en zonder het krulletje bovenaan de rug. Zie `overzicht.png`.
+Deze map bevat de **bron** waaruit de QuietWriter-branding reproduceerbaar wordt gegenereerd. Bewerk afgeleide app-iconen niet handmatig als dezelfde wijziging in de bron kan worden gedaan.
 
-## Wat zit erin
+## Canonieke bron
 
-| Bestand | Gebruik |
-|---|---|
-| `quietwriter.ico` | **Het app-icoon**: `.exe`, venster en taakbalk. Bevat 10 formaten (16–256 px). Voor 16/20/24 px wordt het kleine ontwerp gebruikt, vanaf 32 px het volle detail. Het icoon staat op een tegel in de accentkleur van *Helder* (`#4d738f`), zodat het leesbaar is op zowel een lichte als een donkere taakbalk. |
-| `png/quietwriter-{16…1024}.png` | Dezelfde tegel als losse PNG's (README, website, Linux/macOS later). |
-| `svg/quietwriter-app-tegel.svg` / `-klein.svg` | De bron van de tegel: vol detail en de vereenvoudigde variant. |
-| `svg/quietwriter-icoon-{donker,licht}.svg` | Het embleem op een vierkant, transparant canvas. |
-| `svg/quietwriter-icoon-klein-{donker,licht}.svg` | Vereenvoudigd embleem, vierkant, voor 16–24 px. |
-| `svg/quietwriter-embleem-{donker,licht}.svg` | Het embleem in de originele verhouding (765×1135), zonder canvas. |
-| `svg/quietwriter-woordmerk-{donker,licht}.svg` | Embleem met "QuietWriter" (splash, Over, README). |
-| `in-app/*.svg` | Voor `quietwriter/icons/`: krijgt automatisch de themakleur (zie hieronder). |
-| `bron/` | De originelen plus `maak_iconen.py`, dat alles hierboven opnieuw maakt. Een andere tegelkleur? Pas `ACCENT` aan in `logo_geometrie.py`. |
+In `branding/bron/`:
 
-Donker = `#20242a` (tekstkleur van Helder). Licht = `#f4f5f7` (achtergrond van Helder).
+- `emblem_src.svg` — origineel embleem;
+- `wordmark_src.svg` — origineel woordmerk;
+- `logo_geometrie.py` — geometrie, tegelkleur en kleine iconvariant;
+- `maak_iconen.py` — genereert de afgeleide iconen en previews.
 
-## Inbouwen
+`branding/overzicht.png` is een visuele controle van de gegenereerde set.
 
-**1. Venster- en taakbalkicoon.** Zet `quietwriter.ico` in bijvoorbeeld `quietwriter/resources/`. Vervang `icon('books')`
-in `app.py` (regel 39) en `ui/main_window.py` (regel 50):
+## Genereren
 
-```python
-app.setWindowIcon(QIcon(str(Path(__file__).with_name('resources') / 'quietwriter.ico')))
+Installeer eerst de ontwikkelvereisten:
+
+```bash
+python -m pip install -r requirements-dev.txt
 ```
 
-Op Windows toont de taakbalk bij `python main.py` anders het **Python-icoon**. Zet daarom vóór het aanmaken van de
-`QApplication` een eigen AppUserModelID:
+De generator gebruikt onder andere `shapely`.
 
-```python
-if sys.platform == 'win32':
-    import ctypes
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('LucasBonsel.QuietWriter')
+Voer daarna vanuit de projectroot uit:
+
+```bash
+python branding/bron/maak_iconen.py
 ```
 
-**2. Het `.exe`-icoon** (PyInstaller): `--icon quietwriter/resources/quietwriter.ico`. Neem het `.ico` óók mee als
-databestand, want stap 1 laadt het tijdens het draaien.
+De generator maakt de volledige brandset. Relevante gegenereerde bestanden voor de applicatie worden vervolgens gebruikt in:
 
-**3. In de app** (splash, Over, first-run): kopieer `in-app/quietwriter.svg` en `in-app/quietwriter-small.svg` naar
-`quietwriter/icons/`. `_recolour_svg` in `icon_theme.py` kleurt ze dan per thema in. Getest in alle 14 thema's, zie
-`overzicht.png`.
+- `quietwriter/resources/quietwriter.ico` — Windows EXE/venster/taakbalk;
+- `quietwriter/icons/quietwriter.svg` — normaal in-app embleem;
+- `quietwriter/icons/quietwriter-small.svg` — vereenvoudigde variant voor kleine maten;
+- `quietwriter/icons/quietwriter-wordmark.svg` — splash/Over-pagina.
 
-```python
-icon('quietwriter', 48)      # geef de grootte expliciet mee; standaard rendert icon() op 24 px
-icon('quietwriter-small')    # voor 16–24 px
-```
+De kleine variant is bewust vereenvoudigd voor ongeveer 16–24 px. Het woordmerk heeft een horizontale verhouding en moet niet via een vierkante iconrenderer worden vervormd.
 
-**4. Woordmerk** (splash, Over): gebruik hiervoor **niet** `icon()`, want dat rendert op een vierkant en zou het
-woordmerk uitrekken. Render de SVG zelf in verhouding 1939:487:
+## Thema en HiDPI
 
-```python
-raw = _recolour_svg((ICON_DIR / 'quietwriter-wordmark.svg').read_text('utf-8'), theme['text'])
-QSvgRenderer(QByteArray(raw.encode())).render(painter, QRectF(0, 0, 256, 256 * 487 / 1939))
-```
+In-app SVG's worden door `quietwriter/icon_theme.py` naar de actieve semantische themakleur omgezet. Houd dus geen aparte handgemaakte kleurset per thema bij.
 
-## Opmerkingen
+Controleer brandingwijzigingen minimaal op 100%, 125% en 150% Windows-schaal. Een correcte SVG-bron is niet automatisch een scherpe pixmap als de device-pixel-ratio verkeerd wordt toegepast.
 
-- Het `.ico` bevat PNG-gecomprimeerde afbeeldingen. Dat ondersteunt Windows sinds Vista, en PyInstaller en Qt lezen het
-  zonder problemen (gecontroleerd: Qt ziet alle 10 formaten).
-- Er zit bewust geen `clip-path` in de SVG's. Qt's SVG-renderer ondersteunt dat niet, dus alles bestaat uit gewone
-  paden.
+## Wijzigingsregel
+
+Bij een brandingwijziging:
+
+1. wijzig de bron-SVG/geometrie;
+2. draai `maak_iconen.py`;
+3. controleer `overzicht.png` en kleine iconmaten;
+4. controleer de bestanden in `quietwriter/icons/` en `quietwriter/resources/`;
+5. commit bron en relevante gegenereerde uitvoer samen.

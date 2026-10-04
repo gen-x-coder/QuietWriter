@@ -55,14 +55,19 @@ def test_first_run_language_switch_retranslates_open_wizard(tmp_path: Path):
     set_locale('nl')
 
 
-def test_documentation_is_split_between_user_dev_and_licenses():
+def test_documentation_is_consolidated_and_licenses_are_separate():
     root = Path(__file__).resolve().parents[2]
-    assert (root / 'documents' / 'CHANGELOG.md').is_file()
-    assert (root / 'documents' / 'ROADMAP.md').is_file()
-    assert (root / 'documents' / 'dev' / 'PLAN_1_0.md').is_file()
-    assert (root / 'documents' / 'dev' / 'FIRST_RUN_DESIGN_035.md').is_file()
+    for name in (
+        'PROJECT_GUIDE.md',
+        'ARCHITECTURE_AND_DATA_SAFETY.md',
+        'PRODUCT_AND_UI_PHILOSOPHY.md',
+        'HISTORY_AND_LESSONS.md',
+        'ROADMAP_AND_IDEAS.md',
+        'TEST_STRATEGY.md',
+        'RELEASE_BRANDING_AND_OPERATIONS.md',
+        'CHANGELOG.md',
+    ):
+        assert (root / 'documents' / name).is_file()
+    assert not (root / 'documents' / 'dev').exists()
     assert (root / 'documents' / 'licenses' / 'LICENSE').is_file()
     assert (root / 'documents' / 'licenses' / 'THIRD_PARTY_LICENSES.md').is_file()
-    assert not (root / 'PLAN_1_0.md').exists()
-    assert not (root / 'FIRST_RUN_DESIGN_035.md').exists()
-    assert not (root / 'CHANGELOG.md').exists()

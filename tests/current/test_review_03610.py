@@ -12,8 +12,16 @@ def test_openrouter_filter_waits_for_catalog_metadata_and_never_erases_empty_sel
 
 def test_editor_toolbar_keeps_text_width_compact_and_title_elided():
     source = Path('quietwriter/ui/editor_page.py').read_text(encoding='utf-8')
-    assert 'self.text_width_combo.setFixedWidth(112)' in source
+    assert 'self.text_width_combo.setFixedWidth(160)' in source
     assert "tl.addWidget(QLabel(tr('editor.text_width'" not in source
     assert 'Qt.ElideRight' in source
     assert 'self.book_title_label.setMinimumWidth(0)' in source
     assert 'QSizePolicy.Ignored' in source
+
+
+def test_ui_reference_keeps_reader_product_boundary():
+    reference = Path('documents/UI_REFERENCE.md').read_text(encoding='utf-8')
+    assert 'Herschrijf selectie' not in reference
+    assert '**AI-assistent gebruiken**' not in reference
+    assert '**Meelezer gebruiken**' in reference
+    assert 'vervangende manuscripttekst' in reference

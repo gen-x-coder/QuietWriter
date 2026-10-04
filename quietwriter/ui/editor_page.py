@@ -99,7 +99,7 @@ class EditorPage(QWidget):
         self.text_width_combo.setObjectName('editorTextWidth')
         self.text_width_combo.setToolTip(tr('editor.text_width.tip', 'Tekstbreedte verandert alleen de weergave, niet je manuscript of export.'))
         self.text_width_combo.setAccessibleName(tr('editor.text_width', 'Tekstbreedte'))
-        self.text_width_combo.setFixedWidth(112)
+        self.text_width_combo.setFixedWidth(160)
         for key, label in (
             ('extra_narrow', tr('editor.text_width.extra_narrow', 'Extra smal')),
             ('narrow', tr('editor.text_width.narrow', 'Smal')),

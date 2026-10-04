@@ -3,8 +3,8 @@
 
 Release candidate
 -----------------
-Dit is QuietWriter 1.0.0-rc1: een testversie op weg naar de eerste publieke
-1.0-release. Maak tijdens de testperiode regelmatig een kopie van je volledige
+Dit is een release candidate van QuietWriter 1.0: een testversie op weg naar
+de eerste stabiele 1.0-release. Maak tijdens de testperiode regelmatig een kopie van je volledige
 werkmap en meld onverwacht gedrag met het crashlog.
 
 Eerst uitpakken
@@ -45,6 +45,8 @@ Ollama draait lokaal. OpenRouter is een externe dienst: tekst en context worden
 alleen verstuurd wanneer je bewust een vraag aan de Meelezer stelt. Het openen
 van de Meelezer veroorzaakt bij OpenRouter geen warmup-request.
 
+Let op: een OpenRouter API-sleutel wordt momenteel lokaal als gewone applicatie-instelling opgeslagen en niet in een versleutelde Windows credential store. Deel daarom geen registry-/instellingenexports waarin die sleutel staat.
+
 Probleem melden
 ---------------
 Vermeld bij een fout de QuietWriter-versie, wat je deed, wat je verwachtte en
@@ -60,8 +62,8 @@ QuietWriter - quick guide (English)
 
 Release candidate
 -----------------
-This is QuietWriter 1.0.0-rc1: a test build on the way to the first public 1.0
-release. During the test period, regularly copy your complete workspace and
+This is a QuietWriter 1.0 release candidate: a test build on the way to the
+first stable 1.0 release. During the test period, regularly copy your complete workspace and
 report unexpected behaviour with the crash log.
 
 Extract first
@@ -101,6 +103,8 @@ your manuscript.
 Ollama runs locally. OpenRouter is an external service: text and context are sent
 only when you deliberately ask the Reader a question. Merely opening the Reader
 does not send an OpenRouter warmup request.
+
+Note: an OpenRouter API key is currently stored locally as a normal application setting, not in an encrypted Windows credential store. Do not share registry/settings exports that contain the key.
 
 Reporting a problem
 -------------------

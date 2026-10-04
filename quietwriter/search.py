@@ -25,12 +25,27 @@ class BookSearchIndex:
         self._memory_only = False
         self._open_with_recovery()
 
+    def _disk_header_looks_valid(self) -> bool:
+        if not self.db_path.exists() or self.db_path.stat().st_size == 0:
+            return True
+        try:
+            with self.db_path.open('rb') as handle:
+                return handle.read(16) == b'SQLite format 3\x00'
+        except OSError:
+            return False
+
     def _connect_disk(self) -> sqlite3.Connection:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        if not self._disk_header_looks_valid():
+            raise sqlite3.DatabaseError('invalid SQLite cache header')
         conn = sqlite3.connect(self.db_path)
-        conn.execute(self._CREATE_SQL)
-        conn.commit()
-        return conn
+        try:
+            conn.execute(self._CREATE_SQL)
+            conn.commit()
+            return conn
+        except Exception:
+            conn.close()
+            raise
 
     def _discard_disk_cache(self):
         for candidate in (

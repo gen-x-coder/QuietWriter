@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import tr
-from ..persona_profile import EXAMPLE_PERSONAS, SECTIONS, empty_profile, parse_persona, render_persona
+from ..persona_profile import EXAMPLE_PERSONAS, SECTIONS, default_persona_markdown, empty_profile, parse_persona, render_persona
+from ..storage import CorruptSourceError, PersonaExternalModificationError
 from .dialogs import confirm
 
 
@@ -88,6 +89,8 @@ class PersonaPage(QWidget):
         self._current_key: str | None = None
         self._loading = False
         self.dirty = False
+        self._loaded_revision = None
+        self._corrupt_source = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(32, 26, 36, 30)
@@ -160,7 +163,7 @@ class PersonaPage(QWidget):
             self.profile[self._current_key] = self.edit.toPlainText()
 
     def _section_changed(self, item, _previous=None):
-        if item is None:
+        if item is None or self._corrupt_source:
             return
         if not self._loading:
             self._store_editor()
@@ -194,7 +197,28 @@ class PersonaPage(QWidget):
             return
         self._loading = True
         try:
-            self.profile = parse_persona(self.library.read_persona())
+            try:
+                self.profile = parse_persona(self.library.read_persona())
+            except UnicodeDecodeError:
+                self._corrupt_source = True
+                self._loaded_revision = self.library.capture_persona_revision()
+                self.profile = empty_profile()
+                self.sections.setEnabled(False)
+                self.example_button.setEnabled(False)
+                self.edit.setReadOnly(True)
+                self.edit.setPlainText(tr(
+                    'persona.corrupt_readonly',
+                    'schrijver.md is beschadigd en kan niet als UTF-8 worden gelezen. Het bestand wordt niet overschreven.\n\nHerstel of vervang schrijver.md buiten QuietWriter. Lokale herstelkopieën staan in archive/persona/.'
+                ))
+                self.save_button.setEnabled(False)
+                self.status.setText(tr('corrupt_text.status', 'Beschadigd · alleen-lezen'))
+                self.dirty = False
+                return
+            self._corrupt_source = False
+            self.sections.setEnabled(True)
+            self.example_button.setEnabled(True)
+            self.edit.setReadOnly(False)
+            self._loaded_revision = self.library.capture_persona_revision()
             row = self.sections.currentRow()
             if row < 0:
                 row = 0
@@ -244,9 +268,18 @@ class PersonaPage(QWidget):
         self._set_dirty(True)
 
     def save(self):
+        if self._corrupt_source:
+            return True
         self._store_editor()
+        local_text = render_persona(self.profile)
         try:
-            self.library.save_persona(render_persona(self.profile))
+            self._loaded_revision = self.library.save_persona(
+                local_text, expected_revision=self._loaded_revision
+            )
+        except PersonaExternalModificationError:
+            return self._resolve_external_change(local_text)
+        except CorruptSourceError as exc:
+            return self._preserve_local_after_source_problem(local_text, exc)
         except OSError as exc:
             QMessageBox.critical(
                 self,
@@ -255,4 +288,87 @@ class PersonaPage(QWidget):
             )
             return False
         self._set_dirty(False)
+        return True
+
+    def _resolve_external_change(self, local_text: str) -> bool:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(tr('persona.conflict_title', 'Schrijverspersona extern gewijzigd'))
+        box.setText(tr('persona.conflict_text', 'Je schrijverspersona is buiten QuietWriter gewijzigd.'))
+        box.setInformativeText(tr(
+            'persona.conflict_info',
+            'QuietWriter heeft niets overschreven. Welke versie wil je gebruiken? Beide keuzes bewaren eerst de versie die anders verloren zou gaan als herstelkopie.'
+        ))
+        mine = box.addButton(tr('persona.conflict_mine', 'Mijn versie gebruiken'), QMessageBox.AcceptRole)
+        disk = box.addButton(tr('persona.conflict_disk', 'Versie op schijf gebruiken'), QMessageBox.DestructiveRole)
+        box.setDefaultButton(disk)
+        box.exec()
+        if box.clickedButton() not in (mine, disk):
+            return False
+
+        try:
+            current_revision = self.library.capture_persona_revision()
+
+            if box.clickedButton() is mine:
+                if current_revision is not None:
+                    disk_text = self.library.read_persona()
+                    self.library.create_persona_recovery(disk_text, kind='conflict_external')
+                self._loaded_revision = self.library.save_persona(
+                    local_text, expected_revision=current_revision
+                )
+                self._set_dirty(False)
+                return True
+
+            self.library.create_persona_recovery(local_text, kind='conflict_local')
+            if current_revision is None:
+                self._loaded_revision = self.library.save_persona(
+                    default_persona_markdown(), expected_revision=None
+                )
+            self.reload(force=True)
+            return True
+        except PersonaExternalModificationError:
+            QMessageBox.warning(
+                self,
+                tr('persona.conflict_changed_again_title', 'Schrijverspersona opnieuw gewijzigd'),
+                tr('persona.conflict_changed_again', 'Het bestand veranderde opnieuw terwijl het conflict werd opgelost. Er is niets overschreven. Probeer opnieuw.')
+            )
+            return False
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                tr('persona.conflict_failed_title', 'Conflict niet opgelost'),
+                tr('persona.conflict_failed', 'Er is niets bewust overschreven.\n\n{error}').format(error=exc)
+            )
+            return False
+
+
+    def _preserve_local_after_source_problem(self, local_text: str, exc: Exception) -> bool:
+        """Preserve local persona edits when the live persona cannot be safely replaced."""
+        try:
+            recovery = self.library.create_persona_recovery(local_text, kind='conflict_local')
+        except Exception as recovery_exc:
+            QMessageBox.critical(
+                self,
+                tr('persona.recovery_failed_title', 'Schrijverspersona niet veiliggesteld'),
+                tr(
+                    'persona.recovery_failed',
+                    'schrijver.md kon niet veilig worden opgeslagen en ook de herstelkopie mislukte.\n\n{error}'
+                ).format(error=recovery_exc)
+            )
+            return False
+
+        self._loaded_revision = self.library.capture_persona_revision()
+        self._set_dirty(False)
+        self.status.setText(tr(
+            'persona.recovery_saved_status',
+            'Niet opgeslagen in schrijver.md; herstelkopie gemaakt.'
+        ))
+        QMessageBox.warning(
+            self,
+            tr('persona.recovery_saved_title', 'Schrijverspersona veiliggesteld'),
+            tr(
+                'persona.recovery_saved',
+                'schrijver.md is beschadigd en is niet overschreven. Je lokale wijzigingen zijn veiliggesteld als herstelkopie:\n{path}\n\n{error}'
+            ).format(path=recovery, error=exc)
+        )
         return True
