@@ -1,47 +1,63 @@
 # QuietWriter
 
-QuietWriter is een Nederlandstalige Windows-schrijfomgeving voor langere teksten en boeken. Je schrijft in hoofdstukken, plant personages en scènes, controleert spelling en exporteert onder meer naar EPUB en PDF. Alles draait op je eigen computer, zonder account of abonnement.
+QuietWriter is een lokale desktop-schrijfomgeving voor boeken en langere teksten. De applicatie combineert een rustige editor met Planning, revisiegeschiedenis en herstel, spelling, publicatie/export, media en een optionele **AI Meelezer** voor feedback, feiten, consistentie en persona-/stijlcontrole.
 
-QuietWriter bevat daarnaast een optionele **AI Meelezer** voor feedback, consistentie, feiten en stijl-/personacontrole. De Meelezer is bedoeld als tweede lezer, niet als co-auteur of tekstgenerator.
+**Huidige stabiele versie:** 1.1.0.
 
 ## Download
 
-De nieuwste **stabiele** Windows-versie is na de eerste definitieve release altijd beschikbaar via:
+De nieuwste stabiele Windows-versie staat onder **Releases**. De vaste downloadlink is:
 
-**[QuietWriter voor Windows downloaden](https://github.com/gen-x-coder/QuietWriter/releases/latest/download/QuietWriter-windows-portable.zip)**
+https://github.com/gen-x-coder/QuietWriter/releases/latest/download/QuietWriter-windows-portable.zip
 
 Pak de ZIP volledig uit voordat je QuietWriter start.
 
-> Zolang alleen een release candidate beschikbaar is, gebruik je de betreffende testversie onder **Releases**. Een prerelease wordt bewust niet door de vaste `latest`-downloadlink gebruikt.
+## Broncode
 
-## Release candidates
+QuietWriter wordt vanaf versie 1.1.0 als open-sourceproject gepubliceerd. De publieke repository is de bron voor stabiele releases. Actieve ontwikkeling vindt plaats in een afzonderlijke ontwikkelrepository en wordt na validatie als nieuwe versie naar deze repository gebracht.
 
-Versies zoals `1.0.0-rc1` zijn testversies voor een kleine testgroep. Ze staan bij **Releases** met het label *Pre-release*.
+Python 3.12+:
 
-## Windows SmartScreen
+```bash
+python -m pip install -r requirements.txt
+python main.py
+```
 
-QuietWriter is op dit moment nog niet digitaal ondertekend. Windows SmartScreen kan daarom bij de eerste start een waarschuwing tonen. Kies in dat geval **Meer info** en daarna **Toch uitvoeren**, mits je QuietWriter via deze officiële repository hebt gedownload.
+Voor ontwikkeling en tests:
+
+```bash
+python -m pip install -r requirements-dev.txt
+python tools/check_undefined_names.py
+pytest
+pytest -m qt
+```
+
+## Windows-build
+
+```bat
+build_exe.cmd
+```
+
+De build maakt een portable Windows-versie onder `release/`.
 
 ## Privacy en AI
 
-QuietWriter is ontworpen als lokale schrijfapp. Je boeken en werkbestanden blijven lokaal.
+QuietWriter is ontworpen als lokale schrijfapp. Boeken en werkbestanden blijven lokaal tenzij de gebruiker bewust een externe AI-provider gebruikt.
 
-De AI Meelezer is optioneel:
+- **Ollama** kan volledig lokaal draaien.
+- Bij **OpenRouter** wordt pas context verstuurd wanneer de gebruiker bewust een vraag aan de Meelezer stelt.
+- De Meelezer is bedoeld als tweede lezer, niet als autonome co-auteur.
 
-- met **Ollama** kan AI volledig lokaal draaien;
-- met een externe provider zoals **OpenRouter** verlaat alleen context de computer wanneer je bewust een vraag aan de Meelezer stelt;
-- het openen van de Meelezer verstuurt niet automatisch manuscripttekst.
+## Code signing
 
-## Releases en integriteit
+QuietWriter is momenteel nog niet digitaal ondertekend. Het project werkt toe naar reproduceerbare, geautomatiseerde Windows-builds met openbare herkomstcontrole.
 
-Officiële Windows-downloads worden automatisch gebouwd vanuit de private ontwikkelrepository. Iedere release bevat naast de ZIP een SHA-256-controlebestand:
+Free code signing provided by SignPath.io, certificate by SignPath Foundation.
 
-`QuietWriter-windows-portable.zip.sha256`
-
-## Broncode
-
-Deze publieke repository bevat bewust **geen broncode**. De ontwikkelrepository is privé.
+Zie `CODE_SIGNING_POLICY.md`.
 
 ## Licentie
 
-QuietWriter is geen open-sourceproject. De software is auteursrechtelijk beschermd. Componenten van derden vallen onder hun eigen licenties; die worden met de distributie meegeleverd.
+QuietWriter is vrije software onder de **GNU General Public License v3.0 (GPLv3)**. Zie `LICENSE`.
+
+Componenten van derden behouden hun eigen licenties. Zie `documents/licenses/THIRD_PARTY_LICENSES.md` zodra de broncode van 1.1.0 in deze repository is gepubliceerd.
