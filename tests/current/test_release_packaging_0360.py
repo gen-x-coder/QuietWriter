@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from quietwriter import __version__
+
 ROOT = Path(__file__).resolve().parents[2]
 STAGE = ROOT / 'release' / 'stage'
 
@@ -41,7 +43,7 @@ def test_stage_manifest_matches_version_and_has_hashes():
     _prepare()
     data = json.loads((STAGE / 'STAGE_MANIFEST.json').read_text(encoding='utf-8'))
     assert data['product'] == 'QuietWriter'
-    assert data['version'] == '1.0.0-rc2'
+    assert data['version'] == __version__
     assert data['files']
     assert all(item['path'] and len(item['sha256']) == 64 and item['bytes'] >= 0 for item in data['files'])
 
