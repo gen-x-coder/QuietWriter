@@ -64,7 +64,8 @@ Deze lagen mogen niet stil in elkaar overlopen.
 5. `TEST_STRATEGY.md`
 6. `ROADMAP_AND_IDEAS.md`
 7. `RELEASE_BRANDING_AND_OPERATIONS.md`
-8. `CHANGELOG.md`
+8. `RELEASE_PROCESS.md` — canonieke release- en SignPath-flow
+9. `CHANGELOG.md`
 
 ## Richting 1.0
 RC2 is technisch groen op basis van de releasecyclus én de lokale overdraagbaarheidsreview van 2 oktober 2026 (Python 3.12.3 / PySide6 6.11.2). Zie `VALIDATION.md` voor de concrete testruns. Wat nog vooral praktijkvalidatie is:
