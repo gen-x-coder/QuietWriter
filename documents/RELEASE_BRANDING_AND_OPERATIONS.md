@@ -1,5 +1,7 @@
 # QuietWriter — release, branding en operations
 
+> Voor de uitvoerbare stap-voor-stap releaseprocedure, inclusief publieke CI, tagging en SignPath, zie `RELEASE_PROCESS.md`. Dit document beschrijft vooral de technische release- en brandingprincipes.
+
 ## Repositorymodel
 Historisch zijn er een private ontwikkelrepository en een publieke downloadrepository. Voor lokaal werken is de project-ZIP de praktische ontwikkelbasis; een eventuele latere Git-sync verandert de productstructuur niet.
 
@@ -56,7 +58,7 @@ RC's zijn prereleases. Een permanente `releases/latest/download/QuietWriter-wind
 Iedere publieke ZIP hoort een checksumasset te hebben.
 
 ## SmartScreen en signing
-Zonder code signing kan SmartScreen waarschuwen. Dat is een bekende distributiefrictie. Code signing is een mogelijke post-1.0 keuze als kosten, beheer en CI-secretmodel acceptabel zijn.
+Zonder code signing kan SmartScreen waarschuwen. QuietWriter heeft daarom een aanvraag lopen voor SignPath Foundation Open Source Code Signing. De publieke releasebron, code-signing policy en GitHub Actions-flow zijn hiervoor voorbereid. Zie `RELEASE_PROCESS.md` voor de actuele procedure en status.
 
 ## Installer/updater
 Niet nodig voor eerste stable. Pas toevoegen met expliciet ontwerp voor install/upgrade/uninstall, signing, rollback en user consent.
