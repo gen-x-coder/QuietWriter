@@ -58,12 +58,22 @@ def test_long_book_title_with_reader_open_does_not_force_wide_window(app):
         settings.setValue('ai_enabled', True)
         settings.setValue('advanced_options', True)
         lib = Library(root / 'workspace')
-        book = lib.create_book('De verloren haven van Antwerpen en nog een bijzonder lange subtitel')
+        book = lib.create_book('Kort')
         window = MainWindow(settings, lib, [])
-        window.open_book(book)
-        window.editor_page.right.setCurrentWidget(window.editor_page.ai)
-        window.editor_page.right.show()
-        app.processEvents()
-        assert window.minimumSizeHint().width() <= 1100
-        assert window.editor_page.book_title_label.toolTip() == book.title
-        window.close()
+        try:
+            window.open_book(book)
+            window.editor_page.right.setCurrentWidget(window.editor_page.ai)
+            window.editor_page.right.show()
+            app.processEvents()
+            baseline_width = window.minimumSizeHint().width()
+
+            long_title = 'De verloren haven van Antwerpen en nog een bijzonder lange subtitel'
+            window.editor_page._set_book_title(long_title)
+            app.processEvents()
+
+            assert window.minimumSizeHint().width() <= baseline_width
+            assert window.editor_page.book_title_label.toolTip() == long_title
+        finally:
+            window.search_index.close()
+            window.close()
+            app.processEvents()
