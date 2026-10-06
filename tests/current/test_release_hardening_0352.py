@@ -112,7 +112,8 @@ def test_font_manifest_has_release_fonts_and_local_license_files():
 def test_release_license_inventory_exists_and_calls_out_dictionary_gate():
     own = (ROOT / 'documents' / 'licenses' / 'LICENSE').read_text(encoding='utf-8')
     third = (ROOT / 'documents' / 'licenses' / 'THIRD_PARTY_LICENSES.md').read_text(encoding='utf-8')
-    assert 'Lucas Bonsel' in own
+    assert 'GNU GENERAL PUBLIC LICENSE' in own
+    assert 'Version 3, 29 June 2007' in own
     for term in ('PySide6', 'Python', 'Requests', 'spylls', 'Merriweather', 'Literata', 'Source Serif 4', 'EB Garamond'):
         assert term in third
     assert 'Hunspell' in third and 'nl_NL' in third and 'Revised BSD License' in third
