@@ -27,9 +27,12 @@ def test_corrupt_search_cache_is_rebuilt_instead_of_blocking_startup():
         index = BookSearchIndex(db)
         try:
             assert index.search('missing', 'iets') == []
-            with sqlite3.connect(db) as conn:
+            conn = sqlite3.connect(db)
+            try:
                 row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chapters'").fetchone()
                 assert row == ('chapters',)
+            finally:
+                conn.close()
         finally:
             index.close()
 
