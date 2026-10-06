@@ -6,6 +6,8 @@ QuietWriter is een lokale desktop-schrijfomgeving voor boeken en langere teksten
 
 ## Download
 
+Zie ook [DOWNLOAD.md](DOWNLOAD.md) voor de officiële downloadlocatie en informatie over code signing.
+
 De nieuwste stabiele Windows-versie staat onder **Releases**. De vaste downloadlink is:
 
 https://github.com/gen-x-coder/QuietWriter/releases/latest/download/QuietWriter-windows-portable.zip
@@ -47,6 +49,10 @@ QuietWriter is ontworpen als lokale schrijfapp. Boeken en werkbestanden blijven 
 - **Ollama** kan volledig lokaal draaien.
 - Bij **OpenRouter** wordt pas context verstuurd wanneer de gebruiker bewust een vraag aan de Meelezer stelt.
 - De Meelezer is bedoeld als tweede lezer, niet als autonome co-auteur.
+
+## Privacy
+
+Zie [PRIVACY.md](PRIVACY.md) voor het privacybeleid van QuietWriter.
 
 ## Code signing
 
