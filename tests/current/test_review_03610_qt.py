@@ -45,6 +45,10 @@ def test_free_filter_does_not_erase_saved_model_before_catalog_refresh(app, mode
         settings.sync()
         assert str(settings.value('openrouter_model', '')) == model
         window.close()
+        window.search_index.close()
+        app.processEvents()
+        window.search_index.close()
+        app.processEvents()
 
 
 def test_long_book_title_with_reader_open_does_not_force_wide_window(app):
