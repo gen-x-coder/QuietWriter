@@ -1,0 +1,116 @@
+﻿QuietWriter - korte handleiding
+===============================
+
+Release candidate
+-----------------
+Dit is een release candidate van QuietWriter 1.0: een testversie op weg naar
+de eerste stabiele 1.0-release. Maak tijdens de testperiode regelmatig een kopie van je volledige
+werkmap en meld onverwacht gedrag met het crashlog.
+
+Eerst uitpakken
+---------------
+Pak de ZIP eerst volledig uit naar een gewone map. Start QuietWriter niet
+rechtstreeks vanuit de ZIP. Start daarna QuietWriter.exe.
+
+De eerste keer helpt een korte wizard je met taal, werkmap, spelling en de
+optionele AI Meelezer.
+
+Windows SmartScreen
+-------------------
+Een vroege QuietWriter-release kan nog niet digitaal ondertekend zijn. Windows
+SmartScreen kan daarom waarschuwen bij het starten. Controleer dat je de release
+van de officiële QuietWriter-bron hebt gekregen. Klik daarna op 'Meer info' en
+vervolgens op 'Toch uitvoeren' als je QuietWriter wilt starten.
+
+Waar staan mijn boeken?
+-----------------------
+Je kiest zelf een werkmap. QuietWriter bewaart daar je boeken en lokale
+herstelgegevens. Gebruik bij voorkeur een gewone map in je gebruikersprofiel,
+bijvoorbeeld Documenten\QuietWriter. Een handmatig ingevoerd relatief pad zoals
+'mijnboeken' wordt onder je gebruikersmap geplaatst en nooit in de programmamap.
+
+Back-up
+-------
+Maak regelmatig een kopie van je volledige QuietWriter-werkmap. Sluit QuietWriter
+bij voorkeur voordat je een handmatige back-up terugzet.
+
+AI Meelezer en privacy
+----------------------
+AI is optioneel en staat bij een nieuwe installatie standaard uit. De Meelezer
+is bedoeld als tweede paar ogen: feedback, persona- en stijlcontrole,
+feitencontrole, continuïteit en consistentie. Hij is geen co-auteur en schrijft
+of herschrijft je manuscript niet.
+
+Ollama draait lokaal. OpenRouter is een externe dienst: tekst en context worden
+alleen verstuurd wanneer je bewust een vraag aan de Meelezer stelt. Het openen
+van de Meelezer veroorzaakt bij OpenRouter geen warmup-request.
+
+Let op: een OpenRouter API-sleutel wordt momenteel lokaal als gewone applicatie-instelling opgeslagen en niet in een versleutelde Windows credential store. Deel daarom geen registry-/instellingenexports waarin die sleutel staat.
+
+Probleem melden
+---------------
+Vermeld bij een fout de QuietWriter-versie, wat je deed, wat je verwachtte en
+wat er gebeurde. Voeg waar mogelijk de foutmelding of het crashlog toe.
+
+Via de foutmelding kun je op 'Logbestand openen' klikken. Het logbestand staat
+normaal ook hier:
+%LOCALAPPDATA%\QuietWriter\QuietWriter\logs\crash.log
+
+
+QuietWriter - quick guide (English)
+===================================
+
+Release candidate
+-----------------
+This is a QuietWriter 1.0 release candidate: a test build on the way to the
+first stable 1.0 release. During the test period, regularly copy your complete workspace and
+report unexpected behaviour with the crash log.
+
+Extract first
+-------------
+Extract the ZIP completely to a normal folder before starting QuietWriter. Do
+not run QuietWriter directly from inside the ZIP. Then start QuietWriter.exe.
+
+On first launch, a short wizard helps you choose the language, workspace,
+spelling and the optional AI Reader.
+
+Windows SmartScreen
+-------------------
+An early QuietWriter release may not yet be digitally signed. Windows SmartScreen
+may therefore show a warning. Verify that the release came from the official
+QuietWriter source. Click 'More info' and then 'Run anyway' if you want to start
+QuietWriter.
+
+Where are my books stored?
+--------------------------
+You choose the workspace. QuietWriter stores your books and local recovery data
+there. Prefer a normal folder in your user profile, for example
+Documents\QuietWriter. A manually entered relative path such as 'mybooks' is
+placed below your user folder and never inside the application folder.
+
+Backups
+-------
+Regularly copy the complete QuietWriter workspace. Preferably close QuietWriter
+before restoring a manual backup.
+
+AI Reader and privacy
+---------------------
+AI is optional and is disabled by default for new installations. The Reader is
+a second pair of eyes for feedback, persona/style checks, fact checks,
+continuity and consistency. It is not a co-author and does not write or rewrite
+your manuscript.
+
+Ollama runs locally. OpenRouter is an external service: text and context are sent
+only when you deliberately ask the Reader a question. Merely opening the Reader
+does not send an OpenRouter warmup request.
+
+Note: an OpenRouter API key is currently stored locally as a normal application setting, not in an encrypted Windows credential store. Do not share registry/settings exports that contain the key.
+
+Reporting a problem
+-------------------
+Include your QuietWriter version, what you did, what you expected and what
+happened. Add the error message or crash log when available.
+
+Use 'Open log file' in the error message. The crash log is normally also stored
+at:
+%LOCALAPPDATA%\QuietWriter\QuietWriter\logs\crash.log
