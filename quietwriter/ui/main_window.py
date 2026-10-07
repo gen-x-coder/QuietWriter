@@ -2,24 +2,27 @@
 from pathlib import Path
 
 from PySide6.QtCore import (
-    Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve,
+    Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve, QUrl,
     QParallelAnimationGroup
 )
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QFileDialog, QFrame, QHBoxLayout, QInputDialog, QMainWindow,
     QLabel, QMessageBox, QPushButton, QScrollArea, QStatusBar, QVBoxLayout, QWidget
 )
 
 from .current_page_stack import CurrentPageStack
+from .darlings_page import DarlingsPage
 from .. import APP_NAME
 from ..icon_theme import app_icon_path, icon, set_icon_theme
 from ..i18n import tr
 from ..search import BookSearchIndex
 from ..themes import THEMES, stylesheet
+from ..update_checker import UpdateChecker, is_newer_version
 from ..typography import typography_from_values
 from ..editor_view import DEFAULT_TEXT_WIDTH, normalize_text_width
 from ..manuscript_markup import ManuscriptStyle
+from ..manuscript_profile import profile_from_manifest
 from ..storage import CorruptSourceError
 from ..planning_validation import FuturePlanningFormatError
 from .book_details import BookDetailsPage
@@ -52,6 +55,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(window_title); self.setWindowIcon(QIcon(str(app_icon_path()))); self.resize(1280, 720)
         self.rail_expanded = self.settings.value('nav_expanded', False, bool)
         self._feature_visibility_preview = None
+        self._update_checker = UpdateChecker(self)
+        self._update_check_silent = True
+        self._update_checker.finished.connect(self._update_check_finished)
+        self._update_checker.failed.connect(self._update_check_failed)
 
         wrap = QWidget(); self.setCentralWidget(wrap); root = QHBoxLayout(wrap); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
         self.rail = QFrame(); self.rail.setObjectName('toolrail')
@@ -73,6 +80,7 @@ class MainWindow(QMainWindow):
 
         self.stack = CurrentPageStack()
         self.start = StartPage(library)
+        self.darlings_page = DarlingsPage(self)
         self.editor_page = EditorPage(self)
         self.persona = PersonaPage(library)
         self.book_profile_page = BookProfilePage(self)
@@ -84,7 +92,7 @@ class MainWindow(QMainWindow):
         self.export_page = ExportPage(self)
         self.media_manager_page = MediaManagerPage(self)
         self.integrity_page = IntegrityPage(self)
-        for page in (self.start, self.editor_page, self.planning_page, self.book_profile_page, self.book_memory_page, self.media_manager_page, self.integrity_page, self.export_page, self.persona, self.settings_page, self.trash): self.stack.addWidget(page)
+        for page in (self.start, self.darlings_page, self.editor_page, self.planning_page, self.book_profile_page, self.book_memory_page, self.media_manager_page, self.integrity_page, self.export_page, self.persona, self.settings_page, self.trash): self.stack.addWidget(page)
         root.addWidget(self.rail); root.addWidget(self.stack, 1)
 
         self.nav_buttons = []
@@ -101,6 +109,7 @@ class MainWindow(QMainWindow):
 
         self.library_group_label = self._register_nav_group('library', tr('nav.group.library', 'BIBLIOTHEEK'))
         self.bookshelf_button = self._register_nav_item('bookshelf', 'shelf', tr('nav.bookshelf', 'Boekenplank'), self.go_home)
+        self.darlings_button = self._register_nav_item('darlings', 'darlings', tr('nav.darlings', 'Bewaarplaats'), self.show_darlings)
 
         self._register_nav_separator('current_book')
         self.book_group_label = self._register_nav_group('current_book', tr('nav.group.current_book', 'HUIDIG BOEK'))
@@ -138,13 +147,23 @@ class MainWindow(QMainWindow):
         self.tool_menu_button = trb('menu', tr('nav.menu', 'Menu'), self.toggle_toolrail, checkable=False)
         self.search_button = trb('search', tr('tool.search', 'Zoeken'), self.editor_page.show_search)
         self.chapter_context_button = trb('planning', tr('tool.chapter_context', 'In dit hoofdstuk'), self.editor_page.show_chapter_context)
+        self.open_points_button = trb('edit', tr('tool.open_points', 'Open punten'), self.editor_page.show_open_points)
         self.ai_button = trb('spark', tr('tool.ai', 'Meelezer'), self.editor_page.show_ai)
         self.spell_button = trb('spell', tr('tool.spell', 'Spellingscontrole'), self.editor_page.show_spell)
         self.insert_button = trb('insert', tr('tool.insert', 'Toevoegen'), self.editor_page.show_insert_menu)
         self.history_button = trb('history', tr('tool.history', 'Versiegeschiedenis'), self.editor_page.show_history)
+        self.darlings_tool_button = trb('darlings', tr('tool.darlings', 'Bewaarplaats'), self.editor_page.show_darlings_actions)
         self._apply_feature_visibility()
         self.delete_chapter_button = trb('trash', tr('tool.delete_chapter', 'Huidig hoofdstuk verwijderen'), self.editor_page.delete_current_chapter, checkable=False)
-        self.tool_layout.addStretch(); root.addWidget(self.toolrail)
+        self.tool_layout.addStretch()
+        self.tool_scroll = QScrollArea()
+        self.tool_scroll.setObjectName('toolrailScroll')
+        self.tool_scroll.setFrameShape(QFrame.NoFrame)
+        self.tool_scroll.setWidgetResizable(True)
+        self.tool_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.tool_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.tool_scroll.setWidget(self.toolrail)
+        root.addWidget(self.tool_scroll)
         self._configure_rail_tab_order()
 
         self.start.open_book.connect(self.open_book); self.start.new_book.connect(self.new_book); self.start.import_book.connect(self.import_book)
@@ -426,15 +445,20 @@ class MainWindow(QMainWindow):
             tr('tool.menu_collapse', 'Gereedschapsmenu inklappen') if self.toolrail_expanded
             else tr('tool.menu_expand', 'Gereedschapsmenu uitklappen')
         )
+        shell = getattr(self, 'tool_scroll', None)
         if not animate:
             self.toolrail.setMinimumWidth(target); self.toolrail.setMaximumWidth(target)
+            if shell is not None:
+                shell.setMinimumWidth(target); shell.setMaximumWidth(target)
             return
-        start_width = self.toolrail.width()
+        start_width = shell.width() if shell is not None else self.toolrail.width()
         self._tool_animation = QParallelAnimationGroup(self)
-        for prop in (b'minimumWidth', b'maximumWidth'):
-            anim = QPropertyAnimation(self.toolrail, prop, self._tool_animation)
-            anim.setDuration(150); anim.setStartValue(start_width); anim.setEndValue(target)
-            anim.setEasingCurve(QEasingCurve.InOutCubic); self._tool_animation.addAnimation(anim)
+        targets = [self.toolrail] + ([shell] if shell is not None else [])
+        for widget in targets:
+            for prop in (b'minimumWidth', b'maximumWidth'):
+                anim = QPropertyAnimation(widget, prop, self._tool_animation)
+                anim.setDuration(150); anim.setStartValue(start_width); anim.setEndValue(target)
+                anim.setEasingCurve(QEasingCurve.InOutCubic); self._tool_animation.addAnimation(anim)
         self._tool_animation.start()
 
     def toggle_toolrail(self):
@@ -480,7 +504,7 @@ class MainWindow(QMainWindow):
         # snapshot by accident.
         if not in_editor and self.editor_page.preview_live_book:
             self.editor_page.exit_history_preview()
-        self.toolrail.setVisible(in_editor)
+        getattr(self, 'tool_scroll', self.toolrail).setVisible(in_editor)
         if in_editor and hasattr(self.editor_page, 'chapter_context'):
             self.editor_page.refresh_chapter_context()
             if self.editor_page.chapter is not None:
@@ -500,6 +524,7 @@ class MainWindow(QMainWindow):
         current = self.stack.currentWidget()
         target = None
         if current is self.start: target = self.bookshelf_button
+        elif current is self.darlings_page: target = self.darlings_button
         elif current is self.editor_page: target = self.write_button
         elif current is self.planning_page: target = self.planning_button
         elif self.book_details_page is not None and current is self.book_details_page: target = self.book_details_button
@@ -534,6 +559,8 @@ class MainWindow(QMainWindow):
         return self.editor_page.save()
 
     def _save_planning_if_active(self):
+        if self.stack.currentWidget() is self.darlings_page:
+            return self.darlings_page.save_pending()
         if self.stack.currentWidget() is self.planning_page:
             return self.planning_page.save_pending()
         if self.stack.currentWidget() is self.book_profile_page:
@@ -543,6 +570,19 @@ class MainWindow(QMainWindow):
         if self.stack.currentWidget() is self.persona and self.persona.dirty:
             return self.persona.save()
         return True
+
+
+    def show_darlings(self):
+        self._leave_settings_preview()
+        if not self._save_book_details_if_pending():
+            return
+        if not self._save_planning_if_active():
+            return
+        if self.active_book() and self.stack.currentWidget() is self.editor_page:
+            if self.editor_page.save() is False:
+                return
+        self.darlings_page.refresh()
+        self.stack.setCurrentWidget(self.darlings_page)
 
     def show_editor(self):
         self._leave_settings_preview()
@@ -555,6 +595,12 @@ class MainWindow(QMainWindow):
             self.stack.setCurrentWidget(self.editor_page)
         else:
             self.go_home()
+
+    def show_open_points(self):
+        """Return to the editor and open the book-level Open points panel."""
+        self.show_editor()
+        if self.stack.currentWidget() is self.editor_page:
+            QTimer.singleShot(0, self.editor_page.show_open_points)
 
     def show_planning(self):
         self._leave_settings_preview()
@@ -676,6 +722,8 @@ class MainWindow(QMainWindow):
             return
         if not self._save_book_details_if_pending():
             return
+        if self.darlings_page.save_pending() is False:
+            return
         if self.planning_page.save_pending() is False:
             return
         if self.book_profile_page.dirty and self.book_profile_page.save() is False:
@@ -704,16 +752,32 @@ class MainWindow(QMainWindow):
             book = self.library.create_book(title or tr('book.untitled', 'Naamloos boek')); self.start.refresh(); self.open_book(book)
 
     def import_book(self):
-        path, _ = QFileDialog.getOpenFileName(self, tr('book.import.title', 'Boek importeren'), str(Path.home()), tr('book.import.filter', 'Markdown (*.md);;Alle bestanden (*)'))
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr('book.import.title', 'Boek importeren'), str(Path.home()),
+            tr('book.import.filter', 'QuietWriter-boek (*.qwbook);;Word-document (*.docx);;Markdown (*.md);;Alle bestanden (*)')
+        )
         if not path:
             return
+        warnings = ()
         try:
-            book = self.library.import_markdown_book(Path(path))
+            source = Path(path)
+            if source.suffix.lower() == '.qwbook':
+                from ..qwbook_io import import_qwbook
+                book = import_qwbook(self.library, source)
+            elif source.suffix.lower() == '.docx':
+                book, warnings = self.library.import_docx_book(source)
+            else:
+                book = self.library.import_markdown_book(source)
         except Exception as e:
             QMessageBox.critical(self, tr('book.import.title', 'Boek importeren'), tr('book.import.failed', 'Importeren mislukt:\n{error}', error=e))
             return
         self.start.refresh()
         self.open_book(book)
+        if warnings:
+            QMessageBox.information(
+                self, tr('book.import.warnings_title', 'Import voltooid met aandachtspunten'),
+                tr('book.import.warnings', 'Het boek is geïmporteerd. Niet alles uit Word kon worden overgenomen:\n\n{warnings}', warnings='\n'.join(f'• {item}' for item in warnings)),
+            )
 
     def open_book(self, book):
         if self.planning_page.book and self.planning_page.book.id != book.id:
@@ -726,6 +790,93 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, tr('book.open_failed.title', 'Boek openen'), tr('book.open_failed.text', 'Het boek kon niet veilig worden geopend.\n\n{error}', error=exc))
             return
+
+        syntax = profile_from_manifest(live.extra_manifest or {})
+        if not syntax.explicit:
+            migration_box = QMessageBox(self)
+            migration_box.setIcon(QMessageBox.Question)
+            migration_box.setWindowTitle(tr('book.syntax_migration.title', 'Boek eenmalig bijwerken'))
+            migration_box.setText(tr(
+                'book.syntax_migration.text',
+                'Dit boek is gemaakt met een oudere QuietWriter-versie.\n\n'
+                'QuietWriter moet de manuscriptsyntaxis eenmalig vastleggen zodat bestaande tekst '
+                'hetzelfde blijft tonen en nieuwe invoer veilig kan worden opgeslagen. Vooraf wordt '
+                'automatisch een herstelversie gemaakt.\n\nWil je het boek nu bijwerken?',
+            ))
+            update_button = migration_box.addButton(
+                tr('book.syntax_migration.update_button', 'Boek bijwerken'),
+                QMessageBox.AcceptRole,
+            )
+            migration_box.addButton(
+                tr('book.syntax_migration.do_not_open_button', 'Niet openen'),
+                QMessageBox.RejectRole,
+            )
+            migration_box.setDefaultButton(update_button)
+            migration_box.exec()
+            if migration_box.clickedButton() is not update_button:
+                return
+            assume_escape_era = None
+            try:
+                migration_state = self.library.manuscript_syntax_migration_state(live)
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    tr('book.syntax_migration.failed_title', 'Bijwerken mislukt'),
+                    tr('book.syntax_migration.failed_text', 'Het boek is niet bijgewerkt. De oorspronkelijke versie is behouden.\n\n{error}', error=exc),
+                )
+                return
+            if migration_state == 'ambiguous':
+                chooser = QMessageBox(self)
+                chooser.setIcon(QMessageBox.Question)
+                chooser.setWindowTitle(tr('book.syntax_migration.ambiguous_title', 'Backslashes controleren'))
+                chooser.setText(tr(
+                    'book.syntax_migration.ambiguous_text',
+                    'Dit boek bevat backslashes die niet automatisch veilig als oud of nieuw kunnen worden herkend.\n\n'
+                    'Als het boek recent in QuietWriter is bewerkt en de tekst er nu goed uitziet, behoud dan de huidige weergave. '
+                    'Kies alleen Oude tekst beschermen als het boek sinds de nieuwe escaping nog niet is bewerkt.'
+                ))
+                keep_button = chooser.addButton(
+                    tr('book.syntax_migration.ambiguous_keep', 'Huidige weergave behouden'),
+                    QMessageBox.AcceptRole,
+                )
+                legacy_button = chooser.addButton(
+                    tr('book.syntax_migration.ambiguous_legacy', 'Oude tekst beschermen'),
+                    QMessageBox.ActionRole,
+                )
+                chooser.addButton(
+                    tr('book.syntax_migration.do_not_open_button', 'Niet openen'),
+                    QMessageBox.RejectRole,
+                )
+                chooser.exec()
+                clicked = chooser.clickedButton()
+                if clicked is keep_button:
+                    assume_escape_era = True
+                elif clicked is legacy_button:
+                    assume_escape_era = False
+                else:
+                    return
+            try:
+                live, migration, _checkpoint = self.library.migrate_manuscript_syntax(
+                    live, assume_escape_era=assume_escape_era
+                )
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    tr('book.syntax_migration.failed_title', 'Bijwerken mislukt'),
+                    tr('book.syntax_migration.failed_text', 'Het boek is niet bijgewerkt. De oorspronkelijke versie is behouden.\n\n{error}', error=exc),
+                )
+                return
+            self.start.refresh()
+            if migration.escaped_backslashes:
+                self.status.showMessage(
+                    tr(
+                        'book.syntax_migration.done',
+                        'Boek bijgewerkt; {count} backslashes veilig behouden.',
+                        count=migration.escaped_backslashes,
+                    ),
+                    5000,
+                )
+
         if self.editor_page.load_book(live) is False:
             return
         self.book_profile_page.set_book(live, force=True)
@@ -847,6 +998,8 @@ class MainWindow(QMainWindow):
             self.editor_page.ai.apply_theme(theme_name)
         if hasattr(self, 'editor_page') and hasattr(self.editor_page, 'editor'):
             self.editor_page.editor.schedule_formatting(immediate=True)
+        if hasattr(self, 'editor_page') and hasattr(self.editor_page, 'apply_tree_theme'):
+            self.editor_page.apply_tree_theme(theme_name)
         about = getattr(getattr(self, 'settings_page', None), 'about_page', None)
         if about is not None and hasattr(about, 'refresh_branding'):
             about.refresh_branding(theme_name)
@@ -867,6 +1020,16 @@ class MainWindow(QMainWindow):
                 name = button.property('iconName')
                 if name:
                     button.setIcon(icon(str(name), theme_name=theme_name))
+            # Shared panel-help buttons also use theme-aware SVG icons.
+            for panel_name in ('search', 'chapter_context', 'open_points', 'ai', 'spell', 'insert', 'history', 'darlings_actions'):
+                panel = getattr(ep, panel_name, None)
+                help_widget = getattr(panel, 'panel_help', None)
+                button = getattr(help_widget, 'toggle', None)
+                if button is not None:
+                    name = button.property('iconName')
+                    if name:
+                        button.setIcon(icon(str(name), theme_name=theme_name))
+
             # Tree drag handles are item icons, not QPushButtons. Reapply them.
             tree = getattr(ep, 'tree', None)
             if tree is not None:
@@ -905,6 +1068,50 @@ class MainWindow(QMainWindow):
             style = ManuscriptStyle.from_settings(self.settings)
         self.editor_page.editor.apply_manuscript_style(style)
         self.planning_page.notes_page.editor.apply_manuscript_style(style)
+
+    def check_for_updates(self, *, silent: bool = False):
+        self._update_check_silent = bool(silent)
+        self._update_checker.check()
+
+    def _update_check_finished(self, result):
+        silent = self._update_check_silent
+        if result.update_available:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Information)
+            box.setWindowTitle(tr('updates.available_title', 'Nieuwe versie beschikbaar'))
+            box.setText(tr(
+                'updates.available_text',
+                'QuietWriter {latest} is beschikbaar. Je gebruikt nu {current}.',
+                latest=result.latest_version, current=result.current_version,
+            ))
+            open_button = box.addButton(tr('updates.open_github', 'GitHub openen'), QMessageBox.ActionRole)
+            box.addButton(tr('common.close', 'Sluiten'), QMessageBox.RejectRole)
+            box.exec()
+            if box.clickedButton() is open_button and result.release_url:
+                QDesktopServices.openUrl(QUrl(result.release_url))
+        elif not silent:
+            if is_newer_version(result.current_version, result.latest_version):
+                QMessageBox.warning(
+                    self, tr('updates.ahead_title', 'Je gebruikt een nieuwere versie'),
+                    tr(
+                        'updates.ahead_text',
+                        'Je gebruikt QuietWriter {current}, een hogere versie dan de nieuwste stabiele versie op GitHub ({latest}). Deze versie kan fouten bevatten.',
+                        current=result.current_version, latest=result.latest_version,
+                    ),
+                )
+            else:
+                QMessageBox.information(
+                    self, tr('updates.current_title', 'QuietWriter is bijgewerkt'),
+                    tr('updates.current_text', 'Je gebruikt de nieuwste stabiele versie ({version}).', version=result.current_version),
+                )
+
+    def _update_check_failed(self, message: str):
+        if self._update_check_silent:
+            return
+        QMessageBox.warning(
+            self, tr('updates.error_title', 'Controleren op updates'),
+            tr('updates.error_text', 'De updatecontrole kon GitHub nu niet bereiken. Probeer het later opnieuw.\n\n{error}', error=message),
+        )
 
     def open_settings(self):
         if not self._save_planning_if_active(): return
@@ -992,6 +1199,7 @@ class MainWindow(QMainWindow):
     def _page_key(self, page):
         mapping = {
             self.start: 'bookshelf',
+            self.darlings_page: 'darlings',
             self.editor_page: 'contents',
             self.planning_page: 'planning',
             self.media_manager_page: 'media',
@@ -1010,6 +1218,7 @@ class MainWindow(QMainWindow):
     def _page_for_key(self, key):
         mapping = {
             'bookshelf': self.start,
+            'darlings': self.darlings_page,
             'contents': self.editor_page,
             'planning': self.planning_page,
             'media': self.media_manager_page,
@@ -1072,6 +1281,10 @@ class MainWindow(QMainWindow):
     def _apply_feature_visibility(self):
         """Render committed feature switches without preview side effects."""
         self._feature_visibility_preview = None
+        self._update_checker = UpdateChecker(self)
+        self._update_check_silent = True
+        self._update_checker.finished.connect(self._update_check_finished)
+        self._update_checker.failed.connect(self._update_check_failed)
         state = self._effective_rail_state()
         self._render_rail(state)
         self._render_feature_buttons(ai_enabled=state.ai_enabled)
@@ -1129,15 +1342,19 @@ class MainWindow(QMainWindow):
         self.chapter_context_button.setVisible(chapter_context_available)
         self.search_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.search)
         self.chapter_context_button.setChecked(bool(chapter_context_available and right_visible and self.editor_page.right.currentWidget() is self.editor_page.chapter_context))
+        self.open_points_button.setChecked(bool(right_visible and self.editor_page.right.currentWidget() is self.editor_page.open_points))
         self.ai_button.setChecked(bool(ai_enabled and right_visible and self.editor_page.right.currentWidget() is self.editor_page.ai))
         self.spell_button.setChecked(bool(spell_enabled and right_visible and self.editor_page.right.currentWidget() is self.editor_page.spell))
         self.insert_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.insert)
         self.history_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.history)
+        self.darlings_tool_button.setChecked(right_visible and self.editor_page.right.currentWidget() is self.editor_page.darlings_actions)
         corrupt_chapter = bool(in_editor and getattr(self.editor_page, '_chapter_corrupt', False))
         self.ai_button.setEnabled(bool(ai_enabled and not corrupt_chapter))
         self.spell_button.setEnabled(bool(spell_enabled and not corrupt_chapter))
         self.insert_button.setEnabled(not corrupt_chapter)
+        self.darlings_tool_button.setEnabled(bool(in_editor and not corrupt_chapter))
         self.chapter_context_button.setEnabled(chapter_context_available)
+        self.open_points_button.setEnabled(bool(self.editor_page.book))
         if hasattr(self, 'delete_chapter_button'):
             total = sum(len(sec.chapters) for sec in self.editor_page.book.sections) if self.editor_page.book else 0
             self.delete_chapter_button.setEnabled(bool(in_editor and self.editor_page.chapter and not self.editor_page.preview_live_book and total > 1))
@@ -1151,6 +1368,8 @@ class MainWindow(QMainWindow):
             if self.book_memory_page.dirty and self.book_memory_page.save() is False:
                 event.ignore(); return
             if self.book_profile_page.dirty and self.book_profile_page.save() is False:
+                event.ignore(); return
+            if self.darlings_page.save_pending() is False:
                 event.ignore(); return
             if self.planning_page.save_pending() is False:
                 event.ignore(); return
@@ -1178,8 +1397,8 @@ class MainWindow(QMainWindow):
         self.settings.setValue('geometry', self.saveGeometry())
         self.settings.setValue('windowState', self.saveState())
         self.settings.setValue('splitter', self.editor_page.left_split.saveState())
-        self.settings.setValue('manuscript_visible', self.editor_page.manuscript.isVisible())
-        self.settings.setValue('right_visible', self.editor_page.right.isVisible())
+        self.settings.setValue('manuscript_visible', not self.editor_page.manuscript.isHidden())
+        self.settings.setValue('right_visible', not self.editor_page.right.isHidden())
         self.settings.setValue('nav_expanded', self.rail_expanded)
         try:
             self.search_index.close()

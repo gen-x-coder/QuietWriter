@@ -35,7 +35,7 @@ TEMPLATE = """VSVersionInfo(
       StringStruct('FileDescription', 'QuietWriter'),
       StringStruct('FileVersion', '{version}'),
       StringStruct('InternalName', 'QuietWriter'),
-      StringStruct('LegalCopyright', '© 2026 Lucas Bonsel. Alle rechten voorbehouden.'),
+      StringStruct('LegalCopyright', '© 2026 Lucas Bonsel.'),
       StringStruct('OriginalFilename', 'QuietWriter.exe'),
       StringStruct('ProductName', 'QuietWriter'),
       StringStruct('ProductVersion', '{version}')])]),

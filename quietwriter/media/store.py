@@ -163,18 +163,20 @@ class MediaStore:
         data = self.load_manifest(book)
         return tuple(MediaAsset.from_dict(asset_id, row) for asset_id, row in data['images'].items())
 
-    def import_image(self, book, source: Path) -> MediaAsset:
-        source = Path(source)
-        if not source.is_file():
-            raise MissingMediaError(f'Afbeelding bestaat niet: {source}')
-        self.library.verify_book_unchanged(book)
-        data_bytes = source.read_bytes()
-        media_type, width, height = _image_info(source, data_bytes)
+    def import_image_bytes(self, book, data_bytes: bytes, original_name: str, *, verify_revision: bool = True) -> MediaAsset:
+        """Import immutable PNG/JPEG bytes into a book-local media store.
+
+        ``verify_revision=False`` is reserved for unpublished staging books,
+        where no live revision can conflict yet. Normal editor imports keep the
+        existing optimistic-concurrency guard.
+        """
+        name = Path(str(original_name or 'image'))
+        if verify_revision:
+            self.library.verify_book_unchanged(book)
+        media_type, width, height = _image_info(name, data_bytes)
         digest = hashlib.sha256(data_bytes).hexdigest()
         manifest = self.load_manifest(book)
 
-        # Exact duplicates reuse one immutable asset even when imported under a
-        # different original filename.
         for asset_id, row in manifest['images'].items():
             existing = MediaAsset.from_dict(asset_id, row)
             candidate = Path(book.path) / existing.file
@@ -185,16 +187,33 @@ class MediaStore:
         ext = '.jpg' if media_type == 'image/jpeg' else '.png'
         relative = f'assets/images/{asset_id}{ext}'
         target = Path(book.path) / relative
-        _atomic_copy(source, target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=target.name + '.', suffix='.tmp', dir=str(target.parent))
+        os.close(fd)
+        tmp = Path(tmp_name)
+        try:
+            tmp.write_bytes(data_bytes)
+            os.replace(tmp, target)
+        finally:
+            if tmp.exists():
+                tmp.unlink(missing_ok=True)
+
         asset = MediaAsset(
             id=asset_id, file=relative, media_type=media_type,
-            original_name=source.name, width=width, height=height,
+            original_name=name.name, width=width, height=height,
             sha256=digest, size=len(data_bytes),
         )
         manifest['images'][asset_id] = asset.to_dict()
         self._save_manifest_unchecked(book, manifest)
-        self.library.refresh_book_revision(book)
+        if verify_revision:
+            self.library.refresh_book_revision(book)
         return asset
+
+    def import_image(self, book, source: Path) -> MediaAsset:
+        source = Path(source)
+        if not source.is_file():
+            raise MissingMediaError(f'Afbeelding bestaat niet: {source}')
+        return self.import_image_bytes(book, source.read_bytes(), source.name, verify_revision=True)
 
     def reference_for_chapter(self, chapter, asset: MediaAsset) -> str:
         return relative_asset_reference(chapter.file, asset.file)

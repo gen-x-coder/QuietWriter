@@ -20,8 +20,11 @@ from ..dictionary_catalog import DictionaryCatalog
 from ..i18n import current_locale, tr
 from ..icon_theme import icon
 from ..markdown_io import insert_scene_break as build_scene_break_text
+from ..manuscript_markup import (UnsafeMarkdownInsertionError, escape_literal_text, prepare_markdown_insertion,
+                                 prepare_markdown_removal, source_selection_as_markdown)
+from ..placeholders import new_open_point_id, open_point_at, parse_open_points, resolve_open_point, normalize_open_point_marker, wrap_open_point
 from ..media.markup import (
-    build_image_markdown, count_words, image_reference_for_line, insert_image_block,
+    build_image_markdown, count_words, insert_image_block,
     is_searchable_range, mask_image_paths, replace_searchable_text, searchable_matches,
 )
 from ..media.store import MediaStore, MediaError
@@ -30,6 +33,8 @@ from ..migrations import FutureBookFormatError
 from ..planning_validation import FuturePlanningFormatError
 from ..publication_models import FRONT_MATTER, BACK_MATTER
 from ..publication_storage import PublicationStore
+from ..open_points_storage import OpenPointStore
+from ..document_view import image_reference_for_block_line, text_for_language_tools, visible_projection
 from ..spell_engine import WordDictionary
 from ..storage import Chapter, Section, StorageWriteError, CorruptSourceError
 from ..themes import THEMES
@@ -38,7 +43,9 @@ from ..editor_view import DEFAULT_TEXT_WIDTH, normalize_text_width
 from .dialogs import confirm, prompt_text
 from .history_panel import HistoryPanel
 from .chapter_context_panel import ChapterContextPanel
+from .open_points_panel import OpenPointsPanel
 from .insert_panel import InsertPanel
+from .darlings_actions_panel import DarlingsActionsPanel
 from .manuscript_editor import ManuscriptEditor
 from .manuscript_tree import ManuscriptTree
 from .search_panel import SearchPanel
@@ -51,6 +58,7 @@ class EditorPage(QWidget):
         super().__init__()
         self.main = main
         self.media_store = MediaStore(main.library)
+        self.open_point_store = OpenPointStore(main.library)
         self.book = None; self.chapter = None; self.dirty = False; self._chapter_corrupt = False
         self._clean_text = ''
         self._editing_image_block: int | None = None
@@ -70,6 +78,11 @@ class EditorPage(QWidget):
         self._rename_pending_after_drag = False
         self.autosave_timer = QTimer(self); self.autosave_timer.setSingleShot(True); self.autosave_timer.setInterval(3000); self.autosave_timer.timeout.connect(self.save)
         self.undo_redo_sync_timer = QTimer(self); self.undo_redo_sync_timer.setSingleShot(True); self.undo_redo_sync_timer.setInterval(140); self.undo_redo_sync_timer.timeout.connect(self._sync_undo_redo)
+        self.open_points_refresh_timer = QTimer(self); self.open_points_refresh_timer.setSingleShot(True); self.open_points_refresh_timer.setInterval(300); self.open_points_refresh_timer.timeout.connect(self._refresh_open_points_if_visible)
+        # Word counting parses manuscript semantics. Debounce it so a long chapter
+        # is never reparsed on every keystroke; explicit load/save paths still
+        # call update_counts() immediately.
+        self.word_count_timer = QTimer(self); self.word_count_timer.setSingleShot(True); self.word_count_timer.setInterval(400); self.word_count_timer.timeout.connect(self.update_counts)
 
         root = QHBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
         self.left_split = QSplitter(Qt.Horizontal)
@@ -124,6 +137,11 @@ class EditorPage(QWidget):
         self.editor.set_image_resolver(self._resolve_editor_image_path)
         self.editor.imageEditRequested.connect(self._open_image_editor)
         self.editor.imageDeleteRequested.connect(self._delete_image_block)
+        self.editor.copyToDarlingsRequested.connect(self.copy_selection_to_darlings)
+        self.editor.cutToDarlingsRequested.connect(self.cut_selection_to_darlings)
+        self.editor.addOpenPointRequested.connect(self.add_open_point)
+        self.editor.resolveOpenPointRequested.connect(self.resolve_current_open_point)
+        self.editor.editOpenPointRequested.connect(self.edit_current_open_point_note)
         undo.clicked.connect(self._undo_editor); redo.clicked.connect(self._redo_editor)
         undo.setAccessibleName(tr('editor.undo', 'Ongedaan maken'))
         redo.setAccessibleName(tr('editor.redo', 'Opnieuw'))
@@ -151,11 +169,14 @@ class EditorPage(QWidget):
         cl.addWidget(self.history_banner); cl.addWidget(topbar); cl.addWidget(self.content_stack)
 
         self.right = CurrentPageStack(); self.right.setObjectName('panel'); self.right.setMinimumWidth(300)
-        self.search = SearchPanel(); self.chapter_context = ChapterContextPanel(main.library); self.ai = AIPanel(main); self.spell = SpellPanel(self); self.insert = InsertPanel(); self.history = HistoryPanel(self)
+        self.search = SearchPanel(main.settings); self.chapter_context = ChapterContextPanel(main.library, main.settings); self.open_points = OpenPointsPanel(main.library, main.settings); self.ai = AIPanel(main); self.spell = SpellPanel(self); self.insert = InsertPanel(main.settings); self.history = HistoryPanel(self); self.darlings_actions = DarlingsActionsPanel(self)
         self.load_dictionary_from_settings()
         self.editor.selectionChanged.connect(self.ai.refresh_quick_actions)
-        self.right.addWidget(self.search); self.right.addWidget(self.chapter_context); self.right.addWidget(self.ai); self.right.addWidget(self.spell); self.right.addWidget(self.insert); self.right.addWidget(self.history)
+        self.editor.selectionChanged.connect(self.darlings_actions.refresh)
+        self.right.addWidget(self.search); self.right.addWidget(self.chapter_context); self.right.addWidget(self.open_points); self.right.addWidget(self.ai); self.right.addWidget(self.spell); self.right.addWidget(self.insert); self.right.addWidget(self.history); self.right.addWidget(self.darlings_actions)
         self.chapter_context.openPlanning.connect(self._open_planning_from_context)
+        self.open_points.openPointRequested.connect(self.jump_to_open_point)
+        self.open_points.addRequested.connect(self.add_open_point)
         # Escape closes only the temporary right-side editor tool and returns
         # focus to the matching rail button.  The shortcut is scoped to the
         # panel and its children, so Escape in the manuscript itself remains
@@ -164,6 +185,7 @@ class EditorPage(QWidget):
         self._right_escape.setContext(Qt.WidgetWithChildrenShortcut)
         self._right_escape.activated.connect(self._close_right_panel_from_keyboard)
         self.insert.sceneBreakRequested.connect(self._insert_scene_break_from_panel)
+        self.insert.openPointRequested.connect(self._insert_open_point_from_panel)
         self.insert.imageInsertRequested.connect(self._insert_image_from_panel)
         self.insert.imageEditRequested.connect(self._save_image_edit_from_panel)
         self.history.versionSelected.connect(self.enter_history_preview)
@@ -456,6 +478,27 @@ class EditorPage(QWidget):
                 item.setData(0, Qt.UserRole, ('publication', key))
                 item.setFlags(item.flags() & ~Qt.ItemIsDragEnabled)
                 back_group.addChild(item)
+
+    def apply_tree_theme(self, theme_name: str | None = None):
+        """Refresh item-level colours that QSS cannot update after a live theme switch."""
+        theme_name = theme_name or str(self.main.settings.value('theme', 'Helder'))
+        theme = THEMES.get(theme_name, THEMES['Helder'])
+        root = self.tree.invisibleRootItem()
+        stack = [root.child(i) for i in range(root.childCount())]
+        while stack:
+            item = stack.pop()
+            if item is None:
+                continue
+            data = item.data(0, Qt.UserRole)
+            if data and data[0] == 'manuscript_group':
+                item.setBackground(0, QColor(theme['panel2']))
+                item.setBackground(1, QColor(theme['panel2']))
+                item.setForeground(0, QColor(theme['text']))
+                if data[1] in ('front', 'back'):
+                    item.setForeground(1, QColor(theme['accent']))
+            elif data and data[0] == 'section':
+                item.setForeground(0, QColor(theme['muted']))
+            stack.extend(item.child(i) for i in range(item.childCount()))
 
     def persist_publication_change(self, relative_path: str, local_text: str, writer) -> str:
         """Safely persist one publication file with the same conflict UX as planning.
@@ -927,6 +970,173 @@ class EditorPage(QWidget):
         _, c = self.find_chapter_in_book(cid)
         if c: self.open_chapter(c)
 
+
+    def copy_selection_to_darlings(self):
+        """Copy the selected canonical Markdown source into the workspace store."""
+        if self.preview_live_book or self._chapter_corrupt or not self.book or not self.chapter:
+            return False
+        cursor = self.editor.textCursor()
+        if not cursor.hasSelection() or self.editor.selection_intersects_image():
+            return False
+        if self.editor.selection_intersects_open_point_marker():
+            self.editor._protected_open_point_message()
+            return False
+        start, end = sorted((cursor.selectionStart(), cursor.selectionEnd()))
+        source = self._editor_source_text()
+        selected, source_start, source_end = source_selection_as_markdown(source, start, end)
+        if source_start < 0 or source_end > len(source) or source_start == source_end:
+            return False
+        if not selected:
+            return False
+        anchor = 160
+        before = source[max(0, source_start - anchor):source_start]
+        after = source[source_end:min(len(source), source_end + anchor)]
+        try:
+            fragment = self.main.darlings_page.store.create(
+                selected,
+                source_book_id=self.book.id,
+                source_book_title=self.book.title,
+                source_chapter_id=self.chapter.id,
+                source_chapter_title=self.chapter.title,
+                source_before=before,
+                source_after=after,
+            )
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                tr('darlings.copy_failed_title', 'Niet naar bewaarplaats gekopieerd'),
+                tr('darlings.copy_failed_text', 'Het fragment kon niet veilig worden opgeslagen. Je manuscript is niet gewijzigd.\n\n{error}', error=exc),
+            )
+            return False
+        self.main.darlings_page.add_fragment(fragment)
+        self.main.status.showMessage(tr('darlings.copy_done', 'Fragment gekopieerd naar Bewaarplaats'), 3000)
+        return True
+
+    def cut_selection_to_darlings(self):
+        """Safely cut selected Markdown into Darlings; duplication is safer than loss."""
+        if self.preview_live_book or self._chapter_corrupt or not self.book or not self.chapter or self.editor.isReadOnly():
+            return False
+        cursor = self.editor.textCursor()
+        if not cursor.hasSelection() or self.editor.selection_intersects_image():
+            return False
+        if self.editor.selection_intersects_open_point_marker():
+            self.editor._protected_open_point_message()
+            return False
+        start, end = sorted((cursor.selectionStart(), cursor.selectionEnd()))
+        source = self._editor_source_text()
+        selected, source_start, source_end = source_selection_as_markdown(source, start, end)
+        if not selected:
+            return False
+        try:
+            remove_start, remove_end, remove_replacement = prepare_markdown_removal(source, start, end)
+        except UnsafeMarkdownInsertionError:
+            QMessageBox.warning(
+                self,
+                tr('darlings.cut_unsafe_title', 'Niet naar bewaarplaats geknipt'),
+                tr('darlings.cut_unsafe_text', 'QuietWriter kan deze selectie niet verwijderen zonder de omliggende opmaak mogelijk te veranderen. Pas de selectie iets aan en probeer opnieuw.'),
+            )
+            return False
+
+        anchor = 160
+        before = source[max(0, source_start - anchor):source_start]
+        after = source[source_end:min(len(source), source_end + anchor)]
+        try:
+            fragment = self.main.darlings_page.store.create(
+                selected,
+                source_book_id=self.book.id,
+                source_book_title=self.book.title,
+                source_chapter_id=self.chapter.id,
+                source_chapter_title=self.chapter.title,
+                source_before=before,
+                source_after=after,
+            )
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                tr('darlings.cut_failed_title', 'Niet naar bewaarplaats geknipt'),
+                tr('darlings.cut_store_failed_text', 'Het fragment kon niet veilig worden opgeslagen. Je manuscript is niet gewijzigd.\n\n{error}', error=exc),
+            )
+            return False
+
+        # Commit manuscript only after the fragment exists and is readable. If
+        # anything unexpected happens from here on, leave the fragment in place:
+        # duplicate text is recoverable; lost text is not.
+        try:
+            verify = self.main.darlings_page.store.load(fragment.id)
+            if verify.text != selected:
+                raise RuntimeError('Fragmentverificatie kwam niet overeen met de selectie.')
+            edit = self.editor.textCursor()
+            edit.setPosition(remove_start)
+            edit.setPosition(remove_end, QTextCursor.KeepAnchor)
+            edit.beginEditBlock()
+            edit.removeSelectedText()
+            if remove_replacement:
+                edit.insertText(remove_replacement)
+            edit.endEditBlock()
+            self.editor.setTextCursor(edit)
+            self.editor.schedule_formatting(immediate=True, join_previous=True)
+            self.editor.refresh_image_blocks()
+            self.editor.setFocus()
+        except Exception as exc:
+            self.main.darlings_page.add_fragment(fragment)
+            QMessageBox.warning(
+                self,
+                tr('darlings.cut_commit_failed_title', 'Fragment bewaard, tekst niet verwijderd'),
+                tr('darlings.cut_commit_failed_text', 'Het fragment staat veilig in de Bewaarplaats, maar QuietWriter kon de selectie niet veilig uit het manuscript verwijderen. De tekst staat daarom bewust op beide plekken.\n\n{error}', error=exc),
+            )
+            return False
+
+        self.main.darlings_page.add_fragment(fragment)
+        self.main.status.showMessage(tr('darlings.cut_done', 'Fragment geknipt naar Bewaarplaats'), 3000)
+        return True
+
+    def insert_darling_at_cursor(self, fragment):
+        """Insert a saved fragment at the active manuscript cursor as one undo step."""
+        if (self.preview_live_book or self._chapter_corrupt or not self.book or not self.chapter
+                or self.editor.isReadOnly()):
+            QMessageBox.warning(
+                self,
+                tr('darlings.insert_unavailable_title', 'Fragment niet ingevoegd'),
+                tr('darlings.insert_unavailable_text', 'Open een bewerkbaar hoofdstuk en plaats de cursor waar je het fragment wilt invoegen.'),
+            )
+            return False
+        markdown = getattr(fragment, 'text', '')
+        if not markdown:
+            return False
+        if any(image_reference_for_block_line(line) for line in markdown.splitlines()):
+            QMessageBox.warning(
+                self,
+                tr('darlings.insert_media_title', 'Fragment niet ingevoegd'),
+                tr('darlings.insert_media_text', 'Fragmenten met afbeeldingsblokken kunnen nog niet automatisch worden ingevoegd.'),
+            )
+            return False
+
+        cursor = self.editor.textCursor()
+        # Invoegen bij cursor must not silently replace a selection. Collapse to
+        # the active end of the selection and insert there.
+        position = cursor.position()
+        source = self._editor_source_text()
+        try:
+            position, insertion = prepare_markdown_insertion(source, position, markdown)
+        except UnsafeMarkdownInsertionError:
+            QMessageBox.warning(
+                self,
+                tr('darlings.insert_unsafe_title', 'Fragment niet ingevoegd'),
+                tr('darlings.insert_unsafe_text', 'Op deze cursorpositie kan QuietWriter de bestaande opmaak niet gegarandeerd behouden. Plaats de cursor buiten opgemaakte tekst en probeer het opnieuw.'),
+            )
+            return False
+        cursor.clearSelection()
+        cursor.setPosition(position)
+        cursor.beginEditBlock()
+        cursor.insertText(insertion)
+        cursor.endEditBlock()
+        self.editor.setTextCursor(cursor)
+        self.editor.schedule_formatting(immediate=True, join_previous=True)
+        self.editor.refresh_image_blocks()
+        self.editor.setFocus()
+        self.main.status.showMessage(tr('darlings.insert_done', 'Fragment ingevoegd; het blijft in Bewaarplaats'), 3000)
+        return True
+
     def _editor_source_text(self):
         """Compatibility wrapper for the shared persistent editor source."""
         return self.editor.source_text()
@@ -969,6 +1179,7 @@ class EditorPage(QWidget):
         self.editor.apply_typography(WritingTypography.from_settings(self.main.settings))
         self.editor.apply_scene_break_formatting()
         self.editor.reset_undo_history()
+        self.editor.document().setModified(False)
         self._sync_undo_redo()
         self.dirty = False
         self.autosave_status.setText(tr('editor.status.saved', '● Opgeslagen'))
@@ -976,6 +1187,7 @@ class EditorPage(QWidget):
         if hasattr(self.main, 'toolrail') and self.main.stack.currentWidget() is self:
             self.main.toolrail.show()
         self.refresh_chapter_context()
+        self.darlings_actions.refresh()
         self.main.sync_tool_buttons()
         if self.right.isVisible() and self.right.currentWidget() is self.spell:
             self.spell.refresh()
@@ -1000,23 +1212,22 @@ class EditorPage(QWidget):
     def on_text_changed(self):
         if self.preview_live_book or self._chapter_corrupt:
             return
-        # QSyntaxHighlighter.rehighlight() and other presentation-only passes can
-        # emit textChanged even though the manuscript source text is identical.
-        # Dirty state must describe source changes only: otherwise Settings or a
-        # spelling action can trigger an unnecessary autosave and even a false
-        # two-computer conflict.
-        current_text = self._editor_source_text()
-        if current_text == self._clean_text:
+        if hasattr(self, 'open_points_refresh_timer'):
+            self.open_points_refresh_timer.start()
+        # QTextDocument keeps a clean-state marker in its undo history. All
+        # presentation-only formatting paths preserve that flag, so we can avoid
+        # copying and comparing the complete chapter source on every keystroke.
+        # Undoing back to the last saved state automatically clears isModified().
+        if not self.editor.document().isModified():
             self.dirty = False
             self.autosave_timer.stop()
             self.autosave_status.setText(tr('editor.status.saved', '● Opgeslagen'))
             self._schedule_undo_redo_sync()
-            self.update_counts()
             return
         self.dirty = True
         self.autosave_status.setText(tr('editor.status.unsaved', 'Niet opgeslagen'))
         self._schedule_undo_redo_sync()
-        self.update_counts()
+        self.word_count_timer.start()
         self.autosave_timer.start()
 
 
@@ -1285,6 +1496,7 @@ class EditorPage(QWidget):
         except StorageWriteError as exc:
             return self._handle_storage_write_error(exc)
         self._clean_text = source_text
+        self.editor.document().setModified(False)
         self.dirty = False
         self.main.search_index.rebuild_book(self.book)
         self.autosave_status.setText(tr('editor.status.saved_just_now', '● Opgeslagen · zojuist'))
@@ -1482,6 +1694,118 @@ class EditorPage(QWidget):
         self.editor.setTextCursor(cursor)
         self.editor.setFocus()
 
+    def add_open_point(self):
+        if not self.book or not self.chapter or self.preview_live_book or self._chapter_corrupt:
+            return
+        if self.editor.selection_intersects_image():
+            self.editor._protected_image_message()
+            return
+        # Open points are intentionally flat. Nesting source markers would make
+        # resolving one point ambiguous and is not useful to writers.
+        if self.editor.selection_intersects_open_point_marker() or self.editor.current_open_point() is not None:
+            QMessageBox.information(
+                self,
+                tr('open_points.already_title', 'Al een open punt'),
+                tr('open_points.already_text', 'Deze positie of selectie ligt al in een open punt. Rond dat punt eerst af of wijzig de bestaande notitie.'),
+            )
+            return
+        note, accepted = prompt_text(
+            self,
+            tr('open_points.note_title', 'Open punt toevoegen'),
+            tr('open_points.note_prompt', 'Wat wil je hier later nog doen? (optioneel)'),
+            '',
+        )
+        if not accepted:
+            return
+        cursor = self.editor.textCursor()
+        source = self._editor_source_text()
+        start, end = cursor.selectionStart(), cursor.selectionEnd()
+        point_id = new_open_point_id()
+        if str(note or '').strip():
+            try:
+                self.open_point_store.set_note(self.book, point_id, note)
+            except Exception as exc:
+                QMessageBox.critical(
+                    self,
+                    tr('open_points.note_save_failed_title', 'Open punt niet toegevoegd'),
+                    tr('open_points.note_save_failed_text', 'De notitie kon niet veilig worden opgeslagen. Je manuscript is niet gewijzigd.\n\n{error}', error=exc),
+                )
+                return
+        new_text, new_start, new_end, _point_id = wrap_open_point(
+            source, start, end, point_id=point_id
+        )
+        self.editor._replace_changed_text(source, new_text, new_start, new_end)
+        self.editor.presentation_highlighter.rehighlight()
+        self.editor.schedule_formatting(immediate=True, join_previous=True)
+        self.editor.setFocus()
+        self.main.status.showMessage(tr('open_points.added', 'Open punt toegevoegd.'), 3000)
+        self.refresh_open_points()
+
+    def resolve_current_open_point(self):
+        source = self._editor_source_text()
+        point = open_point_at(source, self.editor.textCursor().position())
+        if point is None:
+            return
+        result = resolve_open_point(source, point.id)
+        if result is None:
+            return
+        # Keep note metadata as a harmless orphan when resolving. This makes
+        # editor Undo/Redo lossless: undo can restore the marker and its note
+        # without requiring a second undo stack for planning/open_points.json.
+        new_text, start, end = result
+        self.editor._replace_changed_text(source, new_text, start, end)
+        self.editor.presentation_highlighter.rehighlight()
+        self.editor.schedule_formatting(immediate=True, join_previous=True)
+        self.main.status.showMessage(tr('open_points.resolved', 'Open punt afgerond; de tekst is behouden.'), 3000)
+        self.refresh_open_points()
+
+    def edit_current_open_point_note(self):
+        source = self._editor_source_text()
+        try:
+            notes = self.open_point_store.load_notes(self.book) if self.book else {}
+        except Exception as exc:
+            QMessageBox.critical(
+                self, tr('open_points.note_save_failed_title', 'Open punt niet gewijzigd'),
+                tr('open_points.note_save_failed_text', 'De notitiegegevens konden niet veilig worden gelezen.\n\n{error}', error=exc),
+            )
+            return
+        point = open_point_at(source, self.editor.textCursor().position(), notes)
+        if point is None:
+            return
+        note, accepted = prompt_text(
+            self, tr('open_points.edit_note', 'Notitie bij open punt wijzigen'),
+            tr('open_points.note_prompt', 'Wat wil je hier later nog doen? (optioneel)'), point.note,
+        )
+        if not accepted:
+            return
+        try:
+            self.open_point_store.set_note(self.book, point.id, note)
+        except Exception as exc:
+            QMessageBox.critical(
+                self, tr('open_points.note_save_failed_title', 'Open punt niet gewijzigd'),
+                tr('open_points.note_save_failed_text', 'De notitie kon niet veilig worden opgeslagen. Je manuscript is niet gewijzigd.\n\n{error}', error=exc),
+            )
+            return
+        # Editing a note is also a safe moment to upgrade a 1.2.4 legacy marker
+        # to the compact source representation. Visible prose is unchanged.
+        new_text = normalize_open_point_marker(source, point.id)
+        if new_text is None:
+            return
+        updated = next((p for p in parse_open_points(new_text, {point.id: note}) if p.id == point.id), None)
+        if updated is None:
+            return
+        self.editor._replace_changed_text(source, new_text, updated.content_start, updated.content_end)
+        self.editor.presentation_highlighter.rehighlight()
+        self.main.status.showMessage(tr('open_points.note_saved', 'Notitie bij open punt opgeslagen.'), 3000)
+        self.refresh_open_points()
+
+    def _insert_open_point_from_panel(self):
+        self.add_open_point()
+        if self.right.isVisible() and self.right.currentWidget() is self.insert:
+            self._remember_panel_widths()
+            self.right.hide()
+        self.main.sync_tool_buttons()
+
     def show_insert_menu(self):
         """Toggle the regular right-side insert workflow.
 
@@ -1517,7 +1841,7 @@ class EditorPage(QWidget):
         block = self.editor.document().findBlockByNumber(number)
         if not block.isValid():
             return None, None
-        return block, image_reference_for_line(block.text())
+        return block, image_reference_for_block_line(block.text())
 
     def _find_editing_image_block(self):
         preferred = self._editing_image_block
@@ -1529,7 +1853,7 @@ class EditorPage(QWidget):
         if path:
             block = self.editor.document().begin()
             while block.isValid():
-                ref = image_reference_for_line(block.text())
+                ref = image_reference_for_block_line(block.text())
                 if ref and ref.path == path:
                     return block, ref
                 block = block.next()
@@ -1969,9 +2293,10 @@ class EditorPage(QWidget):
             except UnicodeDecodeError:
                 skipped.append(ch.title)
                 continue
-            searchable = mask_image_paths(text)
+            projection = visible_projection(text)
             for m in searchable_matches(text, rx):
-                a=max(0,m.start()-40); b=min(len(text),m.end()+60); snippet=searchable[a:b].replace('\n',' ')
+                a=max(0,m.visible_start-40); b=min(len(projection.text),m.visible_end+60)
+                snippet=projection.text[a:b].replace('\n',' ')
                 rows.append((ch.id,ch.title,snippet,m.start(),m.end()-m.start()))
         self._search_corrupt_skipped = skipped
         return rows
@@ -2023,7 +2348,7 @@ class EditorPage(QWidget):
         safe_range = is_searchable_range(source, cur.selectionStart(), cur.selectionEnd())
         if not good or not safe_range:
             self.search_next(); return
-        cur.insertText(self.search.replace.text()); self.do_search()
+        cur.insertText(escape_literal_text(self.search.replace.text())); self.do_search()
 
     def replace_all_matches(self):
         if self._chapter_corrupt:
@@ -2162,13 +2487,15 @@ class EditorPage(QWidget):
 
     def toggle_right(self):
         will_hide = self.right.isVisible()
+        current = self.right.currentWidget()
         if will_hide:
             self._remember_panel_widths()
             self.right.hide()
-            self._set_spell_active(False)
+            if current is self.spell:
+                self._set_spell_active(False)
         else:
             self._show_right_panel()
-            if self.right.currentWidget() is self.spell:
+            if current is self.spell:
                 self.spell.refresh()
         self.main.sync_tool_buttons()
 
@@ -2184,16 +2511,19 @@ class EditorPage(QWidget):
         button_name = {
             self.search: 'search_button',
             self.chapter_context: 'chapter_context_button',
+            self.open_points: 'open_points_button',
             self.ai: 'ai_button',
             self.spell: 'spell_button',
             self.insert: 'insert_button',
             self.history: 'history_button',
+            self.darlings_actions: 'darlings_tool_button',
         }.get(widget)
         button = getattr(self.main, button_name, None) if button_name else None
         if button is not None and button.isVisible():
             button.setFocus()
 
     def _toggle_right_widget(self, widget, focus_widget):
+        was_spell = self.right.isVisible() and self.right.currentWidget() is self.spell
         closing_same = self.right.isVisible() and self.right.currentWidget() is widget
         if closing_same:
             self._remember_panel_widths()
@@ -2201,8 +2531,11 @@ class EditorPage(QWidget):
             if widget is self.spell:
                 self._set_spell_active(False)
         else:
-            if widget is not self.spell:
+            if widget is not self.spell and was_spell:
                 self._set_spell_active(False)
+            help_widget = getattr(widget, 'panel_help', None)
+            if help_widget is not None:
+                help_widget.sync_from_settings()
             self.right.setCurrentWidget(widget)
             self._show_right_panel()
             if widget is self.spell:
@@ -2244,8 +2577,47 @@ class EditorPage(QWidget):
         self.refresh_chapter_context()
         self._toggle_right_widget(self.chapter_context, self.chapter_context.open_button)
 
+    def _refresh_open_points_if_visible(self):
+        if (hasattr(self, 'open_points') and self.right.isVisible()
+                and self.right.currentWidget() is self.open_points):
+            self.refresh_open_points()
+
+    def refresh_open_points(self):
+        if hasattr(self, 'open_points'):
+            current_id = self.chapter.id if self.chapter is not None else None
+            current_source = self._editor_source_text() if self.chapter is not None else None
+            self.open_points.refresh(
+                self.book,
+                current_chapter_id=current_id,
+                current_source=current_source,
+            )
+
+    def show_open_points(self):
+        self.refresh_open_points()
+        self._toggle_right_widget(self.open_points, self.open_points.list if self.open_points.list.count() else self.open_points.add_button)
+
+    def jump_to_open_point(self, chapter_id: str, point_id: str):
+        if not self.book:
+            return
+        self.open_chapter_id(chapter_id)
+        source = self.editor.source_text()
+        point = next((p for p in parse_open_points(source) if p.id == point_id), None)
+        if point is None:
+            self.refresh_open_points()
+            return
+        cursor = self.editor.textCursor()
+        cursor.setPosition(point.content_start)
+        cursor.setPosition(point.content_end, QTextCursor.KeepAnchor)
+        self.editor.setTextCursor(cursor)
+        self.editor.ensureCursorVisible()
+        self.editor.setFocus()
+
     def show_search(self):
         self._toggle_right_widget(self.search, self.search.query)
+
+    def show_darlings_actions(self):
+        self.darlings_actions.refresh()
+        self._toggle_right_widget(self.darlings_actions, self.darlings_actions.copy_button)
 
     def show_ai(self):
         if not self.main.settings.value('ai_enabled', True, bool):

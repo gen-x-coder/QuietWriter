@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ...document_view import parse_document, visible_block_text
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QButtonGroup, QFrame, QHBoxLayout, QLabel, QPushButton, QRadioButton, QVBoxLayout, QWidget
 
@@ -94,10 +96,9 @@ class ContentsPage(QWidget):
                         text = self.library.read_chapter(self.book, chapter)
                     except Exception:
                         text = ''
-                    for line in text.splitlines():
-                        stripped = line.strip()
-                        if stripped.startswith('## '):
-                            rows.append('    ' + stripped[3:].strip())
+                    for block in parse_document(text).blocks:
+                        if block.kind == 'heading':
+                            rows.append('    ' + visible_block_text(block).strip())
         self.preview.setText('\n'.join(rows) if rows else tr('publication.contents.empty', 'Nog geen hoofdstukken.'))
 
     def data(self):

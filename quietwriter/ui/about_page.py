@@ -133,7 +133,7 @@ class AboutPage(QWidget):
         privacy.setMaximumWidth(790)
         layout.addWidget(privacy)
 
-        copyright_label = QLabel(tr('about.copyright', '© 2026 Lucas Bonsel. Alle rechten voorbehouden.'))
+        copyright_label = QLabel(tr('about.copyright', '© 2026 Lucas Bonsel.'))
         copyright_label.setObjectName('muted')
         layout.addWidget(copyright_label)
 
@@ -168,7 +168,7 @@ class AboutPage(QWidget):
 
         own_license = LicenseCard(
             tr('about.quietwriter_license', 'QuietWriter-licentie'),
-            tr('about.quietwriter_license_help', 'Copyright © 2026 Lucas Bonsel. Alle rechten voorbehouden.'),
+            tr('about.quietwriter_license_help', 'QuietWriter is vrije software onder de GNU GPLv3. Zie de volledige licentietekst.'),
             _root_text('documents/licenses/LICENSE', 'about.license.load_error', 'De licentietekst kon niet worden geladen.'),
         )
         own_license.setMaximumWidth(820)

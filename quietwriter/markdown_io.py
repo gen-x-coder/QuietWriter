@@ -134,13 +134,152 @@ def split_book_body(body: str, fallback_title: str) -> list[tuple[str | None, li
     return groups
 
 
-def parse_markdown_book(path: Path) -> dict:
+
+
+def _import_inline_runs(text: str):
+    """Convert the supported Markdown inline subset to neutral semantic runs."""
+    from .document_view import inline_runs
+    from .import_document import ImportInlineRun
+
+    runs = inline_runs(text or '')
+    if not runs:
+        return (ImportInlineRun(text or ''),) if text else ()
+    return tuple(ImportInlineRun(run.text, run.styles) for run in runs)
+
+
+def _import_blocks(text: str):
+    """Parse external Markdown prose into neutral QuietWriter import blocks.
+
+    External Markdown follows the normal paragraph rule: adjacent ordinary
+    source lines belong to one paragraph until a blank line. QuietWriter's
+    canonical one-line-per-paragraph representation is only created later by
+    the serializer.
+    """
+    from .import_document import ImportBlock
+
+    source = (text or '').replace('\r\n', '\n').replace('\r', '\n')
+    lines = source.split('\n')
+    blocks = []
+    paragraph_parts: list[str] = []
+
+    def flush_paragraph():
+        nonlocal paragraph_parts
+        if not paragraph_parts:
+            return
+        value = ''.join(paragraph_parts).strip()
+        if value:
+            blocks.append(ImportBlock('paragraph', _import_inline_runs(value)))
+        paragraph_parts = []
+
+    for raw in lines:
+        line = raw.rstrip('\n')
+        if not line.strip():
+            flush_paragraph()
+            continue
+
+        stripped = line.strip()
+        # Structural Markdown blocks are only recognized at the physical line
+        # boundary. They are serialized later by the same QuietWriter writer as
+        # DOCX imports.
+        if stripped == '***':
+            flush_paragraph()
+            blocks.append(ImportBlock('scene'))
+            continue
+        if line.startswith('## '):
+            flush_paragraph()
+            blocks.append(ImportBlock('heading', _import_inline_runs(line[3:].strip())))
+            continue
+        if line.startswith('> '):
+            flush_paragraph()
+            blocks.append(ImportBlock('quote', _import_inline_runs(line[2:].strip())))
+            continue
+        bullet = re.match(r'^[-*]\s+(.+)$', line)
+        if bullet:
+            flush_paragraph()
+            blocks.append(ImportBlock('bullet', _import_inline_runs(bullet.group(1))))
+            continue
+        numbered = re.match(r'^(\d+)\.\s+(.+)$', line)
+        if numbered:
+            flush_paragraph()
+            blocks.append(ImportBlock('numbered', _import_inline_runs(numbered.group(2)), number=int(numbered.group(1))))
+            continue
+
+        # CommonMark hard line break: two trailing spaces or a trailing
+        # backslash. QuietWriter stores this semantically as U+2028 inside the
+        # paragraph, not as a second paragraph.
+        hard_break = False
+        value = line
+        if value.endswith('\\') and not value.endswith('\\\\'):
+            value = value[:-1]
+            hard_break = True
+        elif len(value) >= 2 and value.endswith('  '):
+            value = value.rstrip(' ')
+            hard_break = True
+
+        if paragraph_parts and not paragraph_parts[-1].endswith('\u2028'):
+            paragraph_parts.append(' ')
+        paragraph_parts.append(value.strip())
+        if hard_break:
+            paragraph_parts.append('\u2028')
+
+    flush_paragraph()
+    return tuple(blocks)
+
+
+def read_markdown_import_document(path: Path):
+    """Read an external Markdown book into the neutral import model."""
+    from .import_document import ImportChapter, ImportDocument, ImportSection
+
     path = Path(path)
-    text = path.read_text(encoding='utf-8', errors='replace')
+    text = path.read_text(encoding='utf-8-sig', errors='replace')
     metadata, body = split_frontmatter(text)
     title = (metadata.get('title') or path.stem).strip() or path.stem
-    sections = split_book_body(body, title)
-    return {'title': title, 'metadata': metadata, 'sections': sections, 'body': body}
+    groups = split_book_body(body, title)
+    sections = tuple(
+        ImportSection(
+            section_title,
+            tuple(
+                ImportChapter(
+                    (item.get('title') or title).strip() or title,
+                    _import_blocks(item.get('text', '')),
+                )
+                for item in chapters
+            ),
+        )
+        for section_title, chapters in groups
+    )
+    return ImportDocument(
+        title=title,
+        sections=sections,
+        author=str(metadata.get('author') or ''),
+        language=str(metadata.get('language') or ''),
+        metadata=dict(metadata),
+    )
+
+def parse_markdown_book(path: Path) -> dict:
+    """Compatibility wrapper around the neutral Markdown import reader."""
+    from .import_document import serialize_import_document
+
+    imported = read_markdown_import_document(Path(path))
+    sections = [
+        (title, [dict(chapter) for chapter in chapters])
+        for title, chapters in serialize_import_document(imported)
+    ]
+    metadata = dict(imported.metadata or {})
+    body_parts = []
+    for section_title, chapters in sections:
+        if section_title:
+            body_parts.append(f'<!-- quietwriter-section: {section_title} -->')
+        for chapter in chapters:
+            body_parts.append(f'# {chapter["title"]}')
+            if chapter.get('text'):
+                body_parts.append(chapter['text'])
+    return {
+        'title': imported.title,
+        'metadata': metadata,
+        'sections': sections,
+        'body': '\n\n'.join(body_parts).strip(),
+    }
 
 
 def render_frontmatter(book: Book, image_ref: str = '') -> str:

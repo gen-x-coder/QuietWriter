@@ -8,6 +8,8 @@ QuietWriter depends on third-party software and assets. This inventory is intend
 - **PySide6 / Qt for Python** — distributed by The Qt Company under applicable Qt for Python licensing terms, including LGPL/GPL options for the Community Edition. Source and license information: https://doc.qt.io/qtforpython-6/licenses.html
 - **Requests** — Apache License 2.0. Source: https://github.com/psf/requests
 - **spylls** — MIT License. Source: https://github.com/zverok/spylls
+- **python-docx** — MIT License. Source: https://github.com/python-openxml/python-docx
+- **lxml** — BSD 3-Clause License. Source: https://github.com/lxml/lxml
 
 ## Bundled writing fonts
 

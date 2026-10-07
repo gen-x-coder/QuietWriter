@@ -15,14 +15,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_manual_expected_cold_start():
     view = build_rail_view(RailState(False, True, True))
-    assert view.visible_items == ('bookshelf', 'persona', 'settings', 'trash')
+    assert view.visible_items == ('bookshelf', 'darlings', 'persona', 'settings', 'trash')
     assert view.visible_groups == ('library', 'program')
 
 
 def test_manual_expected_open_book_everything_on():
     view = build_rail_view(RailState(True, True, True))
     assert view.visible_items == (
-        'bookshelf',
+        'bookshelf', 'darlings',
         'contents', 'planning', 'media', 'book_details', 'export', 'integrity',
         'book_memory', 'book_profile',
         'persona', 'settings', 'trash',
@@ -33,7 +33,7 @@ def test_manual_expected_open_book_everything_on():
 def test_manual_expected_open_book_ai_and_advanced_off():
     view = build_rail_view(RailState(True, False, False))
     assert view.visible_items == (
-        'bookshelf',
+        'bookshelf', 'darlings',
         'contents', 'planning', 'media', 'book_details', 'export',
         'settings', 'trash',
     )

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import tr
-from ..media.markup import count_words
+from ..manuscript_text import count_words
 from ..themes import THEMES
 from ..typography import typography_from_values
 

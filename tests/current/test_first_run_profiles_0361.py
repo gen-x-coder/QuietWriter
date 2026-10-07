@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from quietwriter.first_run import should_show_first_run
+from quietwriter.first_run import request_first_run_reset, should_show_first_run
 from quietwriter.runtime_profile import parse_runtime_args, profile_for
 
 
@@ -20,6 +20,9 @@ class FakeSettings:
 
     def setValue(self, key, value):
         self.values[key] = value
+
+    def clear(self):
+        self.values.clear()
 
     def sync(self):
         self.synced = True
@@ -69,3 +72,29 @@ def test_force_first_run_does_not_mutate_settings(tmp_path):
     before = dict(settings.values)
     assert should_show_first_run(settings, tmp_path / 'QuietWriter', force=True) is True
     assert settings.values == before
+
+
+def test_reset_request_forces_first_run_even_with_existing_workspace(tmp_path):
+    workspace = tmp_path / 'QuietWriter'
+    workspace.mkdir()
+    settings = FakeSettings({
+        'workspace': str(workspace),
+        'first_run_done': False,
+        'first_run_requested': True,
+    })
+    assert should_show_first_run(settings, workspace) is True
+    assert settings.values['first_run_requested'] is True
+
+
+def test_reset_preserves_only_workspace_and_requests_setup(tmp_path):
+    workspace = tmp_path / 'Mijn Verhalen'
+    workspace.mkdir()
+    settings = FakeSettings({'theme': 'Nacht', 'ai_enabled': True, 'workspace': 'old'})
+    request_first_run_reset(settings, workspace)
+    assert settings.values == {
+        'workspace': str(workspace),
+        'first_run_requested': True,
+        'first_run_done': False,
+    }
+    assert workspace.exists()
+    assert settings.synced is True

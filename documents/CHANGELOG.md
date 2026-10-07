@@ -1,3 +1,494 @@
+## 1.2.32 — Migratiedialoog en releasepolish
+
+- De Windows-RC-build gebruikt nu Python 3.12.10 met vastgepinde runtime- en PyInstaller-dependencies; stille dependency-upgrades zijn uit de buildroute verwijderd.
+- Het buildscript initialiseert een aanwezige Visual Studio C++-toolchain automatisch via `vswhere` wanneer `cl.exe` nog niet in PATH staat.
+- Iedere definitieve Windows-build schrijft een extern buildmanifest met broncommit, exacte packageversies en SHA-256 van EXE en portable ZIP.
+- De dev-repo blijft bronopslag; GitHub Actions in de dev-repo zijn niet vereist voor deze RC.
+- SignPath Foundation-aanvraag is afgewezen wegens nog onvoldoende publieke adoptiesignalen; de releasekoers is aangepast naar een vaste unsigned Windows-RC met false-positive/reputatiecontrole vóór publicatie.
+- Projectdocumentatie en snapshotstatus bijgewerkt naar de afgeronde 1.2.32 releasecandidate; de finale onafhankelijke 1.2.31-review is opgenomen als ontwikkelreferentie.
+
+- De eenmalige manuscriptsyntaxmigratie gebruikt nu volledig vertaalde QuietWriter-knoppen in plaats van Qt-standaardknoppen `Yes` en `Cancel`.
+- De acties zijn expliciet: **Boek bijwerken** voert de veilige migratie uit en opent daarna het boek; **Niet openen** laat het boek volledig ongewijzigd en opent het niet.
+- Ook de dialoog voor dubbelzinnige legacy-backslashes gebruikt de vertaalde knop **Niet openen**.
+- Geen wijziging aan manuscriptsyntaxis, opslag of migratie-algoritme ten opzichte van 1.2.31.
+
+## 1.2.31 — Finale hardening van manuscriptsyntax
+
+- Onversioneerde boeken uit het 1.2.19–1.2.29 escape-tijdperk worden herkend aan veilige escapevingerafdrukken en krijgen alleen het syntaxprofiel; hun bronbytes worden niet opnieuw gemigreerd.
+- Echte pre-escape-boeken wijzigen alleen backslashes die de huidige lezer anders zou verbergen; bij uitsluitend dubbelzinnige backslashparen vraagt QuietWriter expliciet welke weergave behouden moet blijven.
+- Publicatieteksten onder `publication/texts/` gaan mee in dezelfde expliciete syntaxmigratie en herstelcheckpoint.
+- Structurele escapes aan het begin van een regel blijven atomair en onzichtbaar wanneer de afsluitende spatie wordt verwijderd.
+- Plakken en vervangen midden in een regel maken geen onnodige lijst-/kop-/nummer-escapes meer.
+- Shift+Enter schrijft weer een echte U+2028 soft break binnen dezelfde manuscriptalinea.
+- Zoek-en-vervang slaat matches over die slechts één kant van een inline-opmaakspan zouden verwijderen, zodat geen losse `**`/`*`-markers achterblijven.
+- Selecties die precies binnen een escape eindigen nemen het volgende zichtbare teken niet meer onbedoeld mee.
+- Escape-cursorcontrole werkt per Qt-tekstblok in plaats van over het hele hoofdstuk.
+- Blok-SDT-tekst uit DOCX wordt in documentvolgorde behouden; eindnoten worden expliciet gemeld als nog niet ondersteund.
+- Nieuwe regressietests toegevoegd voor escape-era migratie, dubbelzinnige backslashes, contextgevoelig plakken en opmaakgrensvervanging.
+
+## 1.2.30 — Legacy syntax veilig migreerbaar en laatste architectuuropruiming
+
+- Oude boeken zonder `manuscript_syntax` krijgen bij openen een expliciete eenmalige updatevraag; annuleren laat het boek volledig ongemoeid.
+- Voor de syntaxupdate wordt automatisch een volledige herstelversie gemaakt. Legacy backslashes worden conservatief verdubbeld zodat de zichtbare tekst onder `escape-v1` gelijk blijft.
+- Mislukt de cross-file syntaxmigratie, dan probeert QuietWriter het live boek direct uit de vooraf gemaakte checkpoint te herstellen.
+- Nieuwe golden regressietests dekken UNC-paden, Windows-paden, regex-backslashes, `\#tag` en andere legacy brongevallen.
+- De editor gebruikt Qt's clean/modified-state voor dirty-detectie en hoeft daardoor niet meer bij elke toetsaanslag de volledige hoofdstukbron te kopiëren en vergelijken.
+- De pure read-side grammatica (`manuscript_syntax.py`) is losgetrokken van editor-/serializerbewerkingen; `DocumentView` hangt voor inline parsing en escaping niet meer af van `manuscript_markup.py`.
+- Woordtelling, zoekprojectie en AI-context hebben een eigen `manuscript_text.py`-grens in plaats van als algemeen manuscriptgedrag in de mediamodule te leven.
+- DOCX-runopmaak leest de Word run- en paragraph-styleketen nog maar één keer per run, zodat grote imports minder herhaalde `python-docx`-stijlopzoekingen doen.
+- Geen automatische migratie bij alleen `load_book()`/opslaan: de conversie blijft een expliciete gebruikersactie met checkpoint.
+
+## 1.2.29 — Markdown via het neutrale documentmodel
+
+- Markdown-import bouwt nu eerst een neutraal `ImportDocument` en gebruikt daarna dezelfde centrale serializer als DOCX-import.
+- Markdown-import wordt volledig in een stagingmap opgebouwd en pas na succesvolle validatie atomair gepubliceerd.
+- Gewone externe Markdown volgt weer de normale Markdown-alinearegel: bronregels zonder lege regel ertussen vormen één alinea.
+- CommonMark hard breaks worden als QuietWriter soft break (U+2028) geïmporteerd.
+- Publieke Markdown-export serializeert QuietWriter-alinea's met echte lege regels, zodat CommonMark/websites alineagrenzen behouden.
+- QuietWriter soft breaks worden bij Markdown-export als geldige CommonMark hard break geschreven.
+- Onbekende frontmattervelden blijven bij Markdown-import behouden.
+- Nieuwe regressietests bewaken de neutrale importgrens, alinea's, hard breaks en transactionele import.
+- Volledige lokale suite: 587 passed, 46 skipped, 304 subtests passed.
+
+## 1.2.28 — DOCX-import behoudt zichtbare tekst beter
+
+- Zachte Word-regeleinden worden als U+2028 soft break behouden in plaats van onbedoeld nieuwe QuietWriter-alinea’s te maken.
+- Een pagina-einde midden in een alinea wordt als regeleinde behouden en expliciet gemeld, zodat omliggende tekst niet aan elkaar plakt.
+- Tabelrijen worden op hun positie als leesbare platte tekst geïmporteerd (`cel · cel`) in plaats van alle tabeltekst weg te gooien.
+- Zichtbare veldresultaten, tracked insertions, inline content controls en tekst uit Word-tekstvakken worden via descendant-runs zoveel mogelijk als gewone tekst behouden; beperkingen worden gemeld.
+- Beschadigde ingebedde afbeeldingen worden overgeslagen met een waarschuwing in plaats van de volledige boekimport te laten mislukken.
+- Afbeeldingstype wordt op de daadwerkelijke bytes gevalideerd in plaats van alleen op de OOXML content-type/extensie te vertrouwen.
+- Achtergelaten `.import-*`-stagingmappen ouder dan 24 uur worden bij bibliotheekstart best-effort opgeruimd; verse stagingmappen blijven ongemoeid.
+- Nieuwe regressietests dekken soft/page breaks, tabellen, velden/track changes/tekstvakken, corrupte afbeeldingen en staging-cleanup.
+
+## 1.2.27 — Manuscriptsyntax geversioneerd
+
+- Nieuwe boeken en nieuwe DOCX-imports krijgen een expliciet `manuscript_syntax`-profiel met versie en featureflags.
+- Bestaande boeken zonder profiel blijven ongewijzigd; openen en normaal opslaan voegt geen stille syntaxmigratie toe.
+- Onbekende toekomstige syntaxversies/features worden fail-closed geweigerd en Integriteit onderscheidt onversioneerd, ongeldig en toekomstig.
+- `inline_runs` is herschreven als lineaire sweep over stijlgrenzen, zodat zwaar opgemaakte lange tekst niet meer per teken alle spans scant.
+- Regressietests toegevoegd voor profielbehoud, future-featureveiligheid en zwaar opgemaakte inline-runs.
+- Nog geen expliciete conversie van oudere boeken uitgevoerd; die blijft een afzonderlijke zichtbare/omkeerbare stap.
+
+## 1.2.26 — Zichtbare tekst centraal en sneller typen
+
+- De schrijver-zichtbare tekstprojectie is verder gecentraliseerd en wordt nu ook gebruikt voor full-text search-indexering en Bewaarplaats-preview/filtering.
+- Woordtelling gebruikt rechtstreeks dezelfde centrale DocumentView-semantiek in plaats van een tweede zichtbaarheidspad.
+- Genummerde lijsten behouden in AI-context hun echte nummer in plaats van alles als `1.` te tonen.
+- Woordtelling tijdens typen is 400 ms gedebounced; lange hoofdstukken worden daardoor niet meer bij iedere toets volledig opnieuw geparset.
+- De productroadmap zet **Boekenkast met meerdere planken en verborgen/privéplanken** bovenaan na de huidige hardeningfase, met NEO als visuele referentierichting.
+- Geen manuscriptmigratie of nieuwe manuscriptsyntaxis in deze versie.
+
+## 1.2.25 — Escaping gehard na onafhankelijke review
+
+- Verborgen escapes zijn editor-atomair gemaakt voor cursorbeweging, Backspace en Delete.
+- Niet-expliciete edits mogen niet stil nieuwe blockstructuur maken; Enter/Delete/Backspace en gewone invoer worden na de bewerking semantisch bewaakt.
+- Kopiëren naar het systeemklembord levert zichtbare tekst; QuietWriter-naar-QuietWriter plakken kan opmaak behouden via een intern MIME-type.
+- Zoekresultaten gebruiken een zichtbare projectie met bron-offsetmapping, waardoor `5*3`, `**literal**` en tekst over vet/cursief-grenzen vindbaar zijn.
+- Zoek-en-vervang serializeert vervangtekst als letterlijke schrijverstekst.
+- `DocumentView` splitst alleen op `\n`; U+2028 van Shift+Enter is geen nieuwe alinea meer.
+- Expliciete opmaak leest de persistente bron via `source_text()` en behoudt daardoor NBSP.
+- Structurele escapes worden alleen op geldige prefixposities gelezen; getypte escaped Open-puntmarkers blijven gewone tekst.
+- Qt-regressietests uit de onafhankelijke 1.2.24-review zijn als gedragstests opgenomen.
+- Geen bestaande boeken gemigreerd of herschreven.
+
+## 1.2.24 — DOCX-afbeeldingen via de mediastore
+
+- DOCX-import leest PNG- en JPEG-afbeeldingen nu als neutrale import-assets in plaats van ze te negeren.
+- Afbeeldingen worden tijdens de transactionele stagingfase in de boeklokale mediastore geplaatst en pas daarna als normale QuietWriter-afbeeldingsblokken in hoofdstukken geserialiseerd.
+- Alt-tekst uit Word wordt waar beschikbaar behouden.
+- Dezelfde afbeelding die meerdere keren in Word voorkomt wordt binair één keer opgeslagen, terwijl alle plaatsingen in het manuscript behouden blijven.
+- Een afbeelding midden in een Word-alinea wordt veilig als los afbeeldingsblok geïmporteerd en levert een expliciete waarschuwing op.
+- Niet-ondersteunde Word-afbeeldingstypen worden expliciet gemeld; PNG en JPEG zijn de ondersteunde importformaten.
+- De volledige import blijft transactioneel: een fout tijdens media-import kan geen half boek publiceren.
+- Geen bestaande boeken gemigreerd of herschreven.
+
+## 1.2.23 — Transactionele DOCX-import
+
+- DOCX-import wordt eerst volledig opgebouwd in een verborgen stagingmap onder `books/`; pas wanneer hoofdstukken, assetsmanifest en `book.json` compleet en valide zijn, wordt de complete map in één directory-rename gepubliceerd.
+- Een schrijf- of syncfout tijdens import laat daardoor geen half zichtbaar boek meer achter in de boekenplank.
+- Mislukte stagingimports worden opgeruimd; een succesvol gepubliceerde map wordt nooit door de foutafhandeling verwijderd.
+- Voor publicatie wordt gecontroleerd of alle door `book.json` genoemde hoofdstukbestanden daadwerkelijk bestaan.
+- Nieuwe regressietests simuleren een schijffout tijdens het tweede hoofdstuk en een mislukte directory-publicatie en controleren dat de bibliotheek leeg en schoon blijft.
+- Geen bestaande boeken gemigreerd of herschreven.
+- Volledige geautomatiseerde suite: 558 passed, 45 skipped, 304 subtests passed.
+
+## 1.2.22 — Neutraal importdocument
+
+- DOCX-import leest Word nu eerst naar een formaat-onafhankelijk `ImportDocument` met secties, hoofdstukken, blocks en semantische inline-runs.
+- De DOCX-reader bouwt geen QuietWriter-markup meer rechtstreeks; pas aan de opslaggrens serializeert één centrale writer de importsemantiek naar veilige QuietWriter-tekst.
+- Letterlijke Markdownachtige Word-tekst en echte Word-opmaak blijven daardoor technisch van elkaar gescheiden tot het laatste moment.
+- De bestaande `parse_docx_book()`-interface blijft behouden als compatibiliteitsgrens voor de huidige opslagworkflow.
+- Nieuwe regressietests controleren expliciet dat het neutrale model geen QuietWriter-markup bevat en dat serialisatie pas daarna escaping/opmaak toevoegt.
+- Geen bestaande boeken gemigreerd of herschreven.
+- Volledige geautomatiseerde suite: 555 passed, 45 skipped, 304 subtests passed.
+
+## 1.2.21 — Centrale bronopbouw en veiligere DOCX-import
+
+- Naast de centrale `DocumentView` is nu ook de **schrijfkant van de manuscriptsyntaxis** gecentraliseerd: gegenereerde inline-opmaak en blockstructuur worden via gedeelde serializers opgebouwd in plaats van met losse `*`, `**`, `> ` en lijstprefixen in verschillende modules.
+- DOCX-import encodeert letterlijke Markdownachtige tekens eerst als schrijverstekst en voegt daarna pas semantische opmaak toe. Een Word-zin als `- Kom je? *316 5*3 **letterlijk**` verandert daardoor niet stil in een lijst of opmaak.
+- Hard line breaks in een opgemaakte Word-run worden per fysieke QuietWriter-alinea geserialiseerd, zodat vet/cursief niet meer met een open marker over de volgende regel kan lekken.
+- QuietWriter-DOCX gebruikt voortaan een eigen `QuietWriter Scene Break`-stijl voor scènebreuken. Daardoor blijft `***` bij roundtrip structureel, terwijl een letterlijk `***` uit een gewoon extern Word-document gewone tekst kan blijven.
+- DOCX-import volgt nu ook character styles en `basedOn`-overerving, waardoor onder andere Word **Strong**, *Emphasis* en opmaak uit een paragraph style worden meegenomen. Expliciete run-opmaak blijft leidend.
+- Eigen Word-paragraafstijlen die van Heading 1/2 erven worden nu als hoofdstuk-/sectiestructuur herkend.
+- De page-oriented fallback gebruikt een korte eerste gewone zin niet meer automatisch als titel; dit voorkomt dat tekst zoals `Nee.` stil uit de body verdwijnt.
+- DOCX-import meldt nu expliciet wanneer track changes, content controls, Word-velden, hyperlinkdoelen of voetnoten niet volledig kunnen worden behouden. Hyperlinktekst zelf blijft behouden.
+- Nieuwe importwaarschuwingen toegevoegd aan alle vijf interfacetalen.
+- Geen bestaande QuietWriter-boeken gemigreerd of herschreven.
+- Volledige geautomatiseerde suite: 553 passed, 45 skipped, 304 subtests passed.
+
+## 1.2.20 — Escaping editor crashfix
+
+- Crash bij iedere gewone toetsaanslag in 1.2.19 opgelost: de editor importeert nu alle vier gebruikte escapinghelpers expliciet.
+- Ook de plak-/kopieerroutes zijn meegenomen, zodat `escape_literal_text` en `unescape_literal_text` niet pas later als NameError opduiken.
+- Regressietest toegevoegd die de editor-module importeert en controleert dat alle escapinghelpers beschikbaar zijn.
+- Geen wijziging in boekformaat of bestaande manuscriptbytes.
+
+## 1.2.19 — Letterlijke invoer en escaping-basis
+
+- Nieuwe letterlijke-invoerlaag: direct getypte markuptekens zoals `*`, `~`, backticks, `<` en backslashes worden veilig escaped in de bron maar blijven normaal zichtbaar in de editor.
+- Regels die door een spatie anders stil een lijst, citaat, tussenkop of genummerde lijst zouden worden (`- `, `> `, `## `, `1944. `) worden bij gewone invoer als proza opgeslagen.
+- Expliciete opmaak via Ctrl+B/Ctrl+I/Ctrl+U, de opmaakbalk en blockacties blijft echte QuietWriter/Markdown-syntax maken.
+- Gewone plakacties behandelen geplakte inhoud als schrijverstekst en escapen syntaxachtige tekens; technische Open-puntmarkers worden zoals voorheen verwijderd.
+- `DocumentView`, inline-runs, export, zoeken, spelling en AI-context begrijpen dezelfde escapes en tonen/exporteren alleen de bedoelde zichtbare tekst.
+- Gekopieerde letterlijke tekst bevat de verborgen escape-backslashes niet.
+- Bestaande hoofdstukken worden niet herschreven of gemigreerd; escaping ontstaat alleen bij nieuwe letterlijke invoer/plakacties of wanneer bron al escapes bevat.
+- Regressietests toegevoegd voor `*31623455`, `5*3`, dialoog met `- `, jaartallen zoals `1944.`, expliciete opmaak en export van escaped proza.
+
+## 1.2.18 — Centrale semantische inline-laag
+
+- `DocumentView` levert nu naast blocks ook semantische inline-runs met zichtbare tekst en stijlen; consumers hoeven `*`, `**`, `~~`, backticks en `<u>` niet opnieuw te parsen.
+- DOCX-export gebruikt de centrale inline-runs voor vet, cursief, onderstrepen, doorhalen en code.
+- XHTML/EPUB- en PDF-rendering gebruiken dezelfde runs en bouwen alleen nog uitvoerformaten op uit semantiek.
+- Afbeeldingsmetadata voor export komt uit `DocumentView`-blocks in plaats van opnieuw de bronregel te ontleden.
+- Editor en editorpagina herkennen scène- en afbeeldingsblocks via de centrale documentgrens in plaats van rechtstreeks via losse parsers.
+- `parse_block_line()` en `parse_document()` leveren voor afbeeldingsregels dezelfde attributen.
+- Regressietests toegevoegd voor centrale inline-runs, letterlijke ongepaarde sterren en afbeeldingssemantiek.
+- Geen nieuwe manuscriptsyntaxis, geen escaping geactiveerd en geen bestaande manuscriptbytes herschreven.
+- Geautomatiseerde testsuite: 532 passed, 45 skipped, 304 subtests passed.
+
+## 1.2.17 — DocumentView als gedeelde manuscriptlezer
+
+- XHTML/EPUB-rendering doorloopt nu rechtstreeks de centrale `DocumentView`-blocks in plaats van opnieuw regels en blockprefixen te interpreteren.
+- Inhoudsopgave-preview leest tussenkoppen via dezelfde centrale semantiek als export en editor.
+- Afbeeldingsblock-ranges voor masking/protectie komen nu uit `DocumentView` in plaats van een eigen regelscan.
+- Blockopmaak in de editor hergebruikt de centrale blockclassificatie en contentgrenzen; hierdoor ontstaat minder dubbele Markdownlogica.
+- Centrale helper toegevoegd voor zichtbare inline-tekst: alleen daadwerkelijk gepaarde opmaakmarkers verdwijnen; letterlijke losse tekens blijven staan.
+- Geen nieuwe manuscriptsyntaxis, geen opslagmigratie en geen herschrijving van bestaande hoofdstukken.
+- Geautomatiseerde testsuite: 529 passed, 45 skipped, 304 subtests passed.
+
+## 1.2.16 — DocumentView voor zoeken, spelling en Meelezer
+
+- Zoeken, spelling en AI-manuscriptcontext gebruiken nu dezelfde centrale `DocumentView`-interpretatie als editor en export.
+- Technische inline-markers, Open-puntmarkers, scènebreuken en blockprefixen worden voor zoeken/spelling centraal gemaskeerd met behoud van exacte bronoffsets.
+- Afbeeldingspaden en layoutmetadata blijven buiten zoek- en spellingstekst; natuurlijke alttekst en captions blijven beschikbaar.
+- Meelezer-context bevat schrijverstekst en semantische elementen in plaats van technische QuietWriter-bronsyntax; scènebreuken worden expliciet als `[Scènebreuk]` aangeboden.
+- Een letterlijk, ongepaard sterretje zoals `*31623455` blijft volledig gewone tekst in zoeken, spelling en AI-context.
+- Oude source-based regressietest voor spelling aangepast aan de nieuwe centrale interpretatielaag.
+- Geen manuscriptmigratie of nieuwe persistente syntaxis ingevoerd.
+- Volledige geautomatiseerde testsuite: 526 passed, 45 skipped, 304 subtests passed.
+
+## 1.2.15 — DocumentView crashfix
+
+- Crash opgelost wanneer de centrale `DocumentView` lege manuscripttekst verwerkt.
+- Opstarten en export konden via woordtelling een lege tekst doorgeven; de lege `DocumentView` bevat nu expliciet `blocks=()`.
+- Regressietest toegevoegd voor een volledig lege manuscriptbron.
+- Volledige lokale testsuite: 523 passed, 45 skipped, 304 subtests passed.
+- Geen manuscriptformaat, migratie of gebruikersdata gewijzigd.
+
+## 1.2.14 — Centrale manuscriptinterpretatie
+
+- PDF- en DOCX-export gebruiken nu dezelfde centrale blockinterpretatie als editor en EPUB/XHTML.
+- Woordtelling telt via `DocumentView` alleen zichtbare manuscriptinhoud; structurele markering zoals `***` en lijstprefixen telt niet meer als woord.
+- De ongebruikte oude `exporting/xhtml.py`-parser is verwijderd zodat er één afwijkende parser minder bestaat.
+- Nieuwe centrale, read-only `DocumentView` toegevoegd voor één gedeelde interpretatie van manuscriptblocks, inline spans en bronranges.
+- Eerste twee consumers gebruiken dezelfde blockclassificatie: de manuscripteditor en XHTML/EPUB-rendering.
+- Nieuwe `MANUSCRIPT_SYNTAX.md` legt de feitelijke 1.2.13-syntaxis vast en kiest als richting: gangbare Markdownconventies waar mogelijk, QuietWriter-extensies alleen waar nodig.
+- Letterlijke losse sterretjes zoals `*31623455` blijven gewone tekst; parsing van inline-opmaak is in `DocumentView` expliciet per fysieke regel.
+- Bekende ambiguïteiten zoals `- Kom je?` en `1944. ...` worden door de nieuwe laag gesignaleerd maar nog niet stil herschreven.
+- Geen bestaande manuscriptbytes, boekformaten of migraties gewijzigd.
+- Verouderde release-metadatatest aangepast aan de opgeschoonde historische roadmap.
+- Lokale volledige testsuite na deze stap: 519 passed, 45 skipped, 304 subtests passed.
+
+## 1.2.13 — Open punten definitief stabiel
+
+- Open punt afronden behoudt de scrollpositie ook wanneer de geselecteerde rij tijdens de refresh verdwijnt.
+- De Open punten-lijst start bij een ander boek weer bovenaan in plaats van de scrollpositie van het vorige boek over te nemen.
+- Twee Qt-regressietests toegevoegd voor beide scenario's via de echte MainWindow-route.
+
+## 1.2.12 — Open punten behoudt lijstpositie
+
+- Live verversen van Open punten behoudt de geselecteerde rij wanneer dat punt nog bestaat.
+- De scrollpositie van lange lijsten blijft tijdens typen, Ongedaan maken en Opnieuw behouden.
+- Herstel van selectie en scroll gebeurt zonder navigatiesignalen naar de editor af te vuren.
+
+## 1.2.11 — Smalle panelen en live Open punten
+
+- Meelezer-uitleg en privacywaarschuwing schalen betrouwbaar mee met smalle rechterpanelen.
+- Open punten verversen live tijdens tekstbewerkingen, inclusief Ongedaan maken en Opnieuw.
+- Paneeltests schrijven niet meer naar echte gebruikersinstellingen.
+
+## 1.2.10 — Paneeluitleg en Open-puntenpolish
+
+- Open punten verversen direct vanuit de actuele editorbron, zodat een nieuw punt meteen in het open rechterpaneel verschijnt vóór autosave.
+- De spellingscontrole maskeert technische Open-puntmarkeringen met behoud van bronoffsets; `qw` en `todo` worden niet meer als woorden gecontroleerd.
+- PanelHelp berekent zijn teksthoogte opnieuw bij resize en vertaling, zodat uitleg in smalle panelen niet wordt afgekapt.
+- Help-iconen van alle rechterpanelen worden bij een live themawissel opnieuw ingekleurd, ook wanneer het paneel gesloten is.
+- De Meelezer-toestemmingsmelding gebruikt echte lay-outmarges in plaats van niet-effectieve QSS-padding.
+- Toevoegen behoudt de hoogte van de verborgen helpknop, zodat de titel niet verspringt.
+- De Qt-regressietest voor In dit hoofdstuk volgt de gedeelde `panel_help.title`.
+
+## 1.2.9 — Paneeluitleg en laatste HiDPI-polish
+
+- Gedeelde, inklapbare uitleg toegevoegd aan de rechterpanelen Zoeken, In dit hoofdstuk, Open punten, Meelezer, Spellingscontrole, Versiegeschiedenis en Bewaarplaats.
+- Uitleg staat bij eerste gebruik open, wordt per paneel onthouden en kan via de ?-knop opnieuw worden geopend.
+- De eerste Open-punt-uitleg is niet langer modaal; de uitleg staat voortaan in het paneel zelf.
+- Instellingen → Algemeen bevat nu Alle uitleg weer tonen, zonder andere instellingen te wijzigen.
+- De Meelezer-privacywaarschuwing is visueel onderscheiden van gewone uitleg en uitleg klapt tijdelijk in bij Context/Snelacties.
+- Woordenboekinformatie reserveert hoogte op basis van de werkelijke runtimebreedte.
+- Het lege vlak in In dit hoofdstuk gebruikt de paneelachtergrond transparant.
+- Help-iconen volgen live het actieve thema.
+
+## 1.2.8 — HiDPI-instellingen en rechterpaneel-uitlijning
+
+- De werkmapkiezer kan op smallere logische breedtes krimpen, zodat de knop **Map kiezen** bij 1920×1080 op 125% DPI volledig zichtbaar blijft.
+- De woordenboekinformatie reserveert expliciet voldoende hoogte voor lange bron- en padregels en wordt niet meer afgesneden.
+- **In dit hoofdstuk** houdt titel en uitleg bovenaan vast wanneer er nog geen gekoppelde scènes zijn; de actieknop blijft onderaan zoals bij de andere rechterpanelen.
+- De Open-puntengeometrietest is gemarkeerd als Qt-test en draait daardoor ook mee in gerichte `pytest -m qt`-runs.
+
+## 1.2.7 — Qt-geometrietest zelfstandig gemaakt
+
+- De regressietest voor de breedte van verborgen Open-puntmarkeringen gebruikt geen `pytest-qt`/`qtbot` meer.
+- De test volgt nu hetzelfde patroon als de overige Qt-tests met `QApplication` en `QTest.qWait`.
+- Geen productgedrag gewijzigd ten opzichte van 1.2.6.
+
+## 1.2.6 — Open-puntmarkering zonder overlap
+
+- Open-puntmarkeringen gebruiken nu een eigen verborgen tekststijl; gewone Markdown-markeringen zoals `**` behouden hun bestaande geometrie.
+- De markerbreedte wordt samengedrukt op basis van de werkelijke gemiddelde tekenbreedte van het 1-punts editorfont in plaats van een vaste `-2 px`, zodat omliggende tekst niet meer over elkaar heen valt.
+- Regressietest toegevoegd voor de geometrie van zowel een open-puntmarkering als verborgen vet-markers.
+
+## 1.2.5 — Open punten gehard
+
+- Open punten gebruiken nu compacte markers in de manuscriptbron; notities staan veilig in `planning/open_points.json`, dat automatisch meegaat in geschiedenis en QWBOOK.
+- Ctrl+X, Ctrl+V, slepen/neerzetten en andere destructieve routes kunnen beheerde markers niet meer stil beschadigen.
+- Kopiëren zet alleen zichtbare schrijverstekst op het systeemplakbord; technische QuietWriter-markers lekken niet meer naar andere apps of publicatieteksten.
+- De cursor slaat verborgen open-puntmarkers over en de markeropmaak is verder samengedrukt, zodat er geen lange onzichtbare cursortrajecten of opvallende gaten ontstaan.
+- Export verwijdert open-puntmarkers nu ook defensief uit voor-/achterwerk.
+- De rechter gereedschapsrail kan op lage/HiDPI-schermen scrollen in plaats van de minimale vensterhoogte op te drijven.
+- Instellingen reserveren correct hoogte voor langere Duitse, Franse en Spaanse hulpteksten.
+- Nederlandse ontbrekende vertalingen vallen weer terug op de Nederlandse codetekst; andere talen gebruiken Engels als productfallback.
+
+## 1.2.4 — Open punten en extra talen
+
+- Nieuwe **Open punten**: markeer geselecteerde tekst of de cursorpositie, voeg optioneel een notitie toe en vind alle open punten terug in een boekoverzicht.
+- Open punten vervangen eigen `XXX`/`TODO`/`???`-notatie: QuietWriter legt dit bij eerste gebruik uit en waarschuwt vóór export; technische markers komen niet in gewone exports of AI-context terecht.
+- Vanuit de exportcontrole kun je rechtstreeks naar het overzicht Open punten springen.
+- Nieuwe interfacetalen: **Duits, Frans en Spaans**, naast Nederlands en Engels. Alle locale-bestanden hebben dezelfde sleutel- en placeholdercontracten.
+- Engelse fallback toegevoegd voor toekomstige ontbrekende vertaalsleutels.
+- Live themawissels verversen nu ook de handmatig gekleurde manuscriptgroepen **Voorwerk/Achterwerk** en de actie **wijzig**, zodat Lamplicht en andere thema’s geen achtergebleven accentkleur tonen.
+
+## 1.2.3 — Lamplicht en exportwizard-uitlijning
+
+- Nieuw warm donker thema **Lamplicht** toegevoegd zonder nieuwe themalogica.
+- Kop, stappenrij, navigatie en inhoud van Begeleid exporteren volgen op brede schermen nu dezelfde maximale kolombreedte.
+- De modusschakelaar Begeleid / Zelf instellen blijft daardoor visueel bij de wizard in plaats van aan de uiterste rechterrand van het venster.
+
+## 1.2.2 — Exportwizard polish
+
+- De vaste Terug/Volgende-balk volgt nu dezelfde maximale breedte als de wizardinhoud, zodat Volgende op brede schermen dichter bij de gemaakte keuze blijft.
+- Doelkaarten berekenen hun minimumhoogte opnieuw na een resize, zodat onnodige lege ruimte onder beschrijvingen verdwijnt.
+- De UI-reference legt bewust vast wanneer setup-navigatie boven de scrollinhoud of onderaan een modale wizard staat.
+
+## 1.2.1 — Exportwizard navigatie
+
+- De navigatie van Begeleid exporteren staat nu direct onder de stapindicator en blijft buiten de scrollbare inhoud.
+- Na het kiezen van een doel is **Volgende** meteen zichtbaar; een kaart kiezen gaat bewust niet automatisch naar de volgende stap.
+- De inhoud van lange wizardstappen blijft onafhankelijk scrollbaar, terwijl Terug/Volgende op een vaste, voorspelbare plek blijven.
+
+## 1.2.0 — Begeleid exporteren
+
+- Nieuwe begeleide exportwizard naast de bestaande handmatige exportpagina, met doelen voor e-reader, afdrukken, Word, delen, back-up en website.
+- Eén gedeelde exportroute voor beide modi, zodat wizard en handmatige export dezelfde exporters en veiligheidscontroles gebruiken.
+- `.qwbook` kan het Meelezer-gesprek bewust weglaten; deze privacykeuze geldt nu ook voor gesprekken die in versiegeschiedenis-snapshots voorkomen.
+- QWBOOK-preflight telt nu ook bestanden uit versiegeschiedenis en houdt rekening met uitgesloten Meelezer-gesprekken.
+- Als exporteren lukt maar de exportvoorkeuren door een extern conflict niet kunnen worden opgeslagen, meldt de klaar-pagina dat expliciet.
+- Windows-build maakt naast versiegebonden releasebestanden ook vaste `QuietWriter-windows-portable.zip`-assets voor blijvende downloadlinks.
+
+## 1.1.0 — Stabiele feature-release en Windows build-hardening
+
+- Bundelt de sinds 1.0.0 afgeronde Darlings-, onboarding-, DOCX- en `.qwbook`-functionaliteit als nieuwe stabiele release.
+- Windows-build pinnt PyInstaller op 6.22.3 en compileert de bootloader lokaal uit bron.
+- Onedir, `upx=False` en `console=False` blijven expliciet behouden.
+- Build schrijft voortaan ook `QuietWriter-<versie>-exe.sha256` en toont de EXE SHA-256 na de build.
+- Nieuwe release-checklist voor VirusTotal/false-positive-afhandeling en handmatige publicatie zonder GitHub Actions.
+- Geen nieuwe productfunctionaliteit ten opzichte van de groen geteste 1.0.23-bronbasis.
+
+## 1.0.23 — Snellere Qt-tests
+
+- Testinfrastructuur: na iedere test worden achtergebleven top-level Qt-vensters gesloten en via `deleteLater()` opgeruimd.
+- Hiermee stapelen `MainWindow`-instanties uit Qt-tests niet meer op en blijft de volledige suite snel.
+- Geen wijziging aan productgedrag of bestandsformaten.
+
+## 1.0.22 — `.qwbook` herstelgedrag en voorkeur onthouden
+
+- `Versiegeschiedenis meenemen` wordt nu per boek onthouden.
+- Een `.qwbook` zonder geschiedenis behoudt bestaande versiegeschiedenis van hetzelfde boek.
+- Weesgeschiedenis wordt pas opzijgezet nadat het volledige pakket succesvol is gevalideerd.
+- Een mislukte import laat bestaande versiegeschiedenis dus ongemoeid.
+
+## 1.0.21 — `.qwbook` back-upherstel en compacte overdracht
+
+- Een `.qwbook` kan weer worden teruggezet nadat het boek definitief is verwijderd, ook als oude weesgeschiedenis in `archive/` is achtergebleven.
+- Weesgeschiedenis wordt veilig bewaard onder `archive/.orphaned/` in plaats van de import te blokkeren.
+- Export kan versiegeschiedenis optioneel uitsluiten voor een kleiner overdrachtsbestand.
+- Oude v1-pakketten worden bij import ook van lokale `source_file`-paden opgeschoond.
+
+## 1.0.20 — `.qwbook` hardening en complete back-up
+
+- Windows-veilige `.qwbook`-padvalidatie in twee lagen; backslashes, stationsletters, traversal, gereserveerde namen en paden buiten de importmap worden geweigerd.
+- Import gebruikt een tijdelijke map onder `.cache/` in plaats van `books/`, zodat crashresten niet op de Boekenplank verschijnen.
+- Import en herstel uit de Prullenbak blokkeren dubbele boek-identiteiten.
+- `.qwbook` bevat nu ook boekgebonden versiegeschiedenis en verborgen boekdata zoals het Meelezer-gesprek.
+- Lokale `metadata.source_file`-paden worden uit huidige en historische `book.json`-bestanden verwijderd vóór verpakking.
+- Grootte-, bestandsaantal- en compressieverhoudingslimieten beschermen tegen onredelijk grote of kwaadaardige archieven; import streamt bestanden in plaats van ze volledig in geheugen te lezen.
+- Bij `.qwbook` wordt na export alleen **Map openen** aangeboden; **Bestand openen** is verborgen.
+
+## 1.0.19 — `.qwbook` compleet boekformaat
+
+- `.qwbook` exporteert de volledige boekmap als één overdraagbaar QuietWriter-bestand.
+- Pakketmanifest bevat formaatversie, boekidentiteit en SHA-256/size per bestand.
+- Import verifieert alle bestanden en werkt via een tijdelijke map voordat het boek zichtbaar wordt.
+- Bestaande boeken met dezelfde identiteit worden nooit stil overschreven.
+- Corrupte pakketten, padtraversal, dubbele entries en future-format pakketten worden fail-closed geweigerd.
+- Exporteren bevat nu QWBOOK en Boek importeren accepteert `.qwbook`.
+- Roundtrip-tests controleren byte-exact behoud van manuscript, Planning, publicatie, AI-boekcontext, instellingen en assets.
+
+## 1.0.18 — DOCX-import taal veilig in Boekdetails
+
+- DOCX-import bewaart de hoofdtaal uit Word (`en-US` → `en`, `nl-NL` → `nl`) zodat Boekdetails de taal niet stil terugzet.
+- DOCX-importwaarschuwingen voor tabellen en afbeeldingen volgen nu de gekozen UI-taal.
+
+## 1.0.17 — DOCX-import taal en fallbacktitels
+
+- DOCX-import leest de standaarddocumenttaal uit Word en bewaart die als boektaal.
+- Word-taalcodes worden bij import genormaliseerd naar BCP 47.
+- Pagina's zonder korte kop krijgen unieke boekbrede fallbacktitels in plaats van telkens "Deel 1".
+- Fallbacktitels volgen de UI-taal: "Deel N" in het Nederlands en "Part N" in het Engels.
+
+## 1.0.16 — DOCX import/export verfijnd
+
+- ieder hoofdstuk begint bij DOCX-export op een nieuwe pagina;
+- Word-documenttaal volgt de ingestelde spellingstaal van QuietWriter;
+- de boekomslag wordt als eerste pagina meegenomen;
+- grote afbeeldingen worden proportioneel binnen het afdrukbare paginagebied geschaald;
+- import van layout-zware Word-documenten gebruikt ook expliciete pagina-einden, Title/Subtitle en grote displaykoppen;
+- zwevende Word-afbeeldingen worden nu correct geteld en als nog-niet-ondersteund gemeld.
+
+## 1.0.14 — DOCX import en export
+
+- DOCX toegevoegd als vierde exportformaat naast EPUB, PDF en Markdown.
+- Gedeelde `python-docx`-laag voor Word-import en -export.
+- Export bewaart boek-/hoofdstukstructuur en QuietWriter-opmaak (vet, cursief, onderstrepen, doorhalen en inline code); inline afbeeldingen worden meegenomen waar mogelijk.
+- Import leest QuietWriter-DOCX en gewone Word-documenten met Heading 1/2, lijsten, citaten en ondersteunde inline-opmaak.
+- Niet betrouwbaar ondersteunde Word-inhoud, zoals tabellen en geïmporteerde afbeeldingen, wordt expliciet gemeld in plaats van stil genegeerd.
+
+## 1.0.13 — onboarding polish en veilige statusherstel
+
+- updatecontrole onderscheidt nu expliciet een lokale versie die hoger is dan de nieuwste stabiele GitHub-release;
+- radioselecties hebben in alle thema’s een duidelijkere rand en geselecteerde toestand;
+- hoofdstukkenlijst en rechterpaneel bewaren hun echte zichtbaarheid ook wanneer QuietWriter vanaf Boekenplank of Instellingen wordt afgesloten;
+- de first-run teller eindigt logisch op 6 van 6 wanneer de optionele rondleiding uitstaat;
+- resetwaarschuwing vermeldt expliciet dat een opgeslagen OpenRouter-sleutel wordt verwijderd;
+- dubbele Werkmap-rij in de first-run is verwijderd.
+
+## 1.0.12 — begeleide first-run en veilige reset
+
+- First-run uitgebreid met live themapreview en een duidelijk voorbeeld.
+- Optionele teksttour toegevoegd voor Boekenplank/schrijven, Planning/Bewaarplaats en Meelezer/export/herstel.
+- Updatevoorkeur toegevoegd: handmatig controleren kan altijd; automatische GitHub-check is opt-in en downloadt niets automatisch.
+- Bestaande `--first-run`-flag expliciet behouden voor handmatig testen zonder instellingen eerst te wissen.
+- Instellingen bevat nu `Standaardinstellingen herstellen…`: alleen programma-instellingen worden gereset, de bestaande werkmap met boeken/verhalen blijft behouden en is vooraf klikbaar zichtbaar.
+- Na reset wordt de volledige setup bij de volgende start geforceerd, ook wanneer de bestaande werkmap al bestaat.
+- Bewaarplaats-intro compacter gemaakt zonder overmatige witregels.
+
+## 1.0.11 — Darlings-tekst en volgende onboardingfase
+
+- Bewaarplaats-intro herschreven vanuit het schrijversidee “Don't kill your darlings”; technische uitleg over Markdown is uit de gebruikersintro verwijderd.
+- Roadmap aangescherpt: na Darlings volgt een begeleide first-run met live themapreview en een expliciete keuze voor automatische GitHub-updatechecks; handmatig controleren blijft altijd beschikbaar.
+
+## 1.0.10 — Rechterpanelen en Darlings UX
+
+- Een bestaande manuscriptselectie blijft behouden wanneer Bewaarplaats, Meelezer, Zoeken, Toevoegen of Versiegeschiedenis wordt geopend; alleen het verlaten van een actief Spelling-paneel ruimt de spellingsselectie op.
+- De lege-markercontrole bij Knippen kijkt alleen naar nieuw geïntroduceerde problematische markerruns en blokkeert niet langer een hoofdstuk vanwege al bestaande letterlijke `****`/`~~~~`.
+- Bewaarplaats heeft een eigen pictogram in zowel de linkerrail als de rechter gereedschapsrail.
+
+## 1.0.9 — Darlings UX en bronhygiëne
+
+- Vaste Bewaarplaats-tool in de rechter editorrail met Kopiëren, Knippen en Bewaarplaats openen; rechtermuisknop blijft een aanvullende snelroute.
+- Bewaarplaats toont herkomst expliciet als Boek en Hoofdstuk.
+- Naar prullenbak is een gewone knop naast Invoegen/Opslaan en gebruikt duidelijke knoppen in plaats van generieke Yes/No.
+- De veilige halve-selectiestrategie verwijdert markers van spans waarvan alle zichtbare inhoud is weggeknipt, zodat lege Markdown-opmaak niet opstapelt.
+- Nieuwe Qt-regressietests voor de vaste editorroute en zichtbare herkomst.
+
+## 1.0.8 — Darlings knippen hersteld en bruikbaarder
+
+- Herstelt `Knippen naar bewaarplaats`: verificatie gebruikt nu de bestaande `FragmentStore.load()`-API.
+- Gedeeltelijke selecties in vet/cursief krijgen een extra veilige verwijderstrategie die zichtbare tekens verwijdert en Markdown-markers waar mogelijk behoudt.
+- De bestaande fail-closed validatie blijft leidend: alleen een resultaat met exact dezelfde resterende zichtbare tekst en opmaak wordt uitgevoerd.
+- Nieuwe regressietests voor veelvoorkomende halve opmaakselecties.
+
+## 1.0.7 — Darlings knippen, herstel en snellere invoegcontrole
+
+- Knippen naar bewaarplaats toegevoegd met fail-closed Markdownverwijdering.
+- Fragment wordt eerst veilig opgeslagen en geverifieerd; bij commitfout blijft de tekst bewust dubbel staan.
+- Fragmenten zijn nu zichtbaar, herstelbaar en definitief verwijderbaar via Prullenbak.
+- Invoegvalidatie berekent stijl per teken lineair in plaats van spans per teken te scannen.
+
+## 1.0.6 — Darlings invoegen fail-safe en contextmenu
+
+- Invoegen bij cursor valideert nu vóór schrijven de verwachte zichtbare tekst en opmaak per teken.
+- Markdown-markergrenzen en gelijke stijlen worden waar veilig samengevoegd; onveilige combinaties worden geweigerd in plaats van de bestaande opmaak te beschadigen.
+- De regressietest bestrijkt alle cursorposities met gemengde, gedeeltelijke en geneste fragmentopmaak.
+- Na Annuleren bij een extern metadata-conflict worden zoeken en tagfilter uitgeschakeld totdat het conflict via Opslaan is opgelost.
+- Rechtsklik op een fragment in de Bewaarplaats biedt Invoegen bij cursor en Naar prullenbak.
+- Bron-ZIP blijft vrij van test-/buildcaches.
+
+## 1.0.5 — Darlings invoegen gehard
+
+- Invoegen bij cursor normaliseert cursorposities in verborgen Markdown-markers.
+- Opgemaakte fragmenten splitsen bestaande inline-opmaak veilig wanneer dat nodig is.
+- Invoegen in inline code verschuift bij opgemaakte fragmenten naar een veilige rand.
+- Esc of sluiten van het metadata-conflictvenster annuleert nu zonder lokale of externe waarden te overschrijven.
+- Qt-conflicttests bijgewerkt naar het 1.0.4-keuzemodel en tuple-tags.
+- Uitgebreide propertytest voor alle invoegposities over vet, cursief, doorhalen en code.
+
+## 1.0.4 — Darlings invoegen bij cursor en conflictkeuze
+
+- Darlings kunnen vanuit de Bewaarplaats op de actieve manuscriptcursor worden ingevoegd; het fragment blijft daarna bestaan.
+- Invoegen is één undo-actie, vervangt een bestaande selectie niet en weigert read-only/history/corrupte hoofdstukken en afbeeldingsblokken.
+- Metadata-conflicten tussen twee computers vragen direct om een expliciete keuze: lokale invoer bewaren of de versie op schijf gebruiken; de versie op schijf wordt in de melding getoond.
+- Er blijft na een conflict geen tussentoestand meer over die zoeken, navigeren of afsluiten later stil kan opslaan.
+- Bron-ZIP hygiene: `.pytest_cache/` wordt niet meer meegeleverd.
+
+## 1.0.3 — Darlings stap 2 reviewfixes
+
+- Ontbrekende runtime-import voor Kopiëren naar bewaarplaats hersteld en afgedekt met een echte Qt-test.
+- Zoeken en tagfilter slaan niet-opgeslagen metadata eerst veilig op en wissen invoer niet meer stil.
+- Externe metadatawijzigingen houden lokale invoer zichtbaar en klaar voor een bewuste tweede opslagpoging.
+- Gedeeltelijke selecties in vet/cursief krijgen gebalanceerde Markdownmarkeringen voor veilig later invoegen.
+- Undefined-names-check is verplicht onderdeel van de oplevercontrole voor Darlings-iteraties.
+
+## 1.0.2 — Darlings Bewaarplaats en kopiëren
+
+- Bewaarplaats toegevoegd als globale pagina naast de Boekenplank.
+- Fragmenten zoeken en filteren op tags; read-only Markdownpreview.
+- Titel, notitie en tags bewerken met verplichte revisioncontrole.
+- Afwijkende/corrupte fragmentbestanden worden gemeld zonder de rest te verbergen.
+- Editorcontextmenu: geselecteerde canonieke Markdownbron kopiëren naar Bewaarplaats.
+- Bronboek, hoofdstuk en beperkte contextankers worden vastgelegd.
+- Nederlandse en Engelse UI-teksten toegevoegd.
+
 ## 1.0.1 — Darlings opslagbasis en reviewhardening
 
 - Eerste interne v2-bouwsteen voor Darlings: één Markdownbestand per fragment, zonder UI of editorkoppeling.

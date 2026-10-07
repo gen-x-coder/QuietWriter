@@ -5,6 +5,9 @@ import json
 from pathlib import Path
 
 from ..storage import _safe_atomic_write_text, _guard_existing_json
+from .purposes import PURPOSES_BY_ID
+
+_PURPOSE_IDS = frozenset(PURPOSES_BY_ID)
 
 
 def default_export_settings() -> dict:
@@ -28,6 +31,9 @@ def default_export_settings() -> dict:
             'show_section_titles': True,
         },
         'markdown': {},
+        'docx': {},
+        'qwbook': {'include_history': True, 'include_ai_chat': True},
+        'purpose': None,
     }
 
 
@@ -54,12 +60,16 @@ class ExportSettingsStore:
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return settings
         if isinstance(current, dict):
-            if current.get('format') in {'epub', 'pdf', 'markdown'}:
+            if current.get('format') in {'epub', 'pdf', 'markdown', 'docx', 'qwbook'}:
                 settings['format'] = current['format']
             if isinstance(current.get('epub'), dict):
                 settings['epub'].update(current['epub'])
             if isinstance(current.get('pdf'), dict):
                 settings['pdf'].update(current['pdf'])
+            if isinstance(current.get('qwbook'), dict):
+                settings['qwbook'].update(current['qwbook'])
+            if current.get('purpose') in _PURPOSE_IDS:
+                settings['purpose'] = current['purpose']
         return settings
 
     def save(self, book, settings: dict):
@@ -67,11 +77,14 @@ class ExportSettingsStore:
             self.library.verify_book_unchanged(book)
         _guard_existing_json(self.path(book))
         payload = copy.deepcopy(default_export_settings())
-        payload['format'] = settings.get('format', 'epub') if settings.get('format') in {'epub', 'pdf', 'markdown'} else 'epub'
+        payload['format'] = settings.get('format', 'epub') if settings.get('format') in {'epub', 'pdf', 'markdown', 'docx', 'qwbook'} else 'epub'
         if isinstance(settings.get('epub'), dict):
             payload['epub'].update(settings['epub'])
         if isinstance(settings.get('pdf'), dict):
             payload['pdf'].update(settings['pdf'])
+        if isinstance(settings.get('qwbook'), dict):
+            payload['qwbook'].update(settings['qwbook'])
+        payload['purpose'] = settings.get('purpose') if settings.get('purpose') in _PURPOSE_IDS else None
         _safe_atomic_write_text(self.path(book), json.dumps(payload, ensure_ascii=False, indent=2))
         if self.library is not None:
             self.library.refresh_book_revision(book)

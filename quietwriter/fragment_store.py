@@ -15,7 +15,6 @@ from .storage import CorruptSourceError, _guard_existing_utf8, _safe_atomic_writ
 
 FRAGMENT_SCHEMA_VERSION = 1
 _FRAGMENT_ID_RE = re.compile(r'^[A-Za-z0-9-]+$')
-_UNSET_REVISION = object()
 
 
 @dataclass(frozen=True)
@@ -306,14 +305,14 @@ class FragmentStore:
         self,
         fragment_id: str,
         *,
+        expected_revision: FileRevision | None,
         title: str | None = None,
         note: str | None = None,
         tags=None,
-        expected_revision: FileRevision | None | object = _UNSET_REVISION,
     ) -> Fragment:
         current = self.load(fragment_id)
         path = self.path_for(fragment_id)
-        if expected_revision is not _UNSET_REVISION and current.revision != expected_revision:
+        if current.revision != expected_revision:
             raise FragmentExternalModificationError(path, expected_revision, current.revision)
         updated = Fragment(
             id=current.id,
@@ -333,10 +332,9 @@ class FragmentStore:
         _guard_existing_utf8(path)
         # Guard again directly before the write so a sync change between load
         # and commit cannot be silently overwritten.
-        if expected_revision is not _UNSET_REVISION:
-            latest = file_revision(path)
-            if latest != expected_revision:
-                raise FragmentExternalModificationError(path, expected_revision, latest)
+        latest = file_revision(path)
+        if latest != expected_revision:
+            raise FragmentExternalModificationError(path, expected_revision, latest)
         _safe_atomic_write_text(path, self._render(updated))
         return self.load(fragment_id)
 

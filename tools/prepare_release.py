@@ -30,9 +30,13 @@ ALLOWED_FILES = (
     "documents/licenses/LICENSE",
     "documents/licenses/THIRD_PARTY_LICENSES.md",
     "packaging/quietwriter.spec",
+    "packaging/requirements-build.txt",
+    "packaging/requirements-build.lock",
+    "packaging/requirements-runtime.lock",
     "packaging/make_version_info.py",
     "tools/fetch_bundled_fonts.py",
     "tools/fetch_dictionaries.py",
+    "tools/write_build_manifest.py",
 )
 
 # Font binaries are fetched *inside* staging. Keep only the manifest/licenses

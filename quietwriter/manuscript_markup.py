@@ -4,137 +4,173 @@ import re
 from dataclasses import dataclass
 
 
-_INLINE = {
-    'bold': ('**', '**'),
-    'italic': ('*', '*'),
-    'underline': ('<u>', '</u>'),
-    'strike': ('~~', '~~'),
-    'code': ('`', '`'),
-}
+from .manuscript_syntax import (
+    _INLINE, InlineSpan, escape_ranges, is_scene_break_line, parse_inline_spans,
+    unescape_literal_text,
+)
 
 _BLOCK_PREFIX_RE = re.compile(r'^(?:##\s+|>\s+|[-*]\s+|\d+\.\s+)')
 
 
-def is_scene_break_line(line: str) -> bool:
-    """Return True for QuietWriter's protected scene-break sentinel."""
-    return line.strip() == '***'
+def escape_literal_typed_char(ch: str, line_before_cursor: str) -> str:
+    """Return source text for one writer-typed character.
 
-
-@dataclass(frozen=True)
-class InlineSpan:
-    """One paired inline-markup span in source coordinates.
-
-    Marker coordinates deliberately stay separate from content coordinates.  This
-    lets the editor hide the Markdown punctuation while composing multiple
-    simultaneous styles (for example ``***bold italic***``) without the styles
-    overwriting one another.
+    Explicit formatting actions insert unescaped syntax themselves. Direct typing
+    is prose, so characters that could silently become inline markup are escaped
+    in the source while remaining visually literal.
     """
-
-    kind: str
-    open_start: int
-    open_end: int
-    content_start: int
-    content_end: int
-    close_start: int
-    close_end: int
-
-    @property
-    def marker_ranges(self) -> tuple[tuple[int, int], tuple[int, int]]:
-        return ((self.open_start, self.open_end), (self.close_start, self.close_end))
+    if len(ch) != 1:
+        return ch
+    if ch in {'*', '~', '`', '<', '\\'}:
+        return '\\' + ch
+    return ch
 
 
-def parse_inline_spans(text: str) -> list[InlineSpan]:
-    """Parse QuietWriter's deliberately small inline-Markdown subset.
+def escape_literal_space_prefix(line_before_cursor: str) -> tuple[str, int] | None:
+    """Return source replacement when Space would complete a block prefix.
 
-    This is not intended to be a complete CommonMark parser.  It only owns the
-    syntax that QuietWriter itself can create: bold, italic, underline, strike
-    and inline code.  Unpaired markers are left untouched and therefore remain
-    visible to the writer instead of mysteriously disappearing.
+    The tuple is ``(replacement_prefix, chars_to_replace)``. The added
+    backslash is presentation-only and therefore invisible to the writer.
     """
+    prefix = line_before_cursor or ''
+    if prefix == '-':
+        return r'\-', 1
+    if prefix == '>':
+        return r'\>', 1
+    if prefix == '##':
+        return r'\##', 2
+    if re.fullmatch(r'\d+\.', prefix):
+        return prefix[:-1] + r'\.', len(prefix)
+    return None
 
-    spans: list[InlineSpan] = []
-    opened: dict[str, tuple[int, int]] = {}
-    i = 0
-    n = len(text)
 
-    def open_or_close(kind: str, start: int, end: int, *, close_start: int | None = None, close_end: int | None = None):
-        if kind in opened:
-            o_start, o_end = opened.pop(kind)
-            c_start = start if close_start is None else close_start
-            c_end = end if close_end is None else close_end
-            if c_start >= o_end:
-                spans.append(InlineSpan(kind, o_start, o_end, o_end, c_start, c_start, c_end))
-        else:
-            opened[kind] = (start, end)
+def escape_literal_block_structure(line: str) -> str:
+    """Make an already-visible line literal if it currently denotes structure.
 
-    while i < n:
-        # Inside inline code, every other formatting marker is literal.
-        if 'code' in opened:
-            if text.startswith('`', i):
-                open_or_close('code', i, i + 1)
-                i += 1
-            else:
-                i += 1
-            continue
+    This helper changes only the structural delimiter. Existing inline source is
+    left untouched, so an ordinary edit cannot accidentally strip intentional
+    bold/italic elsewhere on the same line.
+    """
+    text = line or ''
+    if text.startswith('## '):
+        return r'\## ' + text[3:]
+    if text.startswith('> '):
+        return r'\> ' + text[2:]
+    if text.startswith('- '):
+        return r'\- ' + text[2:]
+    if text.startswith('* '):
+        return r'\* ' + text[2:]
+    m = re.match(r'^(\d+)\.\s+', text)
+    if m:
+        return m.group(1) + r'\.' + text[len(m.group(1)) + 1:]
+    if text.startswith('!['):
+        return r'\!' + text[1:]
+    stripped = text.strip()
+    if stripped == '***':
+        first = text.find('*')
+        return text[:first] + r'\*' + text[first + 1:]
+    return text
 
-        if text.startswith('</u>', i):
-            if 'underline' in opened:
-                open_or_close('underline', i, i + 4)
-            i += 4
-            continue
-        if text.startswith('<u>', i):
-            if 'underline' not in opened:
-                opened['underline'] = (i, i + 3)
-            i += 3
-            continue
-        if text.startswith('`', i):
-            open_or_close('code', i, i + 1)
-            i += 1
-            continue
-        if text.startswith('~~', i):
-            open_or_close('strike', i, i + 2)
-            i += 2
-            continue
 
-        # Triple stars are QuietWriter's canonical representation of combined
-        # bold+italic.  Treat the opening as ** + * and the closing as * + ** so
-        # removing either style leaves valid Markdown for the other one.
-        if text.startswith('***', i):
-            bold_open = 'bold' in opened
-            italic_open = 'italic' in opened
-            if bold_open and italic_open:
-                # Close italic with the first star and bold with the final two.
-                o_start, o_end = opened.pop('italic')
-                if i >= o_end:
-                    spans.append(InlineSpan('italic', o_start, o_end, o_end, i, i, i + 1))
-                o_start, o_end = opened.pop('bold')
-                if i + 1 >= o_end:
-                    spans.append(InlineSpan('bold', o_start, o_end, o_end, i + 1, i + 1, i + 3))
-            elif not bold_open and not italic_open:
-                opened['bold'] = (i, i + 2)
-                opened['italic'] = (i + 2, i + 3)
-            else:
-                # Exactly one of bold/italic is already open. Treat the first
-                # two stars as a normal bold token and leave the third for the
-                # next parser step rather than hiding malformed source.
-                open_or_close('bold', i, i + 2)
-                i += 2
-                continue
-            i += 3
-            continue
-        if text.startswith('**', i):
-            open_or_close('bold', i, i + 2)
-            i += 2
-            continue
-        if text.startswith('*', i):
-            open_or_close('italic', i, i + 1)
-            i += 1
-            continue
-        i += 1
+def escape_literal_text(text: str, *, at_line_start: bool = True) -> str:
+    """Encode pasted/plain writer text so it cannot accidentally become markup.
 
-    spans.sort(key=lambda s: (s.open_start, -s.close_end, s.kind))
-    return spans
+    This is intentionally used only for *new literal input*. Existing manuscript
+    source is never normalised through this function. Explicit QuietWriter
+    formatting actions continue to write unescaped syntax.
+    """
+    source = text or ''
+    if not source:
+        return ''
+    out: list[str] = []
+    line_source = ''
+    visible_prefix = ''
+    structural_line_start = bool(at_line_start)
 
+    def flush_line():
+        nonlocal line_source
+        out.append(escape_literal_block_structure(line_source) if structural_line_start else line_source)
+        line_source = ''
+
+    for ch in source:
+        if ch == '\n':
+            flush_line()
+            out.append('\n')
+            visible_prefix = ''
+            structural_line_start = True
+            continue
+        if ch == ' ':
+            replacement = escape_literal_space_prefix(visible_prefix) if structural_line_start else None
+            if replacement is not None:
+                replacement_prefix, chars_to_replace = replacement
+                if chars_to_replace <= len(line_source):
+                    line_source = line_source[:-chars_to_replace] + replacement_prefix
+            line_source += ' '
+            visible_prefix += ' '
+            continue
+        line_source += escape_literal_typed_char(ch, visible_prefix)
+        visible_prefix += ch
+    flush_line()
+    return ''.join(out)
+
+
+
+def serialize_inline_text(text: str, styles: frozenset[str] | set[str] | tuple[str, ...] = ()) -> str:
+    """Serialize writer-visible text as safe QuietWriter inline source.
+
+    Literal punctuation is escaped *before* semantic markers are added. This is
+    the write-side counterpart of ``DocumentView``: importers and other source
+    generators should use this helper instead of assembling ``*``/``**`` by hand.
+    Newlines are serialized line by line because QuietWriter inline spans never
+    cross physical paragraph boundaries.
+    """
+    visible = text or ''
+    active = frozenset(styles or ())
+
+    def one_line(line: str) -> str:
+        source = escape_literal_text(line)
+        if not source:
+            return ''
+        if 'code' in active:
+            return f'`{source}`'
+        if 'bold' in active and 'italic' in active:
+            source = f'***{source}***'
+        elif 'bold' in active:
+            source = f'**{source}**'
+        elif 'italic' in active:
+            source = f'*{source}*'
+        if 'underline' in active:
+            source = f'<u>{source}</u>'
+        if 'strike' in active:
+            source = f'~~{source}~~'
+        return source
+
+    # split('\n') deliberately preserves leading/trailing empty physical lines.
+    return '\n'.join(one_line(line) for line in visible.split('\n'))
+
+
+def serialize_block_source(kind: str, inline_source: str, *, number: int = 1) -> str:
+    """Add one explicit structural block marker to already-safe inline source.
+
+    ``inline_source`` is source, not writer-visible text. Literal text should be
+    encoded with :func:`serialize_inline_text` first.
+    """
+    source = inline_source or ''
+    if kind == 'paragraph':
+        return source
+    if kind == 'scene':
+        if source:
+            raise ValueError('Scene break does not accept inline content')
+        return '***'
+    if kind == 'heading':
+        return '## ' + source
+    if kind == 'quote':
+        return '> ' + source
+    if kind == 'bullet':
+        return '- ' + source
+    if kind == 'numbered':
+        return f'{max(1, int(number))}. ' + source
+    raise ValueError(f'Unsupported manuscript block kind: {kind}')
 
 def _merge_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
     cleaned = sorted((a, b) for a, b in intervals if b > a)
@@ -262,6 +298,68 @@ def _line_kind_state(line: str, start: int, end: int, kind: str) -> bool:
     while be > bs and base[be - 1].isspace():
         be -= 1
     return be > bs and _covered(intervals, bs, be)
+
+
+def source_selection_with_enclosing_markup(text: str, start: int, end: int) -> tuple[int, int]:
+    """Expand visible selection edges to include paired inline Markdown markers.
+
+    QuietWriter visually collapses its own inline punctuation. Qt cursor positions
+    can therefore select exactly the visible content of ``**bold**`` while the
+    persistent source range would otherwise omit the boundary markers. Internal
+    markers already fall inside the range; only paired markers touching either
+    selection edge need expansion.
+    """
+    if start < 0 or end <= start or end > len(text):
+        return start, end
+    a, b = start, end
+    changed = True
+    spans = parse_inline_spans(text)
+    while changed:
+        changed = False
+        for span in spans:
+            if a == span.content_start and b >= span.content_end and span.open_start < a:
+                a = span.open_start
+                changed = True
+            if b == span.content_end and a <= span.content_start and span.close_end > b:
+                b = span.close_end
+                changed = True
+    return a, b
+
+
+def source_selection_as_markdown(text: str, start: int, end: int) -> tuple[str, int, int]:
+    """Return a self-contained Markdown fragment for a visible source selection.
+
+    Full inline spans keep their original markers. When a selection starts or
+    ends *inside* a formatted span, matching boundary markers are synthesized
+    around the selected text instead of leaving a dangling marker behind. The
+    returned coordinates describe the source range used for context anchors.
+    """
+    if start < 0 or end <= start or end > len(text):
+        return '', start, end
+
+    source_start, source_end = source_selection_with_enclosing_markup(text, start, end)
+    selected = text[source_start:source_end]
+    spans = parse_inline_spans(text)
+
+    opening = []
+    closing = []
+    for span in spans:
+        # No selected visible content from this span.
+        if end <= span.content_start or start >= span.content_end:
+            continue
+        opener, closer = _INLINE[span.kind]
+        opener_in_selection = source_start <= span.open_start and span.open_end <= source_end
+        closer_in_selection = source_start <= span.close_start and span.close_end <= source_end
+        if not opener_in_selection:
+            opening.append((span.open_start, opener))
+        if not closer_in_selection:
+            closing.append((span.close_start, closer))
+
+    # Preserve original nesting order. For *** this yields ** + * at the start
+    # and * + ** at the end, i.e. valid combined bold/italic Markdown.
+    opening_text = ''.join(marker for _, marker in sorted(opening, key=lambda item: item[0]))
+    closing_text = ''.join(marker for _, marker in sorted(closing, key=lambda item: item[0]))
+    return opening_text + selected + closing_text, source_start, source_end
 
 
 def inline_style_state(text: str, start: int, end: int, kind: str) -> bool:
@@ -410,7 +508,11 @@ def selected_line_range(text: str, start: int, end: int) -> tuple[int, int]:
 
 
 def _strip_block_prefix(line: str) -> str:
-    return _BLOCK_PREFIX_RE.sub('', line, count=1)
+    from .document_view import block_content_text, parse_block_line
+    block = parse_block_line(line)
+    if block.kind in {'heading', 'quote', 'bullet', 'numbered'}:
+        return block_content_text(block)
+    return line
 
 
 def block_style_states(text: str, start: int, end: int) -> dict[str, bool]:
@@ -418,13 +520,8 @@ def block_style_states(text: str, start: int, end: int) -> dict[str, bool]:
     lines = [line for line in text[ls:le].split('\n') if line.strip() and not is_scene_break_line(line)]
     if not lines:
         return {key: False for key in ('paragraph', 'heading', 'quote', 'bullet', 'numbered')}
-    kinds = []
-    for line in lines:
-        if line.startswith('## '): kinds.append('heading')
-        elif line.startswith('> '): kinds.append('quote')
-        elif re.match(r'^[-*]\s+', line): kinds.append('bullet')
-        elif re.match(r'^\d+\.\s+', line): kinds.append('numbered')
-        else: kinds.append('paragraph')
+    from .document_view import classify_block_line
+    kinds = [classify_block_line(line) for line in lines]
     return {key: all(kind == key for kind in kinds) for key in ('paragraph', 'heading', 'quote', 'bullet', 'numbered')}
 
 
@@ -448,6 +545,7 @@ def apply_block_style(text: str, start: int, end: int, style: str) -> tuple[str,
     chunk = text[ls:le]
     lines = chunk.split('\n')
 
+    from .document_view import classify_block_line
     transformable = [line for line in lines if line.strip() and not is_scene_break_line(line)]
 
     def transform(line: str, prefix: str, all_set: bool) -> str:
@@ -459,16 +557,16 @@ def apply_block_style(text: str, start: int, end: int, style: str) -> tuple[str,
     if style == 'paragraph':
         out = [line if is_scene_break_line(line) else (_strip_block_prefix(line) if line.strip() else line) for line in lines]
     elif style == 'heading':
-        all_set = bool(transformable) and all(line.startswith('## ') for line in transformable)
-        out = [transform(line, '## ', all_set) for line in lines]
+        all_set = bool(transformable) and all(classify_block_line(line) == 'heading' for line in transformable)
+        out = [transform(line, serialize_block_source('heading', ''), all_set) for line in lines]
     elif style == 'quote':
-        all_set = bool(transformable) and all(line.startswith('> ') for line in transformable)
-        out = [transform(line, '> ', all_set) for line in lines]
+        all_set = bool(transformable) and all(classify_block_line(line) == 'quote' for line in transformable)
+        out = [transform(line, serialize_block_source('quote', ''), all_set) for line in lines]
     elif style == 'bullet':
-        all_set = bool(transformable) and all(line.startswith('- ') for line in transformable)
-        out = [transform(line, '- ', all_set) for line in lines]
+        all_set = bool(transformable) and all(classify_block_line(line) == 'bullet' and line.startswith('- ') for line in transformable)
+        out = [transform(line, serialize_block_source('bullet', ''), all_set) for line in lines]
     elif style == 'numbered':
-        all_set = bool(transformable) and all(re.match(r'^\d+\.\s+', line) for line in transformable)
+        all_set = bool(transformable) and all(classify_block_line(line) == 'numbered' for line in transformable)
         n = 1
         out = []
         for line in lines:
@@ -479,7 +577,7 @@ def apply_block_style(text: str, start: int, end: int, style: str) -> tuple[str,
             if all_set:
                 out.append(body)
             else:
-                out.append(f'{n}. {body}')
+                out.append(serialize_block_source('numbered', body, number=n))
                 n += 1
     else:
         return text, start, end
@@ -487,6 +585,272 @@ def apply_block_style(text: str, start: int, end: int, style: str) -> tuple[str,
     replacement = '\n'.join(out)
     new_text = text[:ls] + replacement + text[le:]
     return new_text, ls, ls + len(replacement)
+
+
+
+class UnsafeMarkdownInsertionError(ValueError):
+    """Raised when a Darling cannot be inserted without changing visible formatting."""
+
+
+def _source_style_map(text: str):
+    """Return marker flags and active inline styles in linear time.
+
+    The previous implementation scanned every span for every source character,
+    which became quadratic in long formatted chapters.  There are only five
+    QuietWriter inline kinds, so difference arrays keep this O(text + spans).
+    """
+    spans = parse_inline_spans(text)
+    n = len(text)
+    marker = bytearray(n)
+    diffs = {kind: [0] * (n + 1) for kind in _INLINE}
+    for span in spans:
+        for a, b in span.marker_ranges:
+            a = max(0, min(a, n)); b = max(a, min(b, n))
+            marker[a:b] = b'\x01' * (b - a)
+        if span.kind in diffs:
+            a = max(0, min(span.content_start, n)); b = max(a, min(span.content_end, n))
+            diffs[span.kind][a] += 1
+            diffs[span.kind][b] -= 1
+    active = {kind: 0 for kind in _INLINE}
+    styles = [frozenset()] * n
+    for i in range(n):
+        for kind in _INLINE:
+            active[kind] += diffs[kind][i]
+        styles[i] = frozenset(kind for kind, count in active.items() if count > 0)
+    return marker, styles
+
+
+def _visible_projection(text: str, position: int | None = None):
+    marker, styles = _source_style_map(text)
+    limit = None if position is None else min(max(0, position), len(text))
+    offset = 0
+    visible = []
+    for i, ch in enumerate(text):
+        if marker[i]:
+            continue
+        if limit is not None and i < limit:
+            offset += 1
+        visible.append((ch, styles[i]))
+    return visible, offset
+
+
+def _visible_text_with_styles(text: str):
+    return _visible_projection(text)[0]
+
+
+def _visible_offset_for_source_position(text: str, position: int) -> int:
+    return _visible_projection(text, position)[1]
+
+
+def _minimal_replacement(original: str, changed: str) -> tuple[int, int, str]:
+    """Return the smallest single source splice turning *original* into *changed*."""
+    prefix = 0
+    limit = min(len(original), len(changed))
+    while prefix < limit and original[prefix] == changed[prefix]:
+        prefix += 1
+    suffix = 0
+    original_left = len(original) - prefix
+    changed_left = len(changed) - prefix
+    while suffix < original_left and suffix < changed_left and original[-1 - suffix] == changed[-1 - suffix]:
+        suffix += 1
+    original_end = len(original) - suffix
+    changed_end = len(changed) - suffix
+    return prefix, original_end, changed[prefix:changed_end]
+
+
+def prepare_markdown_removal(text: str, start: int, end: int) -> tuple[int, int, str]:
+    """Return a safe single source splice for *Cut to Darlings*.
+
+    The first candidates remove a contiguous source range.  A third candidate
+    removes only the selected *visible* characters while retaining Markdown
+    marker characters.  That makes common half-bold/half-italic selections
+    practical without weakening the fail-closed validation: every candidate is
+    reparsed and must preserve the exact visible text and per-character styles
+    of everything that remains.
+    """
+    if start < 0 or end <= start or end > len(text):
+        raise UnsafeMarkdownInsertionError('Ongeldige selectie.')
+    base_visible = _visible_text_with_styles(text)
+    start_offset = _visible_offset_for_source_position(text, start)
+    end_offset = _visible_offset_for_source_position(text, end)
+    expected = base_visible[:start_offset] + base_visible[end_offset:]
+
+    _fragment, source_start, source_end = source_selection_as_markdown(text, start, end)
+    candidates: list[tuple[int, int, str]] = [(source_start, source_end, '')]
+    if (source_start, source_end) != (start, end):
+        candidates.append((start, end, ''))
+
+    # Qt selections can begin/end inside an inline span.  For that case keep
+    # marker characters that fall inside the selected source range and remove
+    # only visible characters.  This can leave a small replacement rather than
+    # a pure deletion, hence the splice carries replacement text explicitly.
+    marker, _styles = _source_style_map(text)
+    emptied_marker_indices = set()
+    for span in parse_inline_spans(text):
+        visible_content = [
+            i for i in range(span.content_start, span.content_end)
+            if not marker[i]
+        ]
+        if visible_content and all(start <= i < end for i in visible_content):
+            for a, b in span.marker_ranges:
+                emptied_marker_indices.update(range(a, b))
+
+    visible_only = ''.join(
+        ch for i, ch in enumerate(text)
+        if i not in emptied_marker_indices
+        and not (start <= i < end and not marker[i])
+    )
+    if visible_only != text:
+        candidates.append(_minimal_replacement(text, visible_only))
+
+    seen = set()
+    for a, b, replacement in candidates:
+        key = (a, b, replacement)
+        if key in seen:
+            continue
+        seen.add(key)
+        if not (0 <= a <= b <= len(text)) or (a == b and not replacement):
+            continue
+        result = text[:a] + replacement + text[b:]
+        empty_tokens = ('****', '~~~~', '``', '<u></u>')
+        if any(result.count(token) > text.count(token) for token in empty_tokens):
+            continue
+        if _visible_text_with_styles(result) == expected:
+            return a, b, replacement
+    raise UnsafeMarkdownInsertionError('Knippen zou bestaande Markdown-opmaak wijzigen.')
+
+
+def _validated_insertion(text: str, original_position: int, position: int, insertion: str, fragment: str):
+    base_visible, offset = _visible_projection(text, original_position)
+    fragment_visible = _visible_text_with_styles(fragment)
+    expected = base_visible[:offset] + fragment_visible + base_visible[offset:]
+    result = text[:position] + insertion + text[position:]
+    if _visible_text_with_styles(result) != expected:
+        raise UnsafeMarkdownInsertionError('Invoegen zou bestaande Markdown-opmaak wijzigen.')
+    return position, insertion
+
+
+def prepare_markdown_insertion(text: str, position: int, fragment: str) -> tuple[int, str]:
+    """Return a source-safe insertion for a Darling or refuse the operation.
+
+    QTextCursor can land inside hidden Markdown marker runs.  We first move such
+    positions to a visually equivalent boundary.  Inside formatted content we
+    temporarily close the active styles, insert the fragment with its own
+    formatting, and reopen the surrounding styles.  Matching markers at the two
+    seams are collapsed where possible.  The complete result is then parsed and
+    compared with the expected visible text *and style per character*.  If that
+    proof fails, insertion is refused rather than risking manuscript damage.
+    """
+    original_position = max(0, min(position, len(text)))
+    position = original_position
+    spans = parse_inline_spans(text)
+
+    changed = True
+    while changed:
+        changed = False
+        for span in spans:
+            if span.open_start < position < span.open_end:
+                position = span.open_start
+                changed = True
+                break
+            if span.close_start < position < span.close_end:
+                position = span.close_end
+                changed = True
+                break
+            if position == span.content_start:
+                position = span.open_start
+                changed = True
+                break
+            if position == span.content_end:
+                position = span.close_end
+                changed = True
+                break
+
+    # At an exact boundary, a fragment wholly wrapped in the same style can
+    # safely inherit that adjacent span. This avoids creating ambiguous touching
+    # marker runs such as ``**a****b**`` while preserving the exact visible style.
+    fragment_spans = parse_inline_spans(fragment)
+    for span in spans:
+        if position not in (span.open_start, span.close_end):
+            continue
+        full = next((
+            f for f in fragment_spans
+            if f.kind == span.kind and f.open_start == 0 and f.close_end == len(fragment)
+        ), None)
+        if full is None:
+            continue
+        remove = set()
+        for a, b in full.marker_ranges:
+            remove.update(range(a, b))
+        stripped = ''.join(ch for i, ch in enumerate(fragment) if i not in remove)
+        merged_position = span.content_start if position == span.open_start else span.content_end
+        try:
+            return _validated_insertion(text, original_position, merged_position, stripped, fragment)
+        except UnsafeMarkdownInsertionError:
+            pass
+
+    active = [span for span in spans if span.content_start < position < span.content_end]
+    if not active:
+        return _validated_insertion(text, original_position, position, fragment, fragment)
+
+    active.sort(key=lambda s: (s.open_start, -s.close_end, s.kind))
+    fragment_spans = parse_inline_spans(fragment)
+    inherited_kinds = {
+        span.kind for span in fragment_spans
+        if span.open_start == 0 and span.close_end == len(fragment)
+        and any(active_span.kind == span.kind for active_span in active)
+    }
+    body = fragment
+    if inherited_kinds:
+        remove = set()
+        for span in fragment_spans:
+            if span.kind in inherited_kinds and span.open_start == 0 and span.close_end == len(fragment):
+                for a, b in span.marker_ranges:
+                    remove.update(range(a, b))
+        body = ''.join(ch for i, ch in enumerate(fragment) if i not in remove)
+
+    split_spans = [span for span in active if span.kind not in inherited_kinds]
+    if not split_spans:
+        return _validated_insertion(text, original_position, position, body, fragment)
+
+    closer_tokens = [(span.kind, text[span.close_start:span.close_end]) for span in reversed(split_spans)]
+    opener_tokens = [(span.kind, text[span.open_start:span.open_end]) for span in split_spans]
+
+    # Left seam: keep an already-active style open when the fragment begins
+    # with the same style.  Example: **v|et** + **x** -> **vx**...
+    while closer_tokens:
+        kind, _close = closer_tokens[-1]
+        open_marker = _INLINE[kind][0]
+        parsed_body = parse_inline_spans(body)
+        matching = any(
+            span.kind == kind and span.open_start == 0 and span.open_end == len(open_marker)
+            for span in parsed_body
+        )
+        if not matching:
+            break
+        closer_tokens.pop()
+        body = body[len(open_marker):]
+
+    # Right seam: likewise let a matching style at the end of the fragment
+    # flow directly into the reopened source style.
+    while opener_tokens:
+        kind, _open = opener_tokens[0]
+        close_marker = _INLINE[kind][1]
+        parsed_body = parse_inline_spans(body)
+        matching = any(
+            span.kind == kind and span.close_end == len(body)
+            and span.close_start == len(body) - len(close_marker)
+            for span in parsed_body
+        )
+        if not matching:
+            break
+        opener_tokens.pop(0)
+        body = body[:-len(close_marker)] if close_marker else body
+
+    closers = ''.join(token for _kind, token in closer_tokens)
+    openers = ''.join(token for _kind, token in opener_tokens)
+    insertion = closers + body + openers
+    return _validated_insertion(text, original_position, position, insertion, fragment)
 
 
 def smart_double_quote(text: str, position: int) -> str:

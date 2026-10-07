@@ -8,6 +8,7 @@ from ..publication_models import BACK_MATTER, FRONT_MATTER
 from ..publication_storage import PublicationStore
 from ..storage import slugify
 from ..media.markup import find_image_references
+from ..placeholders import count_open_points, strip_open_point_markers
 from ..media.store import MediaStore, MediaError
 from .models import ExportAsset, ExportChapter, ExportDocument, ExportItem, ExportSection
 
@@ -52,7 +53,17 @@ def _inline_assets_for_markdown(media: MediaStore, book, source_file: str, markd
         )
 
 
-def build_export_document(library, book) -> ExportDocument:
+
+def _bcp47_language(value: str | None) -> str:
+    raw = str(value or '').strip().replace('_', '-')
+    if not raw:
+        return 'nl'
+    parts = raw.split('-')
+    if len(parts) == 1:
+        return parts[0].lower()
+    return '-'.join([parts[0].lower()] + [p.upper() if len(p) in (2, 3) else p for p in parts[1:]])
+
+def build_export_document(library, book, language_override: str | None = None) -> ExportDocument:
     """Capture one coherent, immutable snapshot of the current saved book."""
 
     library.verify_book_unchanged(book)
@@ -64,15 +75,19 @@ def build_export_document(library, book) -> ExportDocument:
     missing_assets: list[str] = []
 
     sections: list[ExportSection] = []
+    open_point_count = 0
     for section in book.sections:
         chapter_rows: list[ExportChapter] = []
         for chapter in section.chapters:
             markdown = library.read_chapter(book, chapter)
+            open_point_count += count_open_points(markdown)
             _inline_assets_for_markdown(media, book, chapter.file, markdown, inline_assets, missing_assets)
+            markdown = strip_open_point_markers(markdown)
             chapter_rows.append(ExportChapter(id=chapter.id, title=chapter.title, markdown=markdown))
         sections.append(ExportSection(id=section.id, title=section.title, chapters=tuple(chapter_rows)))
 
     def publication_items(definitions, zone: str) -> tuple[ExportItem, ...]:
+        nonlocal open_point_count
         rows: list[ExportItem] = []
         enabled = set(publication.enabled)
         for key, _label, kind in definitions:
@@ -90,7 +105,11 @@ def build_export_document(library, book) -> ExportDocument:
                 data = copy.deepcopy(publication.contents)
             elif kind == 'text':
                 text = publication_store.load_text(book, key)
+                open_points_here = count_open_points(text)
+                if open_points_here:
+                    open_point_count += open_points_here
                 _inline_assets_for_markdown(media, book, f'publication/texts/{key}.md', text, inline_assets, missing_assets)
+                text = strip_open_point_markers(text)
             rows.append(ExportItem(key=key, kind=kind, data=data, text=text))
         return tuple(rows)
 
@@ -98,7 +117,7 @@ def build_export_document(library, book) -> ExportDocument:
     assets = tuple(([cover] if cover else []) + list(inline_assets.values()))
     title_page_author = str((publication.title_page or {}).get('author') or '').strip()
     author = str(metadata.get('author') or title_page_author).strip()
-    language = str(metadata.get('language') or 'nl').strip() or 'nl'
+    language = _bcp47_language(metadata.get('language') or language_override or 'nl')
     copyright_data = publication.copyright or {}
     epub_isbn = str(copyright_data.get('isbn_epub') or '').strip()
 
@@ -120,4 +139,5 @@ def build_export_document(library, book) -> ExportDocument:
         cover_asset_id=cover.id if cover else None,
         epub_isbn=epub_isbn,
         missing_assets=tuple(missing_assets),
+        open_point_count=open_point_count,
     )

@@ -4,13 +4,14 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QAbstractButton, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QHBoxLayout, QLabel,
+    QApplication, QAbstractButton, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QRadioButton, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from ..dictionary_catalog import locale_label
 from ..i18n import set_locale, tr
-from ..themes import THEMES
+from ..icon_theme import set_icon_theme
+from ..themes import THEMES, stylesheet
 from ..workspace_path import normalize_workspace_path
 
 
@@ -43,12 +44,16 @@ class FirstRunWizard(QDialog):
         self.language = QComboBox()
         self.language.addItem('Nederlands', 'nl')
         self.language.addItem('English', 'en')
+        self.language.addItem('Deutsch', 'de')
+        self.language.addItem('Français', 'fr')
+        self.language.addItem('Español', 'es')
         language = str(settings.value('language', 'nl') or 'nl')
         self.language.setCurrentIndex(max(0, self.language.findData(language)))
         self.language.currentIndexChanged.connect(self._language_changed)
         self.theme = QComboBox()
         self.theme.addItems(THEMES.keys())
         self.theme.setCurrentText(str(settings.value('theme', 'Helder') or 'Helder'))
+        self.theme.currentTextChanged.connect(self._theme_changed)
         self.pages.addWidget(self._page_language())
 
         self.workspace = QLineEdit(str(settings.value('workspace', str(self.default_workspace)) or self.default_workspace))
@@ -74,6 +79,23 @@ class FirstRunWizard(QDialog):
             self.ai_none.setChecked(True)
         self.pages.addWidget(self._page_ai())
 
+        self.auto_update_check = self._button(
+            QCheckBox(), 'first_run.update_auto', 'Automatisch controleren op nieuwe versies'
+        )
+        self.auto_update_check.setChecked(settings.value('auto_update_check', False, bool))
+        self.pages.addWidget(self._page_updates())
+
+        self.tour_enabled = self._button(
+            QCheckBox(), 'first_run.tour_enable', 'Laat mij kort zien waar alles zit'
+        )
+        self.tour_enabled.setChecked(True)
+        self.tour_choice_index = self.pages.count()
+        self.pages.addWidget(self._page_tour_choice())
+        self.tour_start_index = self.pages.count()
+        self.pages.addWidget(self._page_tour_books())
+        self.pages.addWidget(self._page_tour_writing())
+        self.pages.addWidget(self._page_tour_finish())
+
         nav = QHBoxLayout()
         self.back_btn = self._button(QPushButton(), 'first_run.back', 'Vorige')
         self.skip_btn = self._button(QPushButton(), 'first_run.skip', 'Overslaan')
@@ -89,6 +111,7 @@ class FirstRunWizard(QDialog):
         root.addLayout(nav)
 
         self.pages.currentChanged.connect(self._update_nav)
+        self.tour_enabled.toggled.connect(self._update_nav)
         self._update_nav()
 
     @staticmethod
@@ -108,6 +131,13 @@ class FirstRunWizard(QDialog):
     def _language_changed(self, *_args) -> None:
         set_locale(str(self.language.currentData() or 'nl'))
         self._retranslate_ui()
+
+    def _theme_changed(self, theme: str) -> None:
+        theme = str(theme or 'Helder')
+        set_icon_theme(theme)
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(stylesheet(theme))
 
     def _retranslate_ui(self) -> None:
         self.setWindowTitle(tr('first_run.title', 'Welkom bij QuietWriter'))
@@ -158,6 +188,22 @@ class FirstRunWizard(QDialog):
         )
         lay.addWidget(self._row('settings.general.language', 'Programmataal', self.language))
         lay.addWidget(self._row('settings.appearance.theme', 'Kleurenschema', self.theme))
+        preview = QFrame()
+        preview.setObjectName('fontPreviewCard')
+        pv = QVBoxLayout(preview)
+        pv.setContentsMargins(18, 14, 18, 14)
+        pv.setSpacing(5)
+        sample = self._label('first_run.theme_preview_title', 'Een rustige plek om te schrijven')
+        sample.setObjectName('settingsPageTitle')
+        sample_text = self._label(
+            'first_run.theme_preview_text',
+            'Dit voorbeeld verandert meteen mee. Kies vooral wat prettig leest; je kunt het later altijd aanpassen.'
+        )
+        sample_text.setObjectName('muted')
+        sample_text.setWordWrap(True)
+        pv.addWidget(sample)
+        pv.addWidget(sample_text)
+        lay.addWidget(preview)
         lay.addStretch(1)
         return page
 
@@ -196,6 +242,75 @@ class FirstRunWizard(QDialog):
         lay.addWidget(self.ai_none)
         lay.addWidget(self.ai_ollama)
         lay.addWidget(self.ai_openrouter)
+        lay.addStretch(1)
+        return page
+
+
+    def _page_updates(self) -> QWidget:
+        page, lay = self._shell(
+            'first_run.update_title', 'Updates',
+            'first_run.update_text',
+            'QuietWriter kan GitHub vragen of er een nieuwere stabiele versie is. Daarbij worden geen boeken, manuscripten of andere inhoud verstuurd. Handmatig controleren kan altijd via Instellingen.',
+        )
+        lay.addWidget(self.auto_update_check)
+        privacy = self._label(
+            'first_run.update_privacy',
+            'Automatisch controleren betekent alleen een korte versiecontrole. QuietWriter downloadt of installeert niets zonder jouw actie.',
+        )
+        privacy.setObjectName('muted')
+        privacy.setWordWrap(True)
+        lay.addWidget(privacy)
+        lay.addStretch(1)
+        return page
+
+    def _page_tour_choice(self) -> QWidget:
+        page, lay = self._shell(
+            'first_run.tour_title', 'Korte rondleiding',
+            'first_run.tour_text',
+            'Nieuwe schrijvers hoeven QuietWriter niet zelf uit te pluizen. De volgende schermen leggen kort uit waar je boeken, schrijfwerk, planning, Bewaarplaats, Meelezer, geschiedenis en export vindt.',
+        )
+        lay.addWidget(self.tour_enabled)
+        note = self._label(
+            'first_run.tour_optional',
+            'De rondleiding is alleen uitleg. Je kunt hem overslaan; alle functies blijven gewoon beschikbaar.',
+        )
+        note.setObjectName('muted')
+        note.setWordWrap(True)
+        lay.addWidget(note)
+        lay.addStretch(1)
+        return page
+
+    def _page_tour_books(self) -> QWidget:
+        page, lay = self._shell(
+            'first_run.tour_books_title', 'Boekenplank en schrijven',
+            'first_run.tour_books_text',
+            'Je boeken staan op de Boekenplank. Open een boek om hoofdstukken te schrijven en ordenen. QuietWriter slaat tijdens het schrijven automatisch op; Versiegeschiedenis helpt je eerdere versies terug te vinden.',
+        )
+        lay.addStretch(1)
+        return page
+
+    def _page_tour_writing(self) -> QWidget:
+        page, lay = self._shell(
+            'first_run.tour_planning_title', 'Planning en Bewaarplaats',
+            'first_run.tour_planning_text',
+            "Planning houdt scènes, personages en notities bij. In de Bewaarplaats geldt: Don't kill your darlings. Mooie stukken die niet meer passen kun je bewaren, later terugvinden en opnieuw gebruiken.",
+        )
+        lay.addStretch(1)
+        return page
+
+    def _page_tour_finish(self) -> QWidget:
+        page, lay = self._shell(
+            'first_run.tour_finish_title', 'Meelezer, export en herstel',
+            'first_run.tour_finish_text',
+            'De optionele Meelezer geeft feedback op jouw tekst, maar schrijft hem niet voor je. Via Export maak je onder meer EPUB, PDF en Markdown. Integriteit & herstel en de Prullenbak helpen wanneer je iets wilt controleren of terughalen.',
+        )
+        tip = self._label(
+            'first_run.tour_finish_tip',
+            'Je hoeft dit niet allemaal te onthouden. QuietWriter houdt de interface rustig en je kunt instellingen later altijd aanpassen.',
+        )
+        tip.setObjectName('muted')
+        tip.setWordWrap(True)
+        lay.addWidget(tip)
         lay.addStretch(1)
         return page
 
@@ -242,28 +357,36 @@ class FirstRunWizard(QDialog):
     def _update_nav(self, *_args) -> None:
         index = self.pages.currentIndex()
         total = self.pages.count()
+        if not self.tour_enabled.isChecked() and index <= self.tour_choice_index:
+            total = self.tour_choice_index + 1
         self.progress.setText(tr('first_run.progress', 'Stap {step} van {total}', step=index + 1, total=total))
         self.back_btn.setEnabled(index > 0)
-        self.next_btn.setText(tr('first_run.finish', 'Voltooien') if index == total - 1 else tr('first_run.next', 'Volgende'))
+        finish_here = index == total - 1 or (index == self.tour_choice_index and not self.tour_enabled.isChecked())
+        self.next_btn.setText(tr('first_run.finish', 'Voltooien') if finish_here else tr('first_run.next', 'Volgende'))
 
     def _back(self) -> None:
         if self.pages.currentIndex() > 0:
             self.pages.setCurrentIndex(self.pages.currentIndex() - 1)
 
     def _next(self) -> None:
-        if self.pages.currentIndex() < self.pages.count() - 1:
-            self.pages.setCurrentIndex(self.pages.currentIndex() + 1)
+        index = self.pages.currentIndex()
+        if index == self.tour_choice_index and not self.tour_enabled.isChecked():
+            self._commit(tour_seen=False)
+            self.accept()
             return
-        self._commit()
+        if index < self.pages.count() - 1:
+            self.pages.setCurrentIndex(index + 1)
+            return
+        self._commit(tour_seen=True)
         self.accept()
 
     def _skip(self) -> None:
         # Keep the current/default selections. This makes --first-run safe for
         # deliberate testing on an existing profile: Skip never resets it.
-        self._commit()
+        self._commit(tour_seen=False)
         self.accept()
 
-    def _commit(self) -> None:
+    def _commit(self, *, tour_seen: bool | None = None) -> None:
         workspace = str(normalize_workspace_path(self.workspace.text(), self.default_workspace))
         self.workspace.setText(workspace)
         self.settings.setValue('language', str(self.language.currentData() or 'nl'))
@@ -271,6 +394,7 @@ class FirstRunWizard(QDialog):
         self.settings.setValue('workspace', workspace)
         self.settings.setValue('spell_enabled', bool(self.spell_enabled.isChecked()))
         self.settings.setValue('spell_language', str(self.spell_language.currentData() or 'nl_NL'))
+        self.settings.setValue('auto_update_check', bool(self.auto_update_check.isChecked()))
         if self.ai_ollama.isChecked():
             self.settings.setValue('ai_enabled', True)
             self.settings.setValue('ai_provider', 'ollama')
@@ -280,4 +404,8 @@ class FirstRunWizard(QDialog):
         else:
             self.settings.setValue('ai_enabled', False)
         self.settings.setValue('first_run_done', True)
+        self.settings.remove('first_run_requested')
+        if tour_seen is None:
+            tour_seen = bool(self.tour_enabled.isChecked() and self.pages.currentIndex() >= self.tour_start_index)
+        self.settings.setValue('first_run_tour_seen', bool(tour_seen))
         self.settings.sync()

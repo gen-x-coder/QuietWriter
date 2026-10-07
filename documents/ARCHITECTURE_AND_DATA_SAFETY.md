@@ -62,6 +62,26 @@ Qt-presentatie is niet de persistente bron. Highlighting, spelling, thema, font,
 
 Undo/Redo mag niet worden vervuild door verborgen automatische formatting.
 
+## Intern manuscript-/boekformaat
+
+De huidige canonieke manuscriptbron is Markdown per hoofdstuk. Dat is de **huidige werkelijkheid**, niet automatisch een permanent architectuurbesluit.
+
+Vanaf 1.2.13 staat expliciet een nieuw architectuuronderzoek op de roadmap omdat QuietWriter meer semantische functies en meer gebruikers krijgt.
+
+Tot dat onderzoek is afgerond:
+
+- Markdown blijft canoniek;
+- bestaande boeken worden niet stil geconverteerd;
+- nieuwe features mogen niet ongemerkt een tweede concurrerende manuscriptbron introduceren;
+- sidecar-data moet een heldere ownership- en recoveryregel hebben;
+- iedere mogelijke formaatwijziging vereist backward/forward compatibility, migratie, History, conflict- en recoveryontwerp.
+
+Het onderzoek moet open tekstformaten, gestructureerde modellen en hybride varianten vergelijken op dataveiligheid, openheid, source fidelity, sync/conflicten, semantiek, export, performance en herstelbaarheid.
+
+Een technisch mooier model is onvoldoende reden om bestaande gebruikersdata te migreren. De aanbevolen oplossing moet aantoonbaar beter zijn voor zowel het product als de veiligheid van echte boeken.
+
+Zie `ROADMAP_AND_IDEAS.md`.
+
 ## Media
 Afbeeldingen kunnen als beschermd visueel blok worden weergegeven, maar de leesbare Markdownbron blijft canoniek. Search/replace mag image-path/UUID-syntax niet als gewone prozatekst muteren. Cleanup is conservatief: onzekerheid, onleesbare bron of History/trash-referenties betekenen behouden/blokkeren.
 
@@ -106,8 +126,7 @@ Migraties zijn expliciet, maken een checkpoint en worden gevalideerd vóór comm
 - canonical of afgeleid?
 - actieve regressietest aanwezig?
 
-
-## 32. Write-auditmethode
+## Write-auditmethode
 
 Wanneer persistente schrijfroutes opnieuw worden geaudit, controleer niet alleen de centrale atomic helpers. Zoek minimaal naar:
 
@@ -122,6 +141,9 @@ Classificeer iedere route als:
 - herstel/history;
 - afgeleide cache/log;
 - bewuste last-writer-wins uitzondering.
+### Transactionele externe import
 
-De audit uit reviewronde 59 vond via deze bredere methode ook het persoonlijke woordenboek. Dat is daarom vóór RC4 aangepast naar opnieuw inlezen + merge + atomische write.
+DOCX-import publiceert nooit incrementeel naar een zichtbare boekmap. De volledige import wordt eerst opgebouwd in een verborgen stagingmap onder `books/`. Pas nadat `book.json` kan worden geladen en alle gerefereerde hoofdstukbestanden bestaan, wordt de stagingmap binnen hetzelfde bestandssysteem naar de definitieve boekmap hernoemd.
+
+Een fout vóór die rename mag alleen stagingdata achterlaten en geen zichtbaar half boek. Normale afgevangen fouten ruimen staging direct op. Een procescrash kan hoogstens een verborgen `.import-*`-map achterlaten; deze map wordt niet door `list_books()` als boek aangeboden en bevat dus geen half gepubliceerd boek.
 

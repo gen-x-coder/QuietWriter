@@ -57,6 +57,7 @@ class ExportDocument:
     cover_asset_id: str | None = None
     epub_isbn: str = ''
     missing_assets: tuple[str, ...] = ()
+    open_point_count: int = 0
 
     @property
     def chapter_count(self) -> int:

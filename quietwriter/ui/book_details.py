@@ -49,7 +49,7 @@ class BookDetailsPage(QWidget):
         self.meta = QTextEdit(md.get('meta','')); self.meta.setMaximumHeight(82)
         self.image_alt = QTextEdit(md.get('image_alt','')); self.image_alt.setMaximumHeight(82)
         self.author = QLineEdit(md.get('author',''))
-        self.language = QComboBox(); self.language.addItem(tr('book_details.language.nl', 'Nederlands'), 'nl'); self.language.addItem(tr('book_details.language.en', 'Engels'), 'en')
+        self.language = QComboBox(); self.language.addItem(tr('book_details.language.nl', 'Nederlands'), 'nl'); self.language.addItem(tr('book_details.language.en', 'Engels'), 'en'); self.language.addItem(tr('book_details.language.de', 'Duits'), 'de'); self.language.addItem(tr('book_details.language.fr', 'Frans'), 'fr'); self.language.addItem(tr('book_details.language.es', 'Spaans'), 'es')
         lang_index = self.language.findData(str(md.get('language', 'nl') or 'nl')); self.language.setCurrentIndex(max(0, lang_index))
         self.tags = QLineEdit(md.get('tags',''))
         self.published = QComboBox(); self.published.addItem(tr('common.no', 'Nee'), 'No'); self.published.addItem(tr('common.yes', 'Ja'), 'Yes')

@@ -3,4 +3,3 @@ pytest
 pyflakes
 PyYAML
 pyinstaller
-shapely

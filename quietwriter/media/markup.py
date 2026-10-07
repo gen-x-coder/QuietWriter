@@ -142,14 +142,8 @@ def insert_image_block(text: str, position: int, block: str) -> tuple[str, int]:
 
 
 def _block_image_line_ranges(text: str) -> list[tuple[int, int]]:
-    ranges: list[tuple[int, int]] = []
-    offset = 0
-    for raw in (text or '').splitlines(keepends=True):
-        line = raw[:-1] if raw.endswith('\n') else raw
-        if image_reference_for_line(line):
-            ranges.append((offset, offset + len(line)))
-        offset += len(raw)
-    return ranges
+    from ..document_view import parse_document
+    return [(block.start, block.end) for block in parse_document(text or '').blocks if block.kind == 'image']
 
 
 def text_without_image_blocks(text: str) -> str:
@@ -161,9 +155,9 @@ def text_without_image_blocks(text: str) -> str:
 
 
 def count_words(text: str) -> int:
-    # Preserve QuietWriter's historical whitespace word-count semantics while
-    # excluding media syntax, alt text and captions from manuscript statistics.
-    return len(text_without_image_blocks(text).split())
+    """Compatibility wrapper around the central writer-visible word count."""
+    from ..document_view import count_visible_words
+    return count_visible_words(text or '')
 
 
 def mask_image_paths(text: str) -> str:
@@ -210,24 +204,77 @@ def _protected_image_ranges(text: str) -> list[tuple[int, int]]:
 
 
 def is_searchable_range(text: str, start: int, end: int) -> bool:
-    """Whether ``[start:end]`` avoids protected image syntax entirely."""
+    """Whether ``[start:end]`` avoids protected image and open-point syntax."""
     if start < 0 or end < start:
         return False
-    for protected_start, protected_end in _protected_image_ranges(text or ''):
+    from ..placeholders import marker_ranges
+    protected = _protected_image_ranges(text or '') + marker_ranges(text or '')
+    for protected_start, protected_end in protected:
         if start < protected_end and end > protected_start:
             return False
     return True
 
 
-def searchable_matches(text: str, pattern: re.Pattern) -> list[re.Match]:
-    """Return regex matches that cannot cross into managed image syntax."""
-    source = text or ''
-    searchable = mask_image_paths(source)
-    return [
-        match for match in pattern.finditer(searchable)
-        if is_searchable_range(source, match.start(), match.end())
-    ]
+@dataclass(frozen=True)
+class SearchableMatch:
+    source_start: int
+    source_end: int
+    visible_start: int
+    visible_end: int
+    visible_text: str
 
+    def start(self) -> int:
+        return self.source_start
+
+    def end(self) -> int:
+        return self.source_end
+
+
+def searchable_matches(text: str, pattern: re.Pattern) -> list[SearchableMatch]:
+    """Match writer-visible text and map every result back to source offsets."""
+    source = text or ''
+    from ..document_view import visible_projection
+    projection = visible_projection(source)
+    results: list[SearchableMatch] = []
+    for match in pattern.finditer(projection.text):
+        if match.end() <= match.start():
+            continue
+        source_start, source_end = projection.source_range(match.start(), match.end())
+        from ..manuscript_markup import escape_ranges
+        if any(a == source_start - 1 and b == source_start for a, b in escape_ranges(source)):
+            source_start -= 1
+        if not is_searchable_range(source, source_start, source_end):
+            continue
+        results.append(SearchableMatch(
+            source_start, source_end, match.start(), match.end(), match.group(0)
+        ))
+    return results
+
+
+
+def replacement_crosses_inline_boundary(source: str, start: int, end: int) -> bool:
+    """Return True when replacing this source range would split formatting.
+
+    Search is allowed across hidden Markdown markers, but replacement must not
+    leave only one side of a paired inline span behind. A match wholly inside
+    formatted content or wholly covering the complete span is safe.
+    """
+    from ..document_view import parse_document
+    for block in parse_document(source or '').blocks:
+        if end <= block.start or start >= block.end:
+            continue
+        for span in block.inline_spans:
+            open_start = block.start + span.open_start
+            content_start = block.start + span.content_start
+            content_end = block.start + span.content_end
+            close_end = block.start + span.close_end
+            if end <= open_start or start >= close_end:
+                continue
+            wholly_inside = start >= content_start and end <= content_end
+            wholly_covers = start <= open_start and end >= close_end
+            if not (wholly_inside or wholly_covers):
+                return True
+    return False
 
 def replace_searchable_text(text: str, pattern: re.Pattern, replacement: str) -> str:
     """Replace search matches without ever mutating protected image syntax/paths.
@@ -244,31 +291,27 @@ def replace_searchable_text(text: str, pattern: re.Pattern, replacement: str) ->
         return source
     parts: list[str] = []
     cursor = 0
+    from ..manuscript_markup import escape_literal_text
     for match in matches:
+        if replacement_crosses_inline_boundary(source, match.start(), match.end()):
+            continue
         parts.append(source[cursor:match.start()])
-        parts.append(replacement)
+        at_line_start = match.start() == 0 or source[match.start() - 1] == '\n'
+        parts.append(escape_literal_text(replacement, at_line_start=at_line_start))
         cursor = match.end()
     parts.append(source[cursor:])
     return ''.join(parts)
 
 
 def text_for_search(text: str) -> str:
-    return mask_image_paths(text)
+    from ..document_view import visible_text
+    return visible_text(text)
 
 
 def text_for_ai(text: str) -> str:
-    """Replace media source syntax with compact semantic context for AI."""
-    source = text or ''
-
-    def repl(match: re.Match) -> str:
-        alt = _unescape(match.group('alt') or '').strip()
-        caption = _unescape(match.group('caption') or '').strip()
-        label = alt or caption or 'afbeelding'
-        if alt and caption and caption.casefold() != alt.casefold():
-            label = f'{alt} — {caption}'
-        return f'[Afbeelding: {label}]'
-
-    return _IMAGE_RE.sub(repl, source)
+    """Return semantic manuscript context using the central DocumentView."""
+    from ..document_view import text_for_ai_context
+    return text_for_ai_context(text)
 
 
 def relative_asset_reference(chapter_file: str, asset_file: str) -> str:

@@ -18,6 +18,9 @@ class FakeSettings:
     def setValue(self, key, value):
         self.values[key] = value
 
+    def remove(self, key):
+        self.values.pop(key, None)
+
     def sync(self):
         pass
 
@@ -47,10 +50,11 @@ def test_first_run_language_switch_retranslates_open_wizard(tmp_path: Path):
     assert wizard.skip_btn.text() == 'Skip'
 
     wizard.pages.setCurrentIndex(1)
-    assert wizard.progress.text() == 'Step 2 of 4'
+    assert wizard.progress.text() == 'Step 2 of 9'
 
     wizard._commit()
     assert settings.values['language'] == 'en'
+    assert settings.values['auto_update_check'] is False
     wizard.close()
     set_locale('nl')
 

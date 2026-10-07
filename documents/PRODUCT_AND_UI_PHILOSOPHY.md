@@ -3,6 +3,19 @@
 ## Productkarakter
 QuietWriter moet tijdens schrijven zo weinig mogelijk als een interface voelen: rustig, voorspelbaar, tekstgericht en terughoudend met automatisering.
 
+De publieke kernzin is: **Rustig schrijven. Eerlijk meelezen.**
+
+## Blijf schrijven
+De primaire productregel is **Blijf schrijven**. Een functie is pas geslaagd als zij de schrijver helpt zonder hem onnodig uit zijn schrijfritme te halen.
+
+Nieuwe functies moeten schrijven, plannen, reviseren of afronden merkbaar beter maken. QuietWriter hoeft niet alles te kunnen; dat is bewust productontwerp, geen ontbrekende feature.
+
+## Lokaal en van jou
+Geen verplicht account, geen verplichte cloud en geen stille overdracht van manuscriptinhoud. Lokale controle is productgedrag, niet alleen technische implementatie.
+
+## Anti-bloat
+Meer functies of knoppen zijn geen doel op zichzelf. Bij twijfel heeft minder interface de voorkeur boven extra permanente bediening, dashboards of configuratie.
+
 ## Eén visuele grammatica
 Gebruik een klein aantal paginatypen: overzicht, detail/formulier, document, instellingen en setup-flow. Nieuwe functies krijgen niet ieder een eigen interactiemodel.
 

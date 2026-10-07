@@ -16,6 +16,10 @@ from .persona_profile import default_persona_markdown
 from .book_profile import default_book_profile_markdown
 from .book_memory import default_book_memory_markdown
 from .i18n import tr
+from .manuscript_profile import (
+    MANUSCRIPT_SYNTAX_KEY, AmbiguousManuscriptSyntaxError, ManuscriptSyntaxMigration, current_manifest_value,
+    migrate_legacy_source_to_current, migration_source_state, profile_from_manifest,
+)
 
 
 class BookBlockedError(RuntimeError):
@@ -179,9 +183,31 @@ class Library:
         for d in [self.books_dir, self.covers_dir, self.archive_dir, self.trash_dir,
                   self.persona_dir, self.dict_dir, self.cache_dir]:
             d.mkdir(parents=True, exist_ok=True)
+        self._cleanup_stale_import_staging()
         persona = self.persona_dir / 'schrijver.md'
         if not persona.exists():
             _safe_atomic_write_text(persona, default_persona_markdown())
+
+    def _cleanup_stale_import_staging(self, *, older_than_seconds: float = 24 * 60 * 60):
+        """Remove abandoned DOCX staging trees from earlier crashed sessions.
+
+        A fresh staging directory may belong to another running QuietWriter
+        process using the same workspace, so only directories older than one
+        day are eligible. Cleanup is best-effort and never blocks startup.
+        """
+        try:
+            now = time.time()
+            for path in self.books_dir.glob('.import-*'):
+                try:
+                    if not path.is_dir():
+                        continue
+                    age = now - path.stat().st_mtime
+                    if age >= older_than_seconds:
+                        shutil.rmtree(path, ignore_errors=True)
+                except OSError:
+                    continue
+        except OSError:
+            pass
 
     def _chapter_files(self, book: Book) -> list[str]:
         return [chapter.file for section in book.sections for chapter in section.chapters]
@@ -254,6 +280,8 @@ class Library:
         books = []
         self.last_list_errors = []
         for manifest in self.books_dir.glob('*/book.json'):
+            if manifest.parent.name.startswith('.'):
+                continue
             try:
                 books.append(self.load_book(manifest.parent))
             except Exception as exc:
@@ -307,6 +335,7 @@ class Library:
             id=book_id,
             title=clean_title,
             path=folder,
+            extra_manifest={MANUSCRIPT_SYNTAX_KEY: current_manifest_value()},
             metadata={
                 'slug': slugify(clean_title),
                 'date': datetime.now().isoformat(timespec='minutes'),
@@ -335,6 +364,7 @@ class Library:
         data = json.loads((Path(folder) / 'book.json').read_text(encoding='utf-8'))
         from .migrations import detected_book_format, validate_manifest_structure
         validate_manifest_structure(data, allow_legacy=True)
+        profile_from_manifest(data)
         sections = []
         for s in data.get('sections', []):
             chapters = [Chapter(id=c['id'], title=c['title'], file=c['file']) for c in s.get('chapters', [])]
@@ -377,6 +407,93 @@ class Library:
         known = {'format', 'id', 'title', 'metadata', 'sections'}
         extra_manifest = {k: copy.deepcopy(v) for k, v in data.items() if k not in known}
         return Book(id=data['id'], title=data['title'], path=Path(folder), format_version=detected_book_format(data), sections=sections, metadata=metadata, extra_manifest=extra_manifest)
+
+    def _manuscript_syntax_files(self, book: Book) -> list[Path]:
+        paths: list[Path] = []
+        for section in book.sections:
+            for chapter in section.chapters:
+                paths.append(book.path / chapter.file)
+        publication_dir = book.path / 'publication' / 'texts'
+        if publication_dir.is_dir():
+            paths.extend(sorted(publication_dir.glob('*.md')))
+        return paths
+
+    def manuscript_syntax_migration_state(self, book: Book) -> str:
+        """Return legacy/escape-era/ambiguous for an unversioned book."""
+        sources: list[str] = []
+        for path in self._manuscript_syntax_files(book):
+            _guard_existing_utf8(path)
+            sources.append(path.read_text(encoding='utf-8') if path.exists() else '')
+        return migration_source_state(sources)
+
+    def migrate_manuscript_syntax(self, book: Book, *, assume_escape_era: bool | None = None):
+        """Explicitly migrate one unversioned manuscript to the current profile.
+
+        Books edited by the escape-aware 1.2.19+ editor can already contain the
+        current byte grammar despite lacking the marker. Strong fingerprints are
+        therefore marker-only. Pure legacy books receive the minimal backslash
+        additions needed to preserve their old visible text. Ambiguous all-even
+        backslash runs require an explicit caller choice.
+        """
+        self.verify_book_unchanged(book)
+        raw_manifest = json.loads(book.manifest_path.read_text(encoding='utf-8'))
+        profile = profile_from_manifest(raw_manifest)
+        if profile.is_current:
+            return book, ManuscriptSyntaxMigration(0, 0, 'current'), None
+        if profile.explicit:
+            raise BookBlockedError(
+                f'Geen veilig migratiepad beschikbaar voor manuscriptsyntax {profile.version}.'
+            )
+
+        source_by_path: dict[Path, str] = {}
+        for path in self._manuscript_syntax_files(book):
+            _guard_existing_utf8(path)
+            source_by_path[path] = path.read_text(encoding='utf-8') if path.exists() else ''
+
+        state = migration_source_state(tuple(source_by_path.values()))
+        if state == 'ambiguous' and assume_escape_era is None:
+            raise AmbiguousManuscriptSyntaxError(
+                'Dit boek bevat alleen dubbelzinnige backslashreeksen; kies of de tekst al met de veilige escapes is bewerkt.'
+            )
+        marker_only = state == 'escape-era' or (state == 'ambiguous' and assume_escape_era is True)
+
+        updates: dict[Path, str] = {}
+        escaped_backslashes = 0
+        if not marker_only:
+            for path, source in source_by_path.items():
+                migrated, count = migrate_legacy_source_to_current(source)
+                escaped_backslashes += count
+                if migrated != source:
+                    updates[path] = migrated
+
+        checkpoint = self.create_version(book, kind='pre_syntax_migration')
+        checkpoint_id = checkpoint['id']
+        try:
+            self.verify_book_unchanged(book)
+            for path, text in updates.items():
+                _safe_atomic_write_text(path, text)
+
+            migrated_book = copy.deepcopy(book)
+            migrated_book.extra_manifest = copy.deepcopy(book.extra_manifest or {})
+            migrated_book.extra_manifest[MANUSCRIPT_SYNTAX_KEY] = current_manifest_value()
+            migrated_book.metadata = copy.deepcopy(book.metadata or {})
+            migrated_book.metadata['last_used'] = datetime.now().timestamp()
+            self._write_manifest_unchecked(migrated_book)
+            live = self.load_book(book.path)
+            self.refresh_book_revision(live)
+            changed_chapters = sum(
+                1 for path in updates if 'chapters' in path.parts
+            )
+            mode = 'escape-era' if marker_only else 'legacy'
+            return live, ManuscriptSyntaxMigration(changed_chapters, escaped_backslashes, mode), checkpoint_id
+        except Exception:
+            try:
+                snapshot = self.load_version(book, checkpoint_id)
+                restored = self._apply_snapshot_to_live(book, snapshot)
+                self.refresh_book_revision(restored)
+            except Exception:
+                pass
+            raise
 
     def migrate_book_format(self, book: Book):
         """Explicitly migrate book.json with a complete rollback snapshot.
@@ -778,7 +895,7 @@ class Library:
                 meta = {'created_at': created_at, 'kind': kind, 'starred': False, 'folder': folder.name}
             try:
                 snap = self.load_book(folder)
-                from .media.markup import count_words
+                from .manuscript_text import count_words
                 words = sum(count_words(self.read_chapter(snap, c)) for sec in snap.sections for c in sec.chapters)
                 chapter_count = sum(len(sec.chapters) for sec in snap.sections)
                 title = snap.title
@@ -1112,7 +1229,13 @@ class Library:
 
     def restore_trashed_book(self, trash_path: Path) -> Book:
         trash_path = Path(trash_path)
-        self.load_book(trash_path)
+        trashed_book = self.load_book(trash_path)
+        for existing in self.list_books():
+            if existing.id == trashed_book.id:
+                raise RuntimeError(tr(
+                    'storage.restore_duplicate_identity',
+                    'Een boek met dezelfde identiteit staat al op de boekenplank. Verwijder dat boek eerst of laat dit boek in de prullenbak.',
+                ))
         base = trash_path.name.split('__', 1)[-1]
         target = self.books_dir / base
         counter = 2
@@ -1174,47 +1297,169 @@ class Library:
         self._refresh_if_tracked(book)
 
     def import_markdown_book(self, source: Path) -> Book:
-        from .markdown_io import parse_markdown_book
-        source = Path(source)
-        data = parse_markdown_book(source)
-        title = (data.get('title') or source.stem).strip() or source.stem
-        book = self.create_book(title)
-        # Verwijder het automatisch gemaakte hoofdstuk en vervang het door de import.
-        for sec in book.sections:
-            for ch in sec.chapters:
-                p = book.path / ch.file
-                if p.exists():
-                    p.unlink()
-        book.sections = []
-        imported_md = dict(data.get('metadata') or {})
-        known = {'slug','date','description','intro','meta','image','image_alt','author','tags','published','synopsis','cover','featured_image'}
-        md = book.metadata
-        for key in known:
-            if imported_md.get(key) not in (None, ''):
-                md[key] = imported_md.get(key)
-        extra = {k:v for k,v in imported_md.items() if k not in known and k != 'title'}
-        if extra:
-            md['extra'] = extra
-        md['slug'] = slugify(md.get('slug') or title)
-        md['source_file'] = str(source)
-        md['last_used'] = datetime.now().timestamp()
+        """Import external Markdown through the neutral import model.
 
-        groups = data.get('sections') or [(None, [{'title': title, 'text': data.get('body', '')}])]
-        for idx, (section_title, chapters) in enumerate(groups):
-            sec_id = 'root' if len(groups) == 1 and not section_title else str(uuid.uuid4())
-            sec = Section(id=sec_id, title=section_title or ('Manuscript' if sec_id == 'root' else f'Sectie {idx+1}'))
-            book.sections.append(sec)
-            for item in chapters:
-                ch = self.add_chapter(book, sec, item.get('title') or tr('storage.default_chapter', 'Hoofdstuk'), persist=False)
-                sec.chapters.append(ch)
-                _safe_atomic_write_text(book.path / ch.file, item.get('text', ''))
-        if not any(sec.chapters for sec in book.sections):
-            if not book.sections:
-                book.sections = [Section(id='root', title='Manuscript')]
-            ch = self.add_chapter(book, book.sections[0], title, persist=False)
-            book.sections[0].chapters.append(ch)
-        self.save_manifest(book)
+        Markdown is an interchange format here, not QuietWriter's canonical
+        manuscript parser. The complete book is staged and only published after
+        every chapter has been serialized successfully.
+        """
+        from .markdown_io import read_markdown_import_document
+
+        source = Path(source)
+        imported = read_markdown_import_document(source)
+        book, _warnings = self._import_neutral_document(imported, source)
         return book
+
+
+    def _new_staged_import_book(self, title: str) -> tuple[Book, Path]:
+        """Create an unpublished book tree beside the live books directory.
+
+        The staging folder deliberately lives under ``books/`` so the final
+        directory rename stays on the same filesystem. Hidden staging folders
+        are ignored by :meth:`list_books` and are removed on every handled
+        failure before an import can become visible to the user.
+        """
+        book_id = str(uuid.uuid4())
+        clean_title = title.strip() or 'Naamloos boek'
+        final_path = self.books_dir / f'{slugify(clean_title)}-{book_id[:8]}'
+        stage_path = self.books_dir / f'.import-{book_id}'
+        (stage_path / 'chapters').mkdir(parents=True, exist_ok=False)
+        (stage_path / 'assets' / 'images').mkdir(parents=True, exist_ok=True)
+        (stage_path / 'assets' / 'cover').mkdir(parents=True, exist_ok=True)
+        _safe_atomic_write_text(
+            stage_path / 'assets' / 'manifest.json',
+            json.dumps({'version': 1, 'images': {}}, ensure_ascii=False, indent=2),
+        )
+        book = Book(
+            id=book_id,
+            title=clean_title,
+            path=stage_path,
+            extra_manifest={MANUSCRIPT_SYNTAX_KEY: current_manifest_value()},
+            metadata={
+                'slug': slugify(clean_title),
+                'date': datetime.now().isoformat(timespec='minutes'),
+                'description': '',
+                'intro': '',
+                'meta': '',
+                'image': '',
+                'image_alt': '',
+                'author': '',
+                'language': 'nl',
+                'tags': '',
+                'published': 'No',
+                'synopsis': '',
+                'cover_file': '',
+                'last_used': datetime.now().timestamp(),
+            },
+        )
+        return book, final_path
+
+    def _publish_staged_import(self, book: Book, final_path: Path) -> Book:
+        """Atomically make a complete staged book visible in the library."""
+        final_path = Path(final_path)
+        if final_path.exists():
+            raise FileExistsError(f'Doelmap voor import bestaat al: {final_path}')
+        # Validate the complete staged manifest before it can become visible.
+        staged = self.load_book(book.path)
+        missing = [
+            chapter.file
+            for section in staged.sections
+            for chapter in section.chapters
+            if not (staged.path / chapter.file).is_file()
+        ]
+        if missing:
+            raise StorageWriteError(book.path, OSError(f'Ontbrekende hoofdstukbestanden: {", ".join(missing)}'))
+        os.replace(book.path, final_path)
+        book.path = final_path
+        return book
+
+    def _import_neutral_document(self, imported, source: Path):
+        """Stage and atomically publish one neutral ImportDocument."""
+        from .import_document import serialize_import_chapter
+        from .media.store import MediaStore
+
+        source = Path(source)
+        title = (imported.title or source.stem).strip() or source.stem
+        book, final_path = self._new_staged_import_book(title)
+        stage_path = book.path
+        try:
+            metadata = dict(getattr(imported, 'metadata', {}) or {})
+            known = {
+                'slug', 'date', 'description', 'intro', 'meta', 'image',
+                'image_alt', 'author', 'language', 'tags', 'published',
+                'synopsis', 'cover', 'featured_image',
+            }
+            for key in known:
+                value = metadata.get(key)
+                if value not in (None, ''):
+                    book.metadata[key] = value
+            if imported.author:
+                book.metadata['author'] = imported.author
+            if imported.language:
+                book.metadata['language'] = imported.language
+            extra = {k: v for k, v in metadata.items() if k not in known and k != 'title'}
+            if extra:
+                book.metadata['extra'] = extra
+            book.metadata['slug'] = slugify(book.metadata.get('slug') or title)
+            book.metadata['source_file'] = str(source)
+            book.metadata['last_used'] = datetime.now().timestamp()
+
+            media_store = MediaStore(self)
+            imported_assets = {}
+            for asset in imported.assets:
+                imported_assets[asset.key] = media_store.import_image_bytes(
+                    book, asset.data, asset.filename, verify_revision=False
+                )
+
+            sections = imported.sections or ()
+            for idx, imported_section in enumerate(sections):
+                section_title = imported_section.title
+                sec_id = 'root' if len(sections) == 1 and not section_title else str(uuid.uuid4())
+                sec = Section(
+                    id=sec_id,
+                    title=section_title or ('Manuscript' if sec_id == 'root' else f'Sectie {idx+1}'),
+                )
+                book.sections.append(sec)
+                for imported_chapter in imported_section.chapters:
+                    cid = str(uuid.uuid4())
+                    chapter = Chapter(
+                        id=cid,
+                        title=(imported_chapter.title or tr('storage.default_chapter', 'Hoofdstuk')).strip()
+                              or tr('storage.default_chapter', 'Hoofdstuk'),
+                        file=f'chapters/{cid}.md',
+                    )
+                    sec.chapters.append(chapter)
+                    image_refs = {
+                        key: media_store.reference_for_chapter(chapter, media_asset)
+                        for key, media_asset in imported_assets.items()
+                    }
+                    chapter_source = serialize_import_chapter(imported_chapter, image_refs=image_refs)
+                    _safe_atomic_write_text(book.path / chapter.file, chapter_source)
+
+            if not any(sec.chapters for sec in book.sections):
+                if not book.sections:
+                    book.sections = [Section(id='root', title='Manuscript')]
+                cid = str(uuid.uuid4())
+                chapter = Chapter(id=cid, title=title, file=f'chapters/{cid}.md')
+                book.sections[0].chapters.append(chapter)
+                _safe_atomic_write_text(book.path / chapter.file, '')
+
+            self._write_manifest_unchecked(book)
+            published = self._publish_staged_import(book, final_path)
+            return published, tuple(imported.warnings or ())
+        except Exception:
+            if stage_path.exists():
+                shutil.rmtree(stage_path, ignore_errors=True)
+            raise
+
+
+    def import_docx_book(self, source: Path):
+        """Import DOCX transactionally through the neutral import model."""
+        from .docx_io import read_docx_import_document
+
+        source = Path(source)
+        imported = read_docx_import_document(source)
+        return self._import_neutral_document(imported, source)
 
     def export_markdown_book(self, book: Book, destination: Path, image_ref: str = '', include_frontmatter: bool = True,
                              include_section_markers: bool = True) -> Path:

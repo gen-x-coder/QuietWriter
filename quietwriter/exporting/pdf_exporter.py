@@ -6,9 +6,8 @@ import re
 import tempfile
 from pathlib import Path
 
-from ..manuscript_markup import is_scene_break_line
-from ..media.markup import image_reference_for_line
 from .markup import inline_to_xhtml
+from ..document_view import content_inline_runs, iter_content_blocks
 from .models import ExportDocument, ExportItem
 
 
@@ -164,12 +163,18 @@ table.image-box td { padding: 0; }
 '''
 
 
-def _image_table(image, href: str, body_width_px: float) -> str:
+def _image_table(attrs: dict, href: str, body_width_px: float) -> str:
     fractions = {'small': .30, 'medium': .50, 'large': .70, 'full': 1.0}
-    width = max(90, int(body_width_px * fractions.get(image.width, 1.0)))
-    align = image.align if image.align in {'left', 'center', 'right'} else 'center'
-    requested_wrap = bool(image.wrap and align in {'left', 'right'} and image.width != 'full')
-    wrap = requested_wrap and pdf_float_caption_safe(image.caption)
+    image_width = str(attrs.get('width') or 'full')
+    image_align = str(attrs.get('align') or 'center')
+    image_wrap = bool(attrs.get('wrap'))
+    image_caption = str(attrs.get('caption') or '')
+    image_alt = str(attrs.get('alt') or '')
+
+    width = max(90, int(body_width_px * fractions.get(image_width, 1.0)))
+    align = image_align if image_align in {'left', 'center', 'right'} else 'center'
+    requested_wrap = bool(image_wrap and align in {'left', 'right'} and image_width != 'full')
+    wrap = requested_wrap and pdf_float_caption_safe(image_caption)
 
     if wrap:
         if align == 'left':
@@ -186,10 +191,10 @@ def _image_table(image, href: str, body_width_px: float) -> str:
         style = f'width:{width}px; margin:{margin};'
 
     caption = (
-        f'<tr><td><p class="caption">{html.escape(image.caption)}</p></td></tr>'
-        if image.caption else ''
+        f'<tr><td><p class="caption">{html.escape(image_caption)}</p></td></tr>'
+        if image_caption else ''
     )
-    alt = html.escape(image.alt or '', quote=True)
+    alt = html.escape(image_alt, quote=True)
     return (
         f'<table class="image-box" cellspacing="0" cellpadding="0" style="{style}">'
         f'<tr><td><img src="{html.escape(href, quote=True)}" width="{width}" alt="{alt}"/></td></tr>'
@@ -198,70 +203,64 @@ def _image_table(image, href: str, body_width_px: float) -> str:
 
 
 def _markdown_to_pdf_html(markdown: str, image_urls: dict[str, str], body_width_px: float) -> str:
-    lines = (markdown or '').replace('\r\n', '\n').replace('\r', '\n').split('\n')
     blocks: list[str] = []
     list_kind: str | None = None
-    list_items: list[str] = []
+    list_items: list[tuple[str, tuple]] = []
     after_break_or_heading = True
 
     def flush_list():
         nonlocal list_kind, list_items
         if list_kind and list_items:
             tag = 'ol' if list_kind == 'ol' else 'ul'
-            blocks.append(f'<{tag}>' + ''.join(f'<li>{inline_to_xhtml(item)}</li>' for item in list_items) + f'</{tag}>')
+            blocks.append(f'<{tag}>' + ''.join(f'<li>{inline_to_xhtml(item, runs)}</li>' for item, runs in list_items) + f'</{tag}>')
         list_kind = None
         list_items = []
 
-    for raw in lines:
-        stripped = raw.strip()
-        if not stripped:
+    for block in iter_content_blocks((markdown or '').replace('\r\n', '\n').replace('\r', '\n')):
+        if block.kind == 'image':
             flush_list()
-            continue
-
-        image = image_reference_for_line(stripped)
-        if image:
-            flush_list()
-            href = _image_url(image.path, image_urls)
-            if href:
-                blocks.append(_image_table(image, href, body_width_px))
-            else:
-                fallback = image.alt or image.caption or 'Afbeelding ontbreekt'
-                blocks.append(f'<p><em>[{html.escape(fallback)}]</em></p>')
+            attrs = block.attrs or {}
+            image_path = str(attrs.get('path') or '')
+            if image_path:
+                href = _image_url(image_path, image_urls)
+                if href:
+                    blocks.append(_image_table(attrs, href, body_width_px))
+                else:
+                    fallback = str(attrs.get('alt') or attrs.get('caption') or 'Afbeelding ontbreekt')
+                    blocks.append(f'<p><em>[{html.escape(fallback)}]</em></p>')
             after_break_or_heading = True
             continue
 
-        if is_scene_break_line(stripped):
+        if block.kind == 'scene':
             flush_list()
             blocks.append('<div class="scene-break">* * *</div>')
             after_break_or_heading = True
             continue
 
-        if stripped.startswith('## '):
+        content = block.text[block.content_start-block.start:block.content_end-block.start].strip()
+        runs = content_inline_runs(block)
+        if block.kind == 'heading':
             flush_list()
-            blocks.append(f'<h2>{inline_to_xhtml(stripped[3:].strip())}</h2>')
+            blocks.append(f'<h2>{inline_to_xhtml(content, runs)}</h2>')
             after_break_or_heading = True
             continue
-
-        if stripped.startswith('> '):
+        if block.kind == 'quote':
             flush_list()
-            blocks.append(f'<blockquote><p>{inline_to_xhtml(stripped[2:].strip())}</p></blockquote>')
+            blocks.append(f'<blockquote><p>{inline_to_xhtml(content, runs)}</p></blockquote>')
             after_break_or_heading = True
             continue
-
-        bullet = _BULLET_RE.match(stripped)
-        number = _NUMBER_RE.match(stripped)
-        if bullet or number:
-            wanted = 'ol' if number else 'ul'
+        if block.kind in {'bullet', 'numbered'}:
+            wanted = 'ol' if block.kind == 'numbered' else 'ul'
             if list_kind and list_kind != wanted:
                 flush_list()
             list_kind = wanted
-            list_items.append((number or bullet).group(1))
+            list_items.append((content, runs))
             after_break_or_heading = False
             continue
 
         flush_list()
         klass = '' if after_break_or_heading else ' class="indent"'
-        blocks.append(f'<p{klass}>{inline_to_xhtml(stripped)}</p>')
+        blocks.append(f'<p{klass}>{inline_to_xhtml(content, runs)}</p>')
         after_break_or_heading = False
 
     flush_list()

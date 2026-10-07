@@ -22,7 +22,7 @@ class ThemeContrast01813Tests(unittest.TestCase):
         expected = {
             'Helder', 'Porselein', 'Nevel', 'Salie', 'Lavendel', 'Nord Licht',
             'Warm', 'Papier', 'Nacht', 'Grafiet', 'Middernacht', 'Inkt',
-            'Diepblauw', 'Aurora',
+            'Diepblauw', 'Lamplicht', 'Aurora',
         }
         self.assertEqual(set(THEMES), expected)
 

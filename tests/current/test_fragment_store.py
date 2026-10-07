@@ -59,7 +59,7 @@ class FragmentStoreTests(unittest.TestCase):
 
     def test_metadata_update_never_changes_fragment_text(self):
         fragment = self.store.create('**exacte** bron', fragment_id='one')
-        updated = self.store.update_metadata(fragment.id, title='Nieuwe titel', tags=['x'])
+        updated = self.store.update_metadata(fragment.id, expected_revision=fragment.revision, title='Nieuwe titel', tags=['x'])
         self.assertEqual(updated.text, '**exacte** bron')
         self.assertEqual(updated.title, 'Nieuwe titel')
         self.assertEqual(updated.tags, ('x',))
@@ -188,3 +188,14 @@ class FragmentStoreTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_update_metadata_requires_expected_revision(tmp_path):
+    store = FragmentStore(tmp_path)
+    fragment = store.create('tekst')
+    try:
+        store.update_metadata(fragment.id, title='mag niet stil')
+    except TypeError:
+        pass
+    else:
+        raise AssertionError('expected_revision moet verplicht zijn')

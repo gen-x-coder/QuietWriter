@@ -70,6 +70,8 @@ def run():
         win=MainWindow(settings,library,models)
         win._crash_ui_bridge = crash_ui
         splash.set_status(tr('splash.window', 'Venster voorbereiden…')); win.show(); splash.finish_when_ready(win)
+        if not smoke_test and settings.value('auto_update_check', False, bool):
+            QTimer.singleShot(1800, lambda: win.check_for_updates(silent=True))
         if smoke_test:
             QTimer.singleShot(1500, app.quit)
     except Exception as exc:

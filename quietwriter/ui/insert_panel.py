@@ -8,16 +8,18 @@ from PySide6.QtWidgets import (
 from ..i18n import tr
 from .current_page_stack import CurrentPageStack
 from .image_insert_widget import ImageInsertWidget
+from .panel_help import PanelHelp
 
 
 class InsertPanel(QWidget):
     """Right-side insertion workflow for manuscript block elements."""
 
     sceneBreakRequested = Signal()
+    openPointRequested = Signal()
     imageInsertRequested = Signal(str, str, str, str, str, bool)
     imageEditRequested = Signal(str, str, str, str, str, bool, bool)
 
-    def __init__(self, parent=None):
+    def __init__(self, settings=None, parent=None):
         super().__init__(parent)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -31,8 +33,7 @@ class InsertPanel(QWidget):
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(12)
 
-        title = QLabel(tr('insert.title', 'Toevoegen'))
-        title.setObjectName('sectionTitle')
+        self.panel_help = PanelHelp(settings, 'insert', tr('insert.title', 'Toevoegen'), None) if settings is not None else None
         description = QLabel(tr(
             'insert.description',
             'Voeg een element toe op de huidige positie in het manuscript.'
@@ -50,6 +51,16 @@ class InsertPanel(QWidget):
         self.scene_break_button.clicked.connect(self.sceneBreakRequested.emit)
         scene_card.layout().addWidget(self.scene_break_button)
 
+        open_point_card = self._choice_card(
+            tr('open_points.title', 'Open punt'),
+            tr('open_points.insert_description', 'Markeer iets dat je later wilt aanvullen. QuietWriter houdt het zichtbaar bij en laat de markering niet in je export terechtkomen.'),
+        )
+        self.open_point_button = QPushButton(tr('open_points.add', 'Open punt toevoegen'))
+        self.open_point_button.setObjectName('secondaryButton')
+        self.open_point_button.setToolTip(tr('open_points.add_tip', 'Maak van de selectie of cursorpositie een open punt'))
+        self.open_point_button.clicked.connect(self.openPointRequested.emit)
+        open_point_card.layout().addWidget(self.open_point_button)
+
         image_card = self._choice_card(
             tr('insert.image.title', 'Afbeelding'),
             tr('insert.image.card_description', 'Plaats een JPG- of PNG-afbeelding tussen twee alinea’s.'),
@@ -60,10 +71,14 @@ class InsertPanel(QWidget):
         self.image_button.clicked.connect(self.show_image_page)
         image_card.layout().addWidget(self.image_button)
 
-        layout.addWidget(title)
+        if self.panel_help is not None:
+            layout.addWidget(self.panel_help)
+        else:
+            title = QLabel(tr('insert.title', 'Toevoegen')); title.setObjectName('sectionTitle'); layout.addWidget(title)
         layout.addWidget(description)
         layout.addSpacing(4)
         layout.addWidget(scene_card)
+        layout.addWidget(open_point_card)
         layout.addWidget(image_card)
         layout.addStretch(1)
 

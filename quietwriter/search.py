@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from .media.markup import text_for_search
+from .manuscript_text import text_for_search
 
 
 class BookSearchIndex:

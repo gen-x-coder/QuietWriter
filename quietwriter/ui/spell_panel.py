@@ -4,7 +4,8 @@ from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ..i18n import tr
-from ..media.markup import mask_image_paths
+from ..document_view import text_for_language_tools
+from .panel_help import PanelHelp
 
 class SuggestionButtons(QWidget):
     """Compact suggestion list: one real row per word, no scroll area."""
@@ -55,7 +56,7 @@ class SpellPanel(QWidget):
         self.index = 0
         self._rows_rev = -1
         lay = QVBoxLayout(self); lay.setContentsMargins(18,18,18,18); lay.setSpacing(10)
-        title = QLabel(tr('spell.title','Spellingscontrole')); title.setObjectName('sectionTitle')
+        self.panel_help = PanelHelp(editor_page.main.settings, 'spell', tr('spell.title','Spellingscontrole'), tr('panel_help.spell', 'Loop de onbekende woorden in dit hoofdstuk één voor één langs. Negeren slaat alleen deze plek over; Alles negeren geldt tot je QuietWriter sluit. Altijd negeren en Toevoegen aan woordenboek onthouden het woord blijvend.'))
         self.status = QLabel(''); self.status.setObjectName('muted'); self.status.setWordWrap(True)
         self.word = QLabel(''); self.word.setObjectName('title')
         self.suggestions = SuggestionButtons()
@@ -67,7 +68,7 @@ class SpellPanel(QWidget):
         self.add_btn = QPushButton(tr('spell.add','Toevoegen aan woordenboek')); self.add_btn.clicked.connect(self.add_personal)
         for b in (self.change_btn, self.ignore_btn, self.ignore_all_btn, self.ignore_always_btn, self.add_btn):
             buttons.addWidget(b)
-        lay.addWidget(title); lay.addWidget(self.status); lay.addWidget(self.word); lay.addWidget(self.suggestions)
+        lay.addWidget(self.panel_help); lay.addWidget(self.status); lay.addWidget(self.word); lay.addWidget(self.suggestions)
         lay.addSpacing(8); lay.addStretch(1); lay.addLayout(buttons)
         self.refresh()
 
@@ -77,7 +78,7 @@ class SpellPanel(QWidget):
         if not d.words:
             self.rows=[]; self.index=0; self.status.setText(tr('spell.no_dictionary','Er is nog geen woordenboek ingesteld.')); self.word.clear(); self.suggestions.clear(); self._configure_tab_order(); return
         title_rows = [('title', w, a, b) for (w,a,b) in d.misspellings(self.editor_page.chapter_title.text())]
-        body_text = mask_image_paths(self.editor_page.editor.toPlainText())
+        body_text = text_for_language_tools(self.editor_page.editor.toPlainText())
         body_rows = [('body', w, a, b) for (w,a,b) in d.misspellings(body_text)]
         self.rows = title_rows + body_rows
         if not self.rows:

@@ -59,6 +59,7 @@ RAIL_GROUPS: tuple[RailGroupSpec, ...] = (
 # Rendering code must not add feature-specific conditions on top of this table.
 RAIL_ITEMS: tuple[RailItemSpec, ...] = (
     RailItemSpec('bookshelf', 'library'),
+    RailItemSpec('darlings', 'library'),
     RailItemSpec('contents', 'current_book', requires_book=True),
     RailItemSpec('planning', 'current_book', requires_book=True),
     RailItemSpec('media', 'current_book', requires_book=True),

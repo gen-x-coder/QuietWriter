@@ -22,7 +22,7 @@ def set_locale(code: str | None) -> str:
     """Set the process-wide UI locale and return the effective locale code."""
     global _current_locale
     requested = str(code or 'nl').strip().lower().replace('-', '_')
-    # UI locales currently use language-only filenames (nl.json, en.json).
+    # UI locales use language-only filenames (nl.json, en.json, de.json, fr.json, es.json).
     requested = requested.split('_', 1)[0]
     if not (_LOCALE_DIR / f'{requested}.json').exists():
         requested = 'nl'
@@ -36,7 +36,15 @@ def current_locale() -> str:
 
 def tr(key: str, default: str | None = None, code: str | None = None, **values) -> str:
     locale = code or _current_locale
-    text = load_locale(locale).get(key, default if default is not None else key)
+    data = load_locale(locale)
+    if key in data:
+        text = data[key]
+    elif locale not in {'nl', 'en'} and key in load_locale('en'):
+        # English is the product fallback for incomplete translated locales.
+        # Dutch code defaults remain the native fallback for Dutch itself.
+        text = load_locale('en')[key]
+    else:
+        text = default if default is not None else key
     try:
         return str(text).format(**values)
     except Exception:

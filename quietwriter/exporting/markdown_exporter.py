@@ -6,6 +6,7 @@ import re
 
 from ..storage import _safe_atomic_write_text
 from .models import ExportDocument
+from ..document_view import iter_content_blocks
 
 
 # Stable public Markdown contract used by the user's existing publishing flow.
@@ -86,6 +87,23 @@ def _plain_single_chapter(document: ExportDocument):
     return None
 
 
+
+
+def _public_markdown_body(source: str) -> str:
+    """Serialize QuietWriter source as ordinary CommonMark-friendly Markdown.
+
+    QuietWriter stores one physical line per paragraph. Public Markdown needs
+    blank lines between prose paragraphs, otherwise CommonMark merges them. A
+    QuietWriter soft break (U+2028) becomes a CommonMark hard line break.
+    """
+    rendered: list[str] = []
+    for block in iter_content_blocks(source or ''):
+        line = block.text.replace('\u2028', '\\' + '\n')
+        if line.strip():
+            rendered.append(line)
+    return '\n\n'.join(rendered)
+
+
 def export_markdown(document: ExportDocument, destination: Path, settings: dict | None = None) -> Path:
     """Export the fixed public Markdown format.
 
@@ -97,7 +115,7 @@ def export_markdown(document: ExportDocument, destination: Path, settings: dict 
     plain = _plain_single_chapter(document)
     if plain is not None:
         if plain.markdown.strip():
-            parts.append(plain.markdown.strip())
+            parts.append(_public_markdown_body(plain.markdown))
     else:
         multiple_sections = len(document.sections) > 1 or any(section.id != 'root' for section in document.sections)
         for section in document.sections:
@@ -106,7 +124,7 @@ def export_markdown(document: ExportDocument, destination: Path, settings: dict 
             for chapter in section.chapters:
                 parts.append(f'# {chapter.title}')
                 if chapter.markdown.strip():
-                    parts.append(chapter.markdown.strip())
+                    parts.append(_public_markdown_body(chapter.markdown))
 
     _safe_atomic_write_text(Path(destination), '\n\n'.join(parts).rstrip() + '\n')
     return Path(destination)

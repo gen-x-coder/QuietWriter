@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from ..chapter_context import build_chapter_context
 from ..i18n import tr
 from ..planning_storage import PlanningStore
 from ..storage import CorruptSourceError
 from ..planning_validation import FuturePlanningFormatError
+from .panel_help import PanelHelp
 
 
 class ChapterContextPanel(QWidget):
@@ -17,7 +18,7 @@ class ChapterContextPanel(QWidget):
 
     openPlanning = Signal()
 
-    def __init__(self, library):
+    def __init__(self, library, settings=None):
         super().__init__()
         self.store = PlanningStore(library)
         self.book = None
@@ -27,21 +28,17 @@ class ChapterContextPanel(QWidget):
         root.setContentsMargins(18, 18, 18, 18)
         root.setSpacing(10)
 
-        title = QLabel(tr('chapter_context.title', 'In dit hoofdstuk'))
-        title.setObjectName('sectionTitle')
-        intro = QLabel(tr(
-            'chapter_context.intro',
-            'Opgeslagen scènes en personages uit Planning die aan dit hoofdstuk zijn gekoppeld.'
-        ))
-        intro.setObjectName('muted')
-        intro.setWordWrap(True)
-        root.addWidget(title)
-        root.addWidget(intro)
+        self.panel_help = PanelHelp(
+            settings, 'chapter_context', tr('chapter_context.title', 'In dit hoofdstuk'),
+            tr('panel_help.chapter_context', 'Hier zie je de scènes en personages die je in Planning aan dit hoofdstuk hebt gekoppeld, zodat je je plan bij de hand hebt tijdens het schrijven. Wijzigen doe je in Planning.')
+        )
+        root.addWidget(self.panel_help)
 
         self.message = QLabel('')
         self.message.setObjectName('muted')
         self.message.setWordWrap(True)
         self.message.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.message.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         root.addWidget(self.message)
 
         self.scroll = QScrollArea()
@@ -55,6 +52,15 @@ class ChapterContextPanel(QWidget):
         self.scroll.setWidget(self.content)
         root.addWidget(self.scroll, 1)
 
+        # When there are no linked scenes the scroll area is hidden. Keep an
+        # explicit expanding filler so the headings stay pinned to the top and
+        # the action button stays at the bottom instead of QLabel rows sharing
+        # the spare height vertically.
+        self.empty_filler = QWidget()
+        self.empty_filler.setObjectName('chapterContextFiller')
+        self.empty_filler.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        root.addWidget(self.empty_filler, 1)
+
         self.open_button = QPushButton(tr('chapter_context.open_planning', 'Planning openen'))
         self.open_button.setObjectName('secondaryButton')
         self.open_button.clicked.connect(self.openPlanning.emit)
@@ -67,6 +73,7 @@ class ChapterContextPanel(QWidget):
         self.chapter_id = None
         self._clear_rows()
         self.scroll.hide()
+        self.empty_filler.show()
         self.open_button.setEnabled(False)
         self.message.setText(message or tr(
             'chapter_context.no_chapter',
@@ -108,6 +115,7 @@ class ChapterContextPanel(QWidget):
         except FuturePlanningFormatError:
             self._clear_rows()
             self.scroll.hide()
+            self.empty_filler.show()
             self.message.setText(tr(
                 'chapter_context.newer',
                 'De opgeslagen Planning is gemaakt met een nieuwere QuietWriter. Werk QuietWriter bij om deze Planning te bekijken.'
@@ -118,6 +126,7 @@ class ChapterContextPanel(QWidget):
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError, CorruptSourceError):
             self._clear_rows()
             self.scroll.hide()
+            self.empty_filler.show()
             self.message.setText(tr(
                 'chapter_context.corrupt',
                 'De opgeslagen Planning kan niet betrouwbaar worden gelezen. De editor blijft gewoon beschikbaar.'
@@ -130,6 +139,7 @@ class ChapterContextPanel(QWidget):
         self.open_button.setEnabled(True)
         if not context.scenes:
             self.scroll.hide()
+            self.empty_filler.show()
             self.message.setText(tr(
                 'chapter_context.empty',
                 'Nog geen scènes aan dit hoofdstuk gekoppeld. Voeg of koppel ze in Planning.'
@@ -138,6 +148,7 @@ class ChapterContextPanel(QWidget):
             return
 
         self.message.hide()
+        self.empty_filler.hide()
         self.scroll.show()
         if context.character_names:
             char_heading = QLabel(tr('chapter_context.characters_heading', 'Personages'))

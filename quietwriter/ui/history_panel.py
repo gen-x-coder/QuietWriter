@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import current_locale, tr
+from .panel_help import PanelHelp
 
 class HistoryPanel(QWidget):
     versionSelected = Signal(str)
@@ -20,7 +21,7 @@ class HistoryPanel(QWidget):
         self.book = None
         self.rows = []
         lay = QVBoxLayout(self); lay.setContentsMargins(18,18,18,18); lay.setSpacing(10)
-        title = QLabel(tr('history.title', 'Versiegeschiedenis')); title.setObjectName('sectionTitle')
+        self.panel_help = PanelHelp(editor_page.main.settings, 'history', tr('history.title', 'Versiegeschiedenis'), tr('panel_help.history', 'Elke dag dat je schrijft, bewaart QuietWriter automatisch een versie van je boek. Maak zelf een versie vóór een grote wijziging en geef belangrijke versies een ster.'))
         self.starred_only = QCheckBox(tr('history.starred_only', 'Alleen versies met ster'))
         self.starred_only.stateChanged.connect(self.refresh)
         self.create_btn = QPushButton(tr('history.create', '+ Nieuwe versie maken')); self.create_btn.setObjectName('primaryButton')
@@ -34,7 +35,7 @@ class HistoryPanel(QWidget):
         self.star_btn.setEnabled(False)
         self.empty = QLabel(tr('history.empty', 'Nog geen oudere versies beschikbaar.'))
         self.empty.setObjectName('muted'); self.empty.setAlignment(Qt.AlignCenter); self.empty.setWordWrap(True)
-        lay.addWidget(title); lay.addWidget(self.starred_only); lay.addWidget(self.create_btn)
+        lay.addWidget(self.panel_help); lay.addWidget(self.starred_only); lay.addWidget(self.create_btn)
         lay.addWidget(self.empty); lay.addWidget(self.list, 1); lay.addWidget(self.star_btn)
 
     def set_book(self, book):

@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import re
 
-from PySide6.QtCore import QPoint, QRect, QSettings, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QMimeData, QPoint, QRect, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (QAction, QColor, QFontMetricsF, QKeySequence, QPainter, QPen,
                            QTextBlockFormat, QTextCharFormat, QTextCursor)
 from PySide6.QtWidgets import QApplication, QMenu, QTextEdit, QToolButton
 
-from ..manuscript_markup import (ManuscriptStyle, apply_block_style, is_scene_break_line,
-                                 selection_format_states, smart_double_quote, toggle_inline)
+from ..manuscript_markup import (ManuscriptStyle, apply_block_style, escape_literal_block_structure,
+                                 escape_literal_space_prefix, escape_literal_text, escape_literal_typed_char,
+                                 escape_ranges, prepare_markdown_insertion, selection_format_states, source_selection_as_markdown,
+                                 smart_double_quote, toggle_inline, unescape_literal_text)
+from ..document_view import (classify_block_line, image_reference_for_block_line,
+                             visible_text_for_source_range)
 from ..markdown_io import remove_scene_break
-from ..media.markup import image_reference_for_line
 from ..themes import THEMES
 from ..icon_theme import icon
 from ..i18n import tr
@@ -22,8 +25,14 @@ from .image_block_card import ImageBlockCard
 
 
 class ManuscriptEditor(QTextEdit):
+    QW_SOURCE_MIME = 'application/x-quietwriter-source'
     imageEditRequested = Signal(int)
     imageDeleteRequested = Signal(int)
+    copyToDarlingsRequested = Signal()
+    cutToDarlingsRequested = Signal()
+    addOpenPointRequested = Signal()
+    resolveOpenPointRequested = Signal()
+    editOpenPointRequested = Signal()
 
     IMAGE_BLOCK_HEIGHT = 132
     """Rustige Markdown-editor met manuscriptweergave en lichte opmaaklaag.
@@ -69,6 +78,12 @@ class ManuscriptEditor(QTextEdit):
         self.textChanged.connect(self._schedule_formatting_for_text_edit)
         self.textChanged.connect(self._schedule_image_sync)
         self.cursorPositionChanged.connect(self._image_cursor_changed)
+        self.cursorPositionChanged.connect(self._open_point_cursor_changed)
+        self._open_point_cursor_guard = False
+        self._last_cursor_position = 0
+        self._escape_cursor_guard = False
+        self._last_escape_cursor_position = 0
+        self.cursorPositionChanged.connect(self._escape_cursor_changed)
         self.verticalScrollBar().valueChanged.connect(self._schedule_image_layout)
         self.horizontalScrollBar().valueChanged.connect(self._schedule_image_layout)
 
@@ -138,7 +153,7 @@ class ManuscriptEditor(QTextEdit):
         refs = {}
         block = self.document().begin()
         while block.isValid():
-            ref = image_reference_for_line(block.text())
+            ref = image_reference_for_block_line(block.text())
             if ref:
                 refs[block.blockNumber()] = ref
             block = block.next()
@@ -217,7 +232,7 @@ class ManuscriptEditor(QTextEdit):
 
     def _select_image_block(self, number: int):
         block = self.document().findBlockByNumber(number)
-        if not block.isValid() or not image_reference_for_line(block.text()):
+        if not block.isValid() or not image_reference_for_block_line(block.text()):
             return
         self._selected_image_block = number
         cursor = QTextCursor(block)
@@ -237,7 +252,7 @@ class ManuscriptEditor(QTextEdit):
 
     def _image_cursor_changed(self):
         block = self.textCursor().block()
-        number = block.blockNumber() if block.isValid() and image_reference_for_line(block.text()) else None
+        number = block.blockNumber() if block.isValid() and image_reference_for_block_line(block.text()) else None
         if number == self._selected_image_block:
             return
         self._selected_image_block = number
@@ -247,7 +262,7 @@ class ManuscriptEditor(QTextEdit):
 
     def current_image_block(self) -> int | None:
         block = self.textCursor().block()
-        if block.isValid() and image_reference_for_line(block.text()):
+        if block.isValid() and image_reference_for_block_line(block.text()):
             return block.blockNumber()
         return None
 
@@ -258,7 +273,7 @@ class ManuscriptEditor(QTextEdit):
         start, end = sorted((cursor.selectionStart(), cursor.selectionEnd()))
         block = self.document().findBlock(start)
         while block.isValid() and block.position() <= end:
-            if image_reference_for_line(block.text()):
+            if image_reference_for_block_line(block.text()):
                 return True
             block = block.next()
         return False
@@ -290,27 +305,126 @@ class ManuscriptEditor(QTextEdit):
             ),
         )
 
+    def createMimeDataFromSelection(self):
+        # System clipboard gets writer-visible prose. A private in-app MIME flavor
+        # carries safe QuietWriter source so formatting survives copy/paste inside
+        # the application without leaking Markdown punctuation to Word or e-mail.
+        from ..placeholders import strip_open_point_markers
+        cursor = self.textCursor()
+        if not cursor.hasSelection():
+            return QMimeData()
+        source = self.source_text()
+        start, end = sorted((cursor.selectionStart(), cursor.selectionEnd()))
+        selected_source, _, _ = source_selection_as_markdown(source, start, end)
+        selected_source = strip_open_point_markers(selected_source)
+        visible = visible_text_for_source_range(source, start, end)
+        clean = QMimeData()
+        clean.setText(visible)
+        clean.setData(self.QW_SOURCE_MIME, selected_source.encode('utf-8'))
+        return clean
+
     def cut(self):
+        if self.selection_intersects_open_point_marker():
+            self._protected_open_point_message()
+            return
         if self.selection_intersects_image():
             self._protected_image_message()
             return
         super().cut()
 
     def insertFromMimeData(self, source):
+        if self.selection_intersects_open_point_marker():
+            self._protected_open_point_message()
+            return
         if self.selection_intersects_image():
             self._protected_image_message()
             return
         if self.current_image_block() is not None:
             self._move_out_of_image(after=True)
+        if source is not None and source.hasFormat(self.QW_SOURCE_MIME):
+            from ..placeholders import strip_open_point_markers
+            try:
+                fragment = bytes(source.data(self.QW_SOURCE_MIME)).decode('utf-8')
+            except Exception:
+                fragment = ''
+            fragment = strip_open_point_markers(fragment)
+            if fragment:
+                current = self.source_text()
+                cursor = self.textCursor()
+                start, end = sorted((cursor.selectionStart(), cursor.selectionEnd()))
+                base = current[:start] + current[end:]
+                try:
+                    position, insertion = prepare_markdown_insertion(base, start, fragment)
+                except Exception:
+                    position, insertion = start, escape_literal_text(source.text(), at_line_start=(self.document().findBlock(start).position() == start))
+                new = base[:position] + insertion + base[position:]
+                self._replace_changed_text(current, new, position, position + len(insertion))
+                return
+        # External/unknown clipboard text is prose, never executable manuscript
+        # syntax. Managed ids are stripped and all ambiguous syntax is escaped.
+        if source is not None and source.hasText():
+            from ..placeholders import strip_open_point_markers
+            visible = strip_open_point_markers(source.text())
+            cursor = self.textCursor()
+            cursor.beginEditBlock()
+            if cursor.hasSelection():
+                cursor.removeSelectedText()
+            encoded = escape_literal_text(visible, at_line_start=(cursor.positionInBlock() == 0))
+            cursor.insertText(encoded)
+            cursor.endEditBlock()
+            self.setTextCursor(cursor)
+            return
         super().insertFromMimeData(source)
 
     def dropEvent(self, event):
-        cursor = self.cursorForPosition(event.position().toPoint())
-        block = cursor.block()
-        if block.isValid() and image_reference_for_line(block.text()):
+        target = self.cursorForPosition(event.position().toPoint())
+        block = target.block()
+        if block.isValid() and image_reference_for_block_line(block.text()):
             event.ignore()
             return
+        from ..placeholders import marker_ranges
+        source = self.source_text()
+        pos = target.position()
+        if any(start < pos < end for start, end in marker_ranges(source)):
+            event.ignore()
+            self._protected_open_point_message()
+            return
+        if self.selection_intersects_open_point_marker():
+            event.ignore()
+            self._protected_open_point_message()
+            return
         super().dropEvent(event)
+
+    def _open_point_cursor_changed(self):
+        """Keep the caret out of managed marker syntax in either direction."""
+        if self._open_point_cursor_guard:
+            return
+        cursor = self.textCursor()
+        current = cursor.position()
+        if cursor.hasSelection():
+            self._last_cursor_position = current
+            return
+        from ..placeholders import marker_ranges
+        hit = next(((start, end) for start, end in marker_ranges(self.source_text())
+                    if start < current < end), None)
+        if hit is None:
+            self._last_cursor_position = current
+            return
+        start, end = hit
+        previous = self._last_cursor_position
+        if previous <= start:
+            target = end
+        elif previous >= end:
+            target = start
+        else:
+            target = start if (current - start) <= (end - current) else end
+        self._open_point_cursor_guard = True
+        try:
+            cursor.setPosition(target)
+            self.setTextCursor(cursor)
+            self._last_cursor_position = target
+        finally:
+            self._open_point_cursor_guard = False
 
     def setReadOnly(self, read_only: bool):
         super().setReadOnly(read_only)
@@ -528,7 +642,7 @@ class ManuscriptEditor(QTextEdit):
         end_cursor = QTextCursor(self.document())
         end_cursor.setPosition(self._selection_range[1])
         rect = self.cursorRect(end_cursor)
-        text = self.toPlainText()
+        text = self.source_text()
         start, end = self._selection_range
         self.selection_toolbar.set_states(selection_format_states(text, start, end))
         self.selection_toolbar.adjustSize()
@@ -553,6 +667,131 @@ class ManuscriptEditor(QTextEdit):
     def hide_selection_toolbar(self):
         self._selection_timer.stop()
         self.selection_toolbar.hide()
+
+    def _escape_pair_at(self, position: int, *, for_backspace: bool = False, for_delete: bool = False):
+        # Escapes never cross a Qt text block. Inspect only the active block so
+        # cursor movement stays O(line length) instead of O(chapter length).
+        pos = max(0, min(int(position), self.document().characterCount() - 1))
+        block = self.document().findBlock(pos)
+        if not block.isValid():
+            return None
+        base = block.position()
+        local_pos = pos - base
+        line = block.text()
+        for start, end in escape_ranges(line):
+            pair_end = min(len(line), end + 1)
+            if for_backspace and local_pos in (end, pair_end):
+                return base + start, base + pair_end
+            if for_delete and local_pos in (start, end):
+                return base + start, base + pair_end
+            if not for_backspace and not for_delete and start < local_pos <= end:
+                return base + start, base + pair_end
+        return None
+
+    def _escape_cursor_changed(self):
+        if self._escape_cursor_guard:
+            return
+        cursor = self.textCursor()
+        current = cursor.position()
+        if cursor.hasSelection():
+            self._last_escape_cursor_position = current
+            return
+        hit = self._escape_pair_at(current)
+        if hit is not None:
+            start, end = hit
+            target = start if self._last_escape_cursor_position >= end else end
+            self._escape_cursor_guard = True
+            try:
+                cursor.setPosition(target)
+                self.setTextCursor(cursor)
+            finally:
+                self._escape_cursor_guard = False
+            current = target
+        self._last_escape_cursor_position = current
+
+    def _normalise_selection_around_escapes(self, cursor: QTextCursor) -> QTextCursor:
+        if not cursor.hasSelection():
+            hit = self._escape_pair_at(cursor.position())
+            if hit is not None:
+                cursor.setPosition(hit[1])
+            return cursor
+        source = self.source_text()
+        start, end = sorted((cursor.selectionStart(), cursor.selectionEnd()))
+        for a, b in escape_ranges(source):
+            pair_end = b + 1
+            if a < start < pair_end:
+                start = a
+            if a < end < pair_end:
+                # Selection ends *before* the visible escaped character. Keep it
+                # outside the atomic pair instead of swallowing that character.
+                end = a
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.KeepAnchor)
+        return cursor
+
+    def _literalize_block_at_cursor(self, cursor: QTextCursor, *, allowed: bool) -> QTextCursor:
+        if allowed:
+            return cursor
+        block = cursor.block()
+        if not block.isValid():
+            return cursor
+        kind = classify_block_line(block.text())
+        if kind in {'paragraph', 'empty'}:
+            return cursor
+        old = block.text()
+        new = escape_literal_block_structure(old)
+        if new == old:
+            return cursor
+        local = cursor.position() - block.position()
+        edit = QTextCursor(self.document())
+        edit.setPosition(block.position())
+        edit.setPosition(block.position() + len(old), QTextCursor.KeepAnchor)
+        edit.insertText(new)
+        delta = len(new) - len(old)
+        cursor.setPosition(block.position() + max(0, local + (delta if local > 0 else 0)))
+        return cursor
+
+    def _affected_block_kinds(self, cursor: QTextCursor, key: int) -> set[str]:
+        kinds: set[str] = set()
+        if cursor.hasSelection():
+            start, end = sorted((cursor.selectionStart(), cursor.selectionEnd()))
+            block = self.document().findBlock(start)
+            while block.isValid() and block.position() <= end:
+                kinds.add(classify_block_line(block.text())); block = block.next()
+            return kinds
+        block = cursor.block()
+        if block.isValid():
+            kinds.add(classify_block_line(block.text()))
+        if key == Qt.Key_Backspace and cursor.positionInBlock() == 0:
+            prev = block.previous()
+            if prev.isValid(): kinds.add(classify_block_line(prev.text()))
+        if key == Qt.Key_Delete and cursor.positionInBlock() == len(block.text()):
+            nxt = block.next()
+            if nxt.isValid(): kinds.add(classify_block_line(nxt.text()))
+        return kinds
+
+    def _perform_literal_delete(self, key: int):
+        cursor = self._normalise_selection_around_escapes(self.textCursor())
+        pair = None
+        if not cursor.hasSelection():
+            pair = self._escape_pair_at(
+                cursor.position(), for_backspace=(key == Qt.Key_Backspace), for_delete=(key == Qt.Key_Delete)
+            )
+        before_kinds = self._affected_block_kinds(cursor, key)
+        explicit_structure = any(kind not in {'paragraph', 'empty'} for kind in before_kinds)
+        cursor.beginEditBlock()
+        if pair is not None:
+            cursor.setPosition(pair[0]); cursor.setPosition(pair[1], QTextCursor.KeepAnchor)
+            cursor.removeSelectedText()
+        elif cursor.hasSelection():
+            cursor.removeSelectedText()
+        elif key == Qt.Key_Backspace:
+            cursor.deletePreviousChar()
+        else:
+            cursor.deleteChar()
+        cursor = self._literalize_block_at_cursor(cursor, allowed=explicit_structure)
+        cursor.endEditBlock()
+        self.setTextCursor(cursor)
 
     def keyPressEvent(self, event):
         self.hide_selection_toolbar()
@@ -587,17 +826,28 @@ class ManuscriptEditor(QTextEdit):
             self.undo(); event.accept(); return
         if event.matches(QKeySequence.StandardKey.Redo):
             self.redo(); event.accept(); return
+        if event.matches(QKeySequence.StandardKey.Cut):
+            self.cut(); event.accept(); return
+        if event.matches(QKeySequence.StandardKey.Paste):
+            if self.selection_intersects_open_point_marker():
+                self._protected_open_point_message(); event.accept(); return
+            self.paste(); event.accept(); return
 
         cursor = self.textCursor()
+        if (key in (Qt.Key_Backspace, Qt.Key_Delete, Qt.Key_Return, Qt.Key_Enter)
+                or (event.text() and not (modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)))):
+            if self._edit_would_touch_open_point_marker(key):
+                self._protected_open_point_message()
+                event.accept(); return
         block = cursor.block()
         if key == Qt.Key_Backspace and not cursor.hasSelection() and cursor.position() == block.position():
             previous = block.previous()
-            if previous.isValid() and image_reference_for_line(previous.text()):
+            if previous.isValid() and image_reference_for_block_line(previous.text()):
                 self._select_image_block(previous.blockNumber())
                 event.accept(); return
         if key == Qt.Key_Delete and not cursor.hasSelection() and cursor.position() == block.position() + len(block.text()):
             nxt = block.next()
-            if nxt.isValid() and image_reference_for_line(nxt.text()):
+            if nxt.isValid() and image_reference_for_block_line(nxt.text()):
                 self._select_image_block(nxt.blockNumber())
                 event.accept(); return
 
@@ -607,6 +857,26 @@ class ManuscriptEditor(QTextEdit):
         ):
             self._protected_image_message()
             event.accept(); return
+
+        if key in (Qt.Key_Backspace, Qt.Key_Delete):
+            self._perform_literal_delete(key)
+            event.accept()
+            return
+
+        # Shift+Enter is a semantic soft line break inside the current
+        # manuscript paragraph. Qt otherwise inserts a hard block separator.
+        if (key in (Qt.Key_Return, Qt.Key_Enter)
+                and (modifiers & Qt.ShiftModifier)
+                and not (modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))):
+            cursor = self._normalise_selection_around_escapes(self.textCursor())
+            cursor.beginEditBlock()
+            if cursor.hasSelection():
+                cursor.removeSelectedText()
+            cursor.insertText('\u2028')
+            cursor.endEditBlock()
+            self.setTextCursor(cursor)
+            event.accept()
+            return
 
         # A new paragraph receives its visual paragraph format *inside the same
         # undo transaction as Enter*.  Previously the 90 ms formatter added the
@@ -633,6 +903,7 @@ class ManuscriptEditor(QTextEdit):
                     self._block_kind(source_previous.text()) if source_previous.isValid() else None
                 )
                 source_kind_before = self._block_kind(source_block.text())
+                source_semantic_before = classify_block_line(source_block.text())
 
                 # A second Enter turns the current continuation line into a real
                 # blank separator. Normalise it before creating the next block so
@@ -651,6 +922,9 @@ class ManuscriptEditor(QTextEdit):
                 new_fmt = self._make_block_format(new_kind, previous_kind, active_empty=active_empty)
                 if new_block.blockFormat() != new_fmt:
                     cursor.setBlockFormat(new_fmt)
+                cursor = self._literalize_block_at_cursor(
+                    cursor, allowed=source_semantic_before not in {'paragraph', 'empty'}
+                )
                 cursor.endEditBlock()
             finally:
                 self._suppress_formatting_schedule = False
@@ -673,11 +947,81 @@ class ManuscriptEditor(QTextEdit):
             cursor = self.textCursor()
             if cursor.hasSelection():
                 cursor.removeSelectedText()
-            quote = smart_double_quote(self.toPlainText(), cursor.position())
+            quote = smart_double_quote(self.source_text(), cursor.position())
             cursor.insertText(quote)
             self.setTextCursor(cursor)
             return
+
+        # Direct typing is prose. The edit is committed as one transaction and
+        # the resulting block is checked for accidental structure. Explicit
+        # toolbar/shortcut formatting bypasses this path.
+        typed = event.text()
+        plain_typing = bool(typed) and not (modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+        if plain_typing:
+            cursor = self._normalise_selection_around_escapes(self.textCursor())
+            before_kind = classify_block_line(cursor.block().text())
+            cursor.beginEditBlock()
+            if cursor.hasSelection():
+                cursor.removeSelectedText()
+            if len(typed) == 1:
+                if typed == ' ':
+                    prefix = cursor.block().text()[:cursor.positionInBlock()]
+                    escaped_prefix = escape_literal_space_prefix(prefix)
+                    if escaped_prefix is not None:
+                        replacement_prefix, chars_to_replace = escaped_prefix
+                        cursor.setPosition(cursor.position() - chars_to_replace, QTextCursor.KeepAnchor)
+                        cursor.insertText(replacement_prefix + ' ')
+                    else:
+                        cursor.insertText(typed)
+                else:
+                    cursor.insertText(escape_literal_typed_char(typed, cursor.block().text()[:cursor.positionInBlock()]))
+            else:
+                cursor.insertText(escape_literal_text(typed))
+            cursor = self._literalize_block_at_cursor(
+                cursor, allowed=before_kind not in {'paragraph', 'empty'}
+            )
+            cursor.endEditBlock()
+            self.setTextCursor(cursor)
+            event.accept()
+            return
         super().keyPressEvent(event)
+
+    def current_open_point(self):
+        from ..placeholders import open_point_at
+        return open_point_at(self.source_text(), self.textCursor().position())
+
+    def selection_intersects_open_point_marker(self) -> bool:
+        from ..placeholders import marker_ranges
+        cursor = self.textCursor()
+        if not cursor.hasSelection():
+            return False
+        start, end = sorted((cursor.selectionStart(), cursor.selectionEnd()))
+        return any(start < b and end > a for a, b in marker_ranges(self.source_text()))
+
+    def _edit_would_touch_open_point_marker(self, key) -> bool:
+        from ..placeholders import marker_ranges
+        source = self.source_text()
+        cursor = self.textCursor()
+        ranges = marker_ranges(source)
+        if cursor.hasSelection():
+            a, b = sorted((cursor.selectionStart(), cursor.selectionEnd()))
+            return any(a < e and b > s for s, e in ranges)
+        pos = cursor.position()
+        if key == Qt.Key_Backspace and pos > 0:
+            a, b = pos - 1, pos
+        elif key == Qt.Key_Delete and pos < len(source):
+            a, b = pos, pos + 1
+        else:
+            return any(s < pos < e for s, e in ranges)
+        return any(a < e and b > s for s, e in ranges)
+
+    def _protected_open_point_message(self):
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(
+            self,
+            tr('open_points.protected_title', 'Open punt beschermd'),
+            tr('open_points.protected_text', 'De technische markering van een open punt wordt door QuietWriter beheerd. Gebruik rechtsklik → Open punt afronden om de markering veilig te verwijderen.'),
+        )
 
     def contextMenuEvent(self, event):
         """Extend Qt's normal edit menu with QuietWriter formatting actions.
@@ -718,11 +1062,31 @@ class ManuscriptEditor(QTextEdit):
             menu.deleteLater()
             return
 
+        if has_selection and self.selection_intersects_open_point_marker():
+            # Qt's standard context-menu Cut action can bypass our Python cut()
+            # override just like Ctrl+X did. Offer only the safe operation here.
+            menu = QMenu(self)
+            copy_action = menu.addAction(tr('common.copy', 'Kopiëren'))
+            copy_action.triggered.connect(self.copy)
+            menu.addSeparator()
+            info = menu.addAction(tr('open_points.protected_title', 'Open punt beschermd'))
+            info.setEnabled(False)
+            menu.exec(event.globalPos())
+            menu.deleteLater()
+            return
+
         menu = self.createStandardContextMenu()
+        point = self.current_open_point() if not self.isReadOnly() else None
+        if point is not None:
+            menu.addSeparator()
+            resolve_action = menu.addAction(tr('open_points.resolve', 'Open punt afronden'))
+            resolve_action.triggered.connect(self.resolveOpenPointRequested.emit)
+            edit_note_action = menu.addAction(tr('open_points.edit_note', 'Notitie bij open punt wijzigen'))
+            edit_note_action.triggered.connect(self.editOpenPointRequested.emit)
         if has_selection:
             menu.addSeparator()
             formatting = menu.addMenu(tr('format.menu', 'Opmaak'))
-            states = selection_format_states(self.toPlainText(), *self._selection_range)
+            states = selection_format_states(self.source_text(), *self._selection_range)
 
             inline = (
                 ('bold', tr('format.bold', 'Vet')),
@@ -754,6 +1118,15 @@ class ManuscriptEditor(QTextEdit):
                 action.triggered.connect(lambda checked=False, a=action_name: self.apply_format_action(a))
                 paragraph_menu.addAction(action)
 
+            menu.addSeparator()
+            darling_action = menu.addAction(tr('darlings.copy_action', 'Kopiëren naar bewaarplaats'))
+            darling_action.triggered.connect(self.copyToDarlingsRequested.emit)
+            cut_darling_action = menu.addAction(tr('darlings.cut_action', 'Knippen naar bewaarplaats'))
+            cut_darling_action.triggered.connect(self.cutToDarlingsRequested.emit)
+            menu.addSeparator()
+            open_point_action = menu.addAction(tr('open_points.add_selection', 'Markeer als open punt'))
+            open_point_action.triggered.connect(self.addOpenPointRequested.emit)
+
         menu.exec(event.globalPos())
         menu.deleteLater()
 
@@ -764,8 +1137,14 @@ class ManuscriptEditor(QTextEdit):
             self.hide_selection_toolbar()
             self._protected_image_message()
             return
-        old = self.toPlainText()
-        start, end = self._selection_range
+        if self.selection_intersects_open_point_marker():
+            self.hide_selection_toolbar()
+            self._protected_open_point_message()
+            return
+        old = self.source_text()
+        selection = self._normalise_selection_around_escapes(self.textCursor())
+        start, end = sorted((selection.selectionStart(), selection.selectionEnd()))
+        self._selection_range = (start, end)
         if action in {'bold', 'italic', 'underline', 'strike', 'code'}:
             new, new_start, new_end = toggle_inline(old, start, end, action)
         elif action in {'paragraph', 'heading', 'bullet', 'numbered', 'quote'}:
@@ -889,22 +1268,8 @@ class ManuscriptEditor(QTextEdit):
 
     @staticmethod
     def _block_kind(text: str) -> str:
-        stripped = text.strip()
-        if not stripped:
-            return 'empty'
-        if is_scene_break_line(text):
-            return 'scene'
-        if image_reference_for_line(text):
-            return 'image'
-        if text.startswith('## '):
-            return 'heading'
-        if text.startswith('> '):
-            return 'quote'
-        if re.match(r'^[-*]\s+', text):
-            return 'bullet'
-        if re.match(r'^\d+\.\s+', text):
-            return 'numbered'
-        return 'normal'
+        kind = classify_block_line(text)
+        return 'normal' if kind == 'paragraph' else kind
 
     def apply_visual_formatting(self):
         """Apply layout-only manuscript formatting without polluting Undo.
@@ -981,7 +1346,7 @@ class ManuscriptEditor(QTextEdit):
     def _update_scene_break_hover(self, pos: QPoint):
         cursor = self.cursorForPosition(pos)
         block = cursor.block()
-        if block.isValid() and is_scene_break_line(block.text()):
+        if block.isValid() and classify_block_line(block.text()) == 'scene':
             number = block.blockNumber()
             if self._hover_scene_block != number:
                 self._hover_scene_block = number
@@ -1013,7 +1378,7 @@ class ManuscriptEditor(QTextEdit):
         if number < 0:
             return
         block = self.document().findBlockByNumber(number)
-        if not block.isValid() or not is_scene_break_line(block.text()):
+        if not block.isValid() or not classify_block_line(block.text()) == 'scene':
             self.scene_delete_button.hide()
             self._hover_scene_block = -1
             return

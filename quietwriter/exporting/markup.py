@@ -4,8 +4,8 @@ import html
 import re
 from pathlib import Path
 
-from ..manuscript_markup import is_scene_break_line, parse_inline_spans
-from ..media.markup import image_reference_for_line
+from ..document_view import (content_inline_runs, inline_runs, iter_content_blocks,
+                             visible_inline_text)
 
 
 _TAGS = {
@@ -17,57 +17,39 @@ _TAGS = {
 }
 
 
-def inline_to_xhtml(text: str) -> str:
-    """Render QuietWriter's supported inline markup as balanced safe XHTML.
+def inline_to_xhtml(text: str, runs=None) -> str:
+    """Render semantic inline runs as balanced safe XHTML.
 
-    QuietWriter deliberately allows crossed Markdown spans because formatting is
-    selection-based. XML/XHTML does not: ``**one *two** three*`` cannot become
-    ``<strong>one <em>two</strong> three</em>``. Render the visible source one
-    character run at a time and transition between the active span stacks. When
-    an outer span ends while an inner one continues, the inner tag is closed,
-    the outer tag is closed, and the inner tag is reopened. The resulting XHTML
-    is always properly nested while preserving the intended visual overlap.
+    When *runs* is omitted the central DocumentView inline parser is used.
+    Exporters that already have a parsed DocumentBlock pass its runs directly,
+    so source markup is interpreted only once.
     """
-    spans = parse_inline_spans(text)
-    if not spans:
-        return html.escape(text, quote=False)
-
-    marker_positions: set[int] = set()
-    for span in spans:
-        for a, b in span.marker_ranges:
-            marker_positions.update(range(a, b))
-
-    def active_at(position: int):
-        active = [
-            span for span in spans
-            if span.content_start <= position < span.content_end and span.kind in _TAGS
-        ]
-        # Stable nesting order: spans that started first are outer. If starts are
-        # equal, the one ending later is outer.
-        active.sort(key=lambda span: (span.content_start, -span.content_end, span.kind))
-        return active
+    semantic_runs = tuple(runs) if runs is not None else inline_runs(text)
+    if not semantic_runs:
+        return html.escape(text or '', quote=False)
 
     out: list[str] = []
-    stack: list = []
+    stack: list[str] = []
 
-    def transition(target: list):
-        nonlocal stack
+    def ordered(styles):
+        # Stable canonical tag nesting independent of source marker order.
+        order = ('bold', 'italic', 'underline', 'strike', 'code')
+        return [kind for kind in order if kind in styles and kind in _TAGS]
+
+    for run in semantic_runs:
+        target = ordered(run.styles)
         common = 0
-        while common < len(stack) and common < len(target) and stack[common] is target[common]:
+        while common < len(stack) and common < len(target) and stack[common] == target[common]:
             common += 1
-        for span in reversed(stack[common:]):
-            out.append(_TAGS[span.kind][1])
-        for span in target[common:]:
-            out.append(_TAGS[span.kind][0])
+        for kind in reversed(stack[common:]):
+            out.append(_TAGS[kind][1])
+        for kind in target[common:]:
+            out.append(_TAGS[kind][0])
         stack = list(target)
+        out.append(html.escape(run.text, quote=False))
 
-    for i, ch in enumerate(text):
-        if i in marker_positions:
-            continue
-        transition(active_at(i))
-        out.append(html.escape(ch, quote=False))
-
-    transition([])
+    for kind in reversed(stack):
+        out.append(_TAGS[kind][1])
     return ''.join(out)
 
 
@@ -84,12 +66,15 @@ def _markdown_to_xhtml(
     *,
     collect_headings: bool = False,
 ) -> tuple[str, list[tuple[str, str]]]:
-    """Render QuietWriter manuscript Markdown and optionally collect h2 anchors."""
-    text = (text or '').replace('\r\n', '\n').replace('\r', '\n')
-    lines = text.split('\n')
+    """Render QuietWriter manuscript semantics as XHTML.
+
+    Block interpretation comes from DocumentView; this renderer only decides
+    how those semantic blocks become XHTML.
+    """
+    source = (text or '').replace('\r\n', '\n').replace('\r', '\n')
     blocks: list[str] = []
     list_kind: str | None = None
-    list_items: list[str] = []
+    list_items: list[tuple[str, tuple]] = []
     headings: list[tuple[str, str]] = []
     heading_index = 0
 
@@ -97,82 +82,65 @@ def _markdown_to_xhtml(
         nonlocal list_kind, list_items
         if list_kind and list_items:
             tag = 'ol' if list_kind == 'ol' else 'ul'
-            blocks.append(f'<{tag}>' + ''.join(f'<li>{inline_to_xhtml(item)}</li>' for item in list_items) + f'</{tag}>')
+            blocks.append(f'<{tag}>' + ''.join(f'<li>{inline_to_xhtml(item, runs)}</li>' for item, runs in list_items) + f'</{tag}>')
         list_kind = None
         list_items = []
 
-    for raw in lines:
-        line = raw.rstrip()
-        stripped = line.strip()
-        if not stripped:
+    for block in iter_content_blocks(source):
+        if block.kind == 'image':
             flush_list()
-            # One Enter already creates a new paragraph in QuietWriter. A blank
-            # source block is therefore an intentional extra paragraph break,
-            # represented explicitly rather than being used to decide whether
-            # neighbouring non-empty lines belong to the same paragraph.
-            continue
-        image = image_reference_for_line(stripped)
-        if image:
-            flush_list()
-            href = _image_href(image.path, image_hrefs)
+            attrs = block.attrs or {}
+            path = str(attrs.get('path') or '')
+            href = _image_href(path, image_hrefs)
+            alt = str(attrs.get('alt') or '')
+            caption_text = str(attrs.get('caption') or '')
             if href:
-                caption = f'<figcaption>{html.escape(image.caption)}</figcaption>' if image.caption else ''
-                classes = [
-                    'manuscript-image',
-                    f'image-width-{image.width}',
-                    f'image-align-{image.align}',
-                ]
-                if image.wrap:
-                    classes.extend(['image-wrap', f'image-wrap-{image.align}'])
-                class_attr = ' '.join(classes)
+                caption = f'<figcaption>{html.escape(caption_text)}</figcaption>' if caption_text else ''
+                width = str(attrs.get('width') or 'medium')
+                align = str(attrs.get('align') or 'center')
+                classes = ['manuscript-image', f'image-width-{width}', f'image-align-{align}']
+                if bool(attrs.get('wrap')):
+                    classes.extend(['image-wrap', f'image-wrap-{align}'])
                 blocks.append(
-                    f'<figure class="{class_attr}">'
-                    f'<img src="{html.escape(href, quote=True)}" alt="{html.escape(image.alt, quote=True)}"/>'
+                    f'<figure class="{" ".join(classes)}">'
+                    f'<img src="{html.escape(href, quote=True)}" alt="{html.escape(alt, quote=True)}"/>'
                     f'{caption}</figure>'
                 )
             else:
-                # Preflight normally blocks this situation. Keep the renderer
-                # safe if called directly with an incomplete document.
-                fallback = image.alt or image.caption or 'Afbeelding ontbreekt'
+                fallback = alt or caption_text or 'Afbeelding ontbreekt'
                 blocks.append(f'<p class="missing-image">[{html.escape(fallback)}]</p>')
             continue
-        if is_scene_break_line(stripped):
-            flush_list(); blocks.append('<div class="scene-break" aria-label="Scene break">* * *</div>'); continue
-        if stripped.startswith('## '):
+
+        if block.kind == 'scene':
             flush_list()
-            label_source = stripped[3:].strip()
+            blocks.append('<div class="scene-break" aria-label="Scene break">* * *</div>')
+            continue
+
+        content = block.text[block.content_start-block.start:block.content_end-block.start].strip()
+        runs = content_inline_runs(block)
+        if block.kind == 'heading':
+            flush_list()
             heading_index += 1
             heading_id = f'h-{heading_index}'
-            label_xhtml = inline_to_xhtml(label_source)
-            blocks.append(f'<h2 id="{heading_id}">{label_xhtml}</h2>')
+            blocks.append(f'<h2 id="{heading_id}">{inline_to_xhtml(content, runs)}</h2>')
             if collect_headings:
-                # Navigation labels are plain text. Strip QuietWriter's own inline
-                # markers without attempting to derive text back from XHTML.
-                marker_positions = {
-                    pos
-                    for span in parse_inline_spans(label_source)
-                    for a, b in span.marker_ranges
-                    for pos in range(a, b)
-                }
-                label = ''.join(ch for idx, ch in enumerate(label_source) if idx not in marker_positions)
-                headings.append((heading_id, label))
+                headings.append((heading_id, ''.join(run.text for run in runs).strip()))
             continue
-        if stripped.startswith('> '):
-            flush_list(); blocks.append(f'<blockquote><p>{inline_to_xhtml(stripped[2:].strip())}</p></blockquote>'); continue
-        bullet = re.match(r'^[-*]\s+(.+)$', stripped)
-        ordered = re.match(r'^\d+\.\s+(.+)$', stripped)
-        if bullet or ordered:
-            wanted = 'ol' if ordered else 'ul'
+        if block.kind == 'quote':
+            flush_list()
+            blocks.append(f'<blockquote><p>{inline_to_xhtml(content, runs)}</p></blockquote>')
+            continue
+        if block.kind in {'bullet', 'numbered'}:
+            wanted = 'ol' if block.kind == 'numbered' else 'ul'
             if list_kind and list_kind != wanted:
                 flush_list()
             list_kind = wanted
-            list_items.append((ordered or bullet).group(1))
+            list_items.append((content, runs))
             continue
+
         if list_kind:
             flush_list()
-        # In QuietWriter every QTextBlock is a manuscript paragraph: one Enter
-        # creates the next paragraph. Do not apply CommonMark's soft-line folding.
-        blocks.append(f'<p>{inline_to_xhtml(stripped)}</p>')
+        blocks.append(f'<p>{inline_to_xhtml(content, runs)}</p>')
 
     flush_list()
     return '\n'.join(blocks), headings

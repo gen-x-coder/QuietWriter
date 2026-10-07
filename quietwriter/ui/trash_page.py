@@ -37,7 +37,7 @@ class TrashPage(QWidget):
 
         info = QLabel(tr(
             'trash.info',
-            'Selecteer één of meer boeken of hoofdstukken. Definitief verwijderen kan niet ongedaan worden gemaakt.',
+            'Selecteer één of meer boeken, hoofdstukken of fragmenten. Definitief verwijderen kan niet ongedaan worden gemaakt.',
         ))
         info.setObjectName('muted')
         self.list = QListWidget()
@@ -74,17 +74,20 @@ class TrashPage(QWidget):
                 'book_title': row.get('book_title', ''),
                 'book_available': bool(row.get('book_available')),
             })
+        for path, fragment in self.main.darlings_page.store.list_trashed():
+            rows.append({
+                'kind': 'fragment', 'path': str(path), 'deleted': path.stat().st_mtime,
+                'title': self.main.darlings_page.display_name(fragment),
+            })
         rows.sort(key=lambda row: row['deleted'], reverse=True)
 
         self.list.clear()
         for row in rows:
             dt = datetime.fromtimestamp(row['deleted']).strftime('%d-%m-%Y %H:%M')
             if row['kind'] == 'book':
-                label = tr(
-                    'trash.row_book',
-                    'Boek · {title}   ·   verwijderd {date}',
-                    title=row['title'], date=dt,
-                )
+                label = tr('trash.row_book', 'Boek · {title}   ·   verwijderd {date}', title=row['title'], date=dt)
+            elif row['kind'] == 'fragment':
+                label = tr('trash.row_fragment', 'Fragment · {title}   ·   verwijderd {date}', title=row['title'], date=dt)
             else:
                 label = tr(
                     'trash.row_chapter',
@@ -126,7 +129,7 @@ class TrashPage(QWidget):
         if not entries:
             QMessageBox.information(
                 self, tr('trash.title', 'Prullenbak'),
-                tr('trash.select_first', 'Selecteer eerst één of meer boeken of hoofdstukken.'),
+                tr('trash.select_first', 'Selecteer eerst één of meer boeken, hoofdstukken of fragmenten.'),
             )
             return
 
@@ -142,6 +145,9 @@ class TrashPage(QWidget):
                     self.main.library.restore_trashed_chapter(path, book=active_book)
                     if active_book is not None:
                         self._refresh_active_book_after_chapter_restore(active_book.id)
+                elif entry.get('kind') == 'fragment':
+                    self.main.darlings_page.store.restore(path)
+                    self.main.darlings_page.refresh()
                 else:
                     self.main.library.restore_trashed_book(path)
             except Exception as exc:
@@ -161,7 +167,7 @@ class TrashPage(QWidget):
         if not entries:
             QMessageBox.information(
                 self, tr('trash.title', 'Prullenbak'),
-                tr('trash.select_first', 'Selecteer eerst één of meer boeken of hoofdstukken.'),
+                tr('trash.select_first', 'Selecteer eerst één of meer boeken, hoofdstukken of fragmenten.'),
             )
             return
         if not confirm(
@@ -177,6 +183,8 @@ class TrashPage(QWidget):
             try:
                 if entry.get('kind') == 'chapter':
                     self.main.library.permanently_delete_trashed_chapter(path)
+                elif entry.get('kind') == 'fragment':
+                    self.main.darlings_page.store.permanently_delete(path)
                 else:
                     self.main.library.permanently_delete_trashed_book(path)
             except Exception as exc:
@@ -193,11 +201,13 @@ class TrashPage(QWidget):
         if not confirm(
             self,
             tr('trash.empty_title', 'Prullenbak legen'),
-            tr('trash.empty_confirm', 'Wil je alle boeken en hoofdstukken in de prullenbak definitief verwijderen?'),
+            tr('trash.empty_confirm', 'Wil je alle boeken, hoofdstukken en fragmenten in de prullenbak definitief verwijderen?'),
         ):
             return
         try:
             self.main.library.empty_trash()
+            for path, _fragment in self.main.darlings_page.store.list_trashed():
+                self.main.darlings_page.store.permanently_delete(path)
         except Exception as exc:
             QMessageBox.warning(
                 self,

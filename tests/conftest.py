@@ -54,6 +54,31 @@ def fail_on_unexpected_modal_dialog(monkeypatch):
     assert not calls, 'Unexpected modal dialogs during Qt event processing: ' + '; '.join(calls)
 
 
+@pytest.fixture(autouse=True)
+def _close_leaked_qt_windows():
+    """Ruim na elke test achtergebleven top-level Qt-vensters op."""
+    yield
+    if importlib.util.find_spec('PySide6') is None:
+        return
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        return
+
+    for window in list(QApplication.topLevelWidgets()):
+        try:
+            window.close()
+            window.deleteLater()
+        except RuntimeError:
+            pass
+
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    app.processEvents()
+
+
 def pytest_collection_modifyitems(config, items):
     """Mark tests that exercise real PySide6/Qt runtime as ``qt``.
 

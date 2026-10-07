@@ -35,6 +35,8 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 
 ### Setup-flow
 - Een tijdelijke keuze- of configuratiestap mag Gereed/Annuleren gebruiken als beide acties betekenis hebben.
+- Setup-flows **binnen een pagina met scrollende inhoud** houden de navigatie direct onder de stappenrij en buiten de scrollviewport, zodat Terug/Volgende zichtbaar blijven. De actiebalk volgt dezelfde maximale contentbreedte als de stapinhoud; op brede schermen drijft de primaire actie dus niet naar de uiterste vensterrand.
+- **Korte modale wizards** (zoals de eerste configuratie) houden hun navigatie onderaan het dialoogvenster. Dit verschil is bewust: page-based flows moeten scrollen zonder hun navigatie kwijt te raken; modale flows hebben die noodzaak niet.
 
 ## Interactie
 
@@ -103,7 +105,13 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 ## Exporteren-pagina
 
 - Exporteren is een zelfstandige boekpagina direct onder Boekdetails; Boekdetails beheert metadata/omslag, Exporteren beheert uitvoerformaten en renderinstellingen.
-- Formaatkeuze staat bovenaan als drie kaarten: EPUB, PDF en Markdown. EPUB en PDF zijn volwaardige publicatieformaten; Markdown blijft technisch beschikbaar voor uitwisseling/back-up.
+- De pagina heeft twee modi met een schakelaar rechtsboven: **Begeleid** (standaard) en **Zelf instellen**. De keuze staat in QSettings `export/guided` en is ook in Instellingen → Algemeen te wijzigen.
+- **Begeleid** is een setup-flow binnen de pagina, geen modaal venster: Doel → Controle → Inhoud → (Vormgeving, alleen EPUB/PDF) → Exporteren → Klaar. De stappenrij is niet klikbaar; Terug/Volgende staan in een vaste actiebalk direct onder de stappenrij en buiten de scrollviewport. Een kaart selecteren gaat nooit automatisch door.
+- De gebruiker kiest een **doel**, geen formaat: e-reader (EPUB), afdrukken (PDF), Word (DOCX), delen met een QuietWriter-gebruiker (QWBOOK zonder versiegeschiedenis en Meelezer-gesprek), back-up (QWBOOK compleet) en website (Markdown). Doel-id's zijn stabiel en nooit vertaald.
+- Wizardkeuzes zijn een concept: `export/settings.json` wordt pas na een geslaagde export bijgewerkt (inclusief `purpose`). Wisselen naar Zelf instellen gooit het concept weg.
+- Controle en Inhoud zijn alleen-lezen. Een probleem toont “Moet opgelost” of “Mag je overslaan” (tekst, niet alleen kleur) en een knop naar de plek waar je het oplost; bij terugkeer op Exporteren wordt opnieuw gecontroleerd op dezelfde stap. Interne assetpaden worden nooit getoond.
+- Beide modi renderen via dezelfde route (`ExportPage.run_export_flow` → `exporting/runner.run_export`).
+- **Zelf instellen** toont de formaatkaarten EPUB, PDF, Markdown, DOCX en QWBOOK met alle instellingen. EPUB en PDF zijn volwaardige publicatieformaten; Markdown blijft beschikbaar voor uitwisseling.
 - De exportpagina verandert de publicatiestructuur nooit impliciet. De knop **Publicatiestructuur aanpassen** navigeert terug naar de bestaande setup.
 - Preflight is inline feedback en gebruikt geen modale dialoog voor waarschuwingen. Alleen blokkerende runtimefouten/overschrijven vragen een dialoog.
 - EPUB-instellingen blijven reflowable-readerinstellingen: template, omslag, omslagtekstmodus en sectietitels. PDF heeft apart vaste-pagina-instellingen: template, A5/A4, margepreset, paginanummers, rustige lopende kop en sectietitelpagina’s.
@@ -111,7 +119,7 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 - `nav.xhtml` bevat naast de gewone EPUB-ToC een minimale landmarks-laag: `bodymatter` naar het eerste hoofdstuk en alleen bij een zichtbare Inhoud-pagina een `toc`-landmark. Landmarks blijven beperkt tot punten die een reader daadwerkelijk als snelnavigatie kan gebruiken.
 - Omslagtekst kent bewust slechts twee modi: QuietWriter voegt titel/auteur toe aan tekstloos artwork, of QuietWriter gebruikt een reeds complete omslag. Geen coverdesigner.
 - De exportmap is computergebonden en staat daarom in QSettings; per-boek renderkeuzes staan onder `export/settings.json`.
-- Na succesvolle export blijft de gebruiker op dezelfde pagina en krijgt hij **Bestand openen** en **Map openen**; normale successen gebruiken geen QMessageBox.
+- Na succesvolle export blijft de gebruiker op dezelfde pagina en krijgt hij **Bestand openen** en **Map openen** (bij QWBOOK alleen **Map openen**); normale successen gebruiken geen QMessageBox.
 - PDF rendert via `QTextDocument` + `QPdfWriter/QPainter`; geen externe PDF-library. Een geconfigureerde titelpagina krijgt geen running header of paginanummer; daarna begint de zichtbare nummering bij 1.
 - PDF-afbeeldingen volgen de bestaande Klein/Middel/Groot/Volledig en Links/Midden/Rechts-intentie. Korte onderschriften mogen links/rechts mee floaten; een lang onderschrift schakelt in PDF automatisch de omloop uit om het in de Qt-spike gevonden overlap-randgeval te vermijden. Preflight meldt deze veilige fallback als waarschuwing.
 - Markdown is een vast publicatieformaat, geen generieke export met toggles: de frontmatterheader is verplicht en heeft een stabiele veldvolgorde. Een hoofdstukkop/sectiemarker wordt alleen toegevoegd wanneer die structurele informatie bewaart.
@@ -385,3 +393,12 @@ Nieuwe hoofdstukplanning wordt niet stil geactiveerd. Zolang `ai_use_chapter_pla
 - Zichtbare UI-tekst loopt via `tr()`; logica mag nooit afhangen van een vertaald label. Gebruik stabiele ids in item data voor comboboxen/lijsten.
 - Persistente Markdown-koppen blijven broncompatibel; alleen de UI-labels worden vertaald.
 - De Over-pagina toont eerst de product-/derdenlicenties en daarna de individuele fontlicenties. Licentieteksten zijn inklapbaar om de pagina rustig te houden.
+
+
+## Rechterpanelen — uitleg
+
+Rechterpanelen met functies die niet vanzelf spreken gebruiken één gedeeld `PanelHelp`-patroon: titel + kleine ?-knop en een rustig uitlegblok. De uitleg staat de eerste keer open, verdwijnt met **Begrepen** en kan later via ? opnieuw worden geopend. De keuze wordt per paneel onthouden. **Toevoegen** is de uitzondering: de kaarten leggen de acties al uit en krijgt daarom geen ?-knop.
+
+Uitleg is geen waarschuwing. De privacy-/toestemmingsmelding in de Meelezer gebruikt de waarschuwingskleur en blijft onafhankelijk van de paneeluitleg. In Instellingen → Algemeen kan **Alle uitleg weer tonen** alleen de paneeluitleg resetten.
+
+De uitleg heeft geen vaste hoogte: tekst moet bij 150% en smalle rechterpanelen volledig kunnen doorlopen. De bestaande focus bij het openen van een paneel blijft leidend; de uitleg neemt de focus niet automatisch over.

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtGui import QColor, QFont, QTextCharFormat, QSyntaxHighlighter
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QTextCharFormat, QSyntaxHighlighter
 
-from ..manuscript_markup import parse_inline_spans
-from ..media.markup import mask_image_paths
+from ..document_view import parse_block_line, text_for_language_tools
 from ..spell_engine import WORD_RE
 
 
@@ -28,9 +27,32 @@ class ManuscriptHighlighter(QSyntaxHighlighter):
         fmt = QTextCharFormat()
         fmt.setForeground(QColor(self.editor._theme()['editor']))
         # DirectWrite can fail to outline glyphs at pathological sub-point
-        # sizes on some Windows/PySide6 combinations. One point keeps syntax
-        # visually collapsed without asking the font engine for 0.1pt glyphs.
+        # sizes on some Windows/PySide6 combinations. One point keeps ordinary
+        # Markdown syntax visually unobtrusive without changing its geometry.
         fmt.setFontPointSize(1.0)
+        return fmt
+
+    def _hidden_todo_marker_format(self) -> QTextCharFormat:
+        """Collapse a QuietWriter todo marker without pulling prose backwards.
+
+        A fixed negative spacing (for example -2 px) is unsafe: at 1 pt the
+        glyph itself is much narrower, so surrounding manuscript text overlaps.
+        Use the actual average glyph width of the 1 pt editor font instead.
+        This makes the marker close to zero-width while keeping normal hidden
+        Markdown markers (such as ** around bold text) untouched.
+        """
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(self.editor._theme()['editor']))
+        font = QFont(self.editor.font())
+        font.setPointSizeF(1.0)
+        fmt.setFont(font)
+        try:
+            width = float(QFontMetricsF(font).averageCharWidth())
+            if width > 0:
+                fmt.setFontLetterSpacingType(QFont.SpacingType.AbsoluteSpacing)
+                fmt.setFontLetterSpacing(-width)
+        except Exception:
+            pass
         return fmt
 
     def _base_format(self, kind: str) -> QTextCharFormat:
@@ -42,23 +64,6 @@ class ManuscriptHighlighter(QSyntaxHighlighter):
             fmt.setFontItalic(True)
             fmt.setForeground(QColor(self.editor._theme()['muted']))
         return fmt
-
-    @staticmethod
-    def _prefix(text: str, kind: str) -> tuple[int, str]:
-        import re
-        if kind == 'heading' and text.startswith('## '):
-            return 3, text[3:]
-        if kind == 'quote' and text.startswith('> '):
-            return 2, text[2:]
-        if kind == 'bullet':
-            m = re.match(r'^[-*]\s+', text)
-            if m:
-                return m.end(), text[m.end():]
-        if kind == 'numbered':
-            m = re.match(r'^\d+\.\s+', text)
-            if m:
-                return m.end(), text[m.end():]
-        return 0, text
 
     def _composed_format(self, base: QTextCharFormat, styles: set[str]) -> QTextCharFormat:
         fmt = QTextCharFormat(base)
@@ -75,8 +80,8 @@ class ManuscriptHighlighter(QSyntaxHighlighter):
             fmt.setBackground(QColor(self.editor._theme()['panel2']))
         return fmt
 
-    def _apply_inline(self, text: str, offset: int, base: QTextCharFormat, marker_ranges: list[tuple[int, int]]):
-        spans = parse_inline_spans(text)
+    def _apply_inline(self, text: str, offset: int, base: QTextCharFormat, marker_ranges: list[tuple[int, int]], spans=None):
+        spans = list(spans if spans is not None else parse_block_line(text).inline_spans)
         if not spans:
             return
 
@@ -125,9 +130,39 @@ class ManuscriptHighlighter(QSyntaxHighlighter):
             self.setFormat(match.start(), len(match.group(0)), fmt)
 
     def highlightBlock(self, text: str):
-        kind = self.editor._block_kind(text)
+        block_view = parse_block_line(text)
+        kind = 'normal' if block_view.kind == 'paragraph' else block_view.kind
         hidden = self._hidden_marker_format()
         marker_ranges: list[tuple[int, int]] = []
+
+        # Open points are source-level QuietWriter markers, but writers should see
+        # only their own text. Hide marker comments and give the visible payload a
+        # restrained highlight. QTextHighlighter block state carries a placeholder
+        # across paragraph boundaries without changing the source document.
+        in_todo = self.previousBlockState() == 1
+        token_re = __import__('re').compile(
+            r'<!--\s*qw:todo:[0-9a-fA-F-]{8,}\s*-->'
+            r'|<!--\s*qw:todo\s+id=[^>]+-->'
+            r'|<!--\s*/qw:todo\s*-->'
+        )
+        todo_fmt = QTextCharFormat()
+        todo_fmt.setBackground(QColor(self.editor._theme().get('accent_soft', self.editor._theme().get('panel2'))))
+        hidden_todo = self._hidden_todo_marker_format()
+        cursor = 0
+        active = in_todo
+        for match in token_re.finditer(text):
+            if active and match.start() > cursor:
+                self.setFormat(cursor, match.start() - cursor, todo_fmt)
+            self.setFormat(match.start(), match.end() - match.start(), hidden_todo)
+            marker_ranges.append((match.start(), match.end()))
+            if 'qw:todo' in match.group(0) and '/qw:todo' not in match.group(0):
+                active = True
+            else:
+                active = False
+            cursor = match.end()
+        if active and cursor < len(text):
+            self.setFormat(cursor, len(text) - cursor, todo_fmt)
+        self.setCurrentBlockState(1 if active else 0)
 
         if kind == 'scene':
             if text:
@@ -146,7 +181,8 @@ class ManuscriptHighlighter(QSyntaxHighlighter):
                 self.setFormat(0, len(text), fmt)
             return
 
-        prefix_len, visible_text = self._prefix(text, kind)
+        prefix_len = max(0, block_view.content_start - block_view.start)
+        visible_text = text[prefix_len:]
         if prefix_len:
             self.setFormat(0, prefix_len, hidden)
             marker_ranges.append((0, prefix_len))
@@ -155,5 +191,23 @@ class ManuscriptHighlighter(QSyntaxHighlighter):
         if visible_text and kind in {'heading', 'quote'}:
             self.setFormat(prefix_len, len(visible_text), base)
 
-        self._apply_inline(visible_text, prefix_len, base, marker_ranges)
-        self._apply_spelling(mask_image_paths(text), marker_ranges)
+        # Literal escape backslashes are persistent syntax but not writer-visible.
+        # Hide them before spelling/inline presentation; the escaped punctuation
+        # itself remains visible and is deliberately not interpreted as markup.
+        for a, b in block_view.escape_ranges:
+            self.setFormat(a, b - a, hidden)
+            marker_ranges.append((a, b))
+
+        inline_spans = []
+        for span in block_view.inline_spans:
+            if span.open_start < prefix_len:
+                continue
+            from dataclasses import replace
+            inline_spans.append(replace(
+                span,
+                open_start=span.open_start-prefix_len, open_end=span.open_end-prefix_len,
+                content_start=span.content_start-prefix_len, content_end=span.content_end-prefix_len,
+                close_start=span.close_start-prefix_len, close_end=span.close_end-prefix_len,
+            ))
+        self._apply_inline(visible_text, prefix_len, base, marker_ranges, inline_spans)
+        self._apply_spelling(text_for_language_tools(text), marker_ranges)

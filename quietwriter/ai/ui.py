@@ -19,6 +19,7 @@ from ..book_memory import SECTIONS
 from ..i18n import tr
 from ..themes import THEMES
 from ..ui.planning_context_dialog import PlanningContextDialog
+from ..ui.panel_help import PanelHelp, WrappedLabel
 
 
 class ProviderChatWorker(QThread):
@@ -110,11 +111,13 @@ class AIPanel(QWidget):
         # Keep the conversation visually dominant. Persistent controls live at
         # the bottom near the composer; occasional context/quick-action tools
         # expand only when requested.
-        top = QHBoxLayout()
-        lab = QLabel(tr('ai.title', 'Meelees-assistent')); lab.setObjectName('sectionTitle')
         self.clear_button = QPushButton(tr('ai.new_conversation', 'Nieuw gesprek')); self.clear_button.setObjectName('suggestionButton'); self.clear_button.clicked.connect(self.clear_conversation)
-        top.addWidget(lab); top.addStretch(); top.addWidget(self.clear_button)
-        lay.addLayout(top)
+        self.panel_help = PanelHelp(
+            self.main.settings, 'ai', tr('ai.title', 'Meelees-assistent'),
+            tr('panel_help.ai', 'Stel een vraag over je tekst, of selecteer een passage en kies een snelactie. Het antwoord verschijnt hier; je manuscript verandert alleen als jij het zelf aanpast. Onder Context zie je wat er wordt meegestuurd.'),
+            extra_title_widgets=(self.clear_button,),
+        )
+        lay.addWidget(self.panel_help)
 
         self.chat = QTextBrowser(); self.chat.setObjectName('aiChat'); self.chat.setOpenExternalLinks(True)
         lay.addWidget(self.chat, 1)
@@ -152,18 +155,22 @@ class AIPanel(QWidget):
         self.chapter_planning_info.setObjectName('muted'); self.chapter_planning_info.setWordWrap(True)
         context_lay.addWidget(self.chapter_planning_info)
         self.chapter_planning_notice_row = QWidget()
-        notice_lay = QHBoxLayout(self.chapter_planning_notice_row)
-        notice_lay.setContentsMargins(0, 0, 0, 0)
-        notice_lay.setSpacing(6)
-        self.chapter_planning_notice = QLabel(
+        self.chapter_planning_notice_row.setObjectName('noticePanel')
+        notice_lay = QVBoxLayout(self.chapter_planning_notice_row)
+        notice_lay.setContentsMargins(14, 12, 14, 12)
+        notice_lay.setSpacing(10)
+        self.chapter_planning_notice = WrappedLabel(
             tr('ai.context.chapter_notice', 'Nieuw: hoofdstukplanning kan meegaan met AI-vragen. Staat standaard uit. Bij een externe provider verlaten deze gegevens je computer.')
         )
         self.chapter_planning_notice.setObjectName('muted')
-        self.chapter_planning_notice.setWordWrap(True)
         self.chapter_planning_notice_ack = QPushButton(tr('common.understood', 'Begrepen'))
         self.chapter_planning_notice_ack.clicked.connect(self._acknowledge_chapter_planning_notice)
-        notice_lay.addWidget(self.chapter_planning_notice, 1)
-        notice_lay.addWidget(self.chapter_planning_notice_ack, 0, Qt.AlignTop)
+        notice_lay.addWidget(self.chapter_planning_notice)
+        notice_ack_row = QHBoxLayout()
+        notice_ack_row.setContentsMargins(0, 0, 0, 0)
+        notice_ack_row.addWidget(self.chapter_planning_notice_ack)
+        notice_ack_row.addStretch(1)
+        notice_lay.addLayout(notice_ack_row)
         contains = getattr(self.main.settings, 'contains', None)
         self._chapter_planning_preference_set = bool(contains('ai_use_chapter_planning')) if callable(contains) else False
         self.chapter_planning_notice_row.setVisible(not self._chapter_planning_preference_set)
@@ -404,12 +411,16 @@ class AIPanel(QWidget):
 
     def _toggle_context_controls(self, checked=False):
         visible = bool(checked)
+        if visible:
+            self.panel_help.collapse_temporarily()
         self.context_panel.setVisible(visible)
         if visible and self.quick_panel.isVisible():
             self.quick_panel.hide(); self.quick_toggle.setChecked(False)
 
     def _toggle_quick_actions(self, checked=False):
         visible = bool(checked)
+        if visible:
+            self.panel_help.collapse_temporarily()
         self.quick_panel.setVisible(visible)
         if visible and self.context_panel.isVisible():
             self.context_panel.hide(); self.context_toggle.setChecked(False)

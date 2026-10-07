@@ -327,7 +327,7 @@ Belangrijk:
 De roadmap stelde voor:
 
 ```markdown
-toen <!-- qw:todo id=3f2a -->mevrouw Xxx<!-- /qw:todo --> eindelijk aanbelde
+toen <!--qw:todo:3f2a9c8d-->mevrouw Xxx<!--/qw:todo--> eindelijk aanbelde
 ```
 
 Dit is haalbaar, maar heeft één belangrijk nadeel: HTML-commentmarkers liggen **inline** in gewone proza-source. Iedere parser/formattingactie moet ze dan als protected syntax respecteren.

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 
-from ..media.markup import text_for_ai
+from ..manuscript_text import text_for_ai
 from ..i18n import tr
 
 

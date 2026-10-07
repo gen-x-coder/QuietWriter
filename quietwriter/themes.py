@@ -382,6 +382,35 @@ THEMES = {'Helder': {'bg': '#f4f5f7',
                'cover1': '#12243a',
                'cover2': '#19304c',
                'cover3': '#0e1d30'},
+ 'Lamplicht': {'bg': '#191512',
+               'panel': '#231d18',
+               'panel2': '#2e261f',
+               'editor': '#201a16',
+               'text': '#f1e7d8',
+               'muted': '#b9aa98',
+               'disabled': '#776b60',
+               'border': '#46392f',
+               'border_subtle': '#332920',
+               'accent': '#d2a35d',
+               'accent_hover': '#e0b56f',
+               'accent_soft': '#443522',
+               'accent_text': '#191512',
+               'select': '#493a28',
+               'hover': '#30271f',
+               'focus': '#e2b56f',
+               'success': '#92b18c',
+               'success_soft': '#293328',
+               'warning': '#d6ad69',
+               'warning_soft': '#3b3021',
+               'danger': '#df8b80',
+               'danger_soft': '#402925',
+               'hero': '#120f0d',
+               'hero_text': '#f8efe2',
+               'history': '#3a2d22',
+               'history_text': '#f8efe2',
+               'cover1': '#30271f',
+               'cover2': '#3b3026',
+               'cover3': '#281f19'},
  'Aurora': {'bg': '#242933',
             'panel': '#2e3440',
             'panel2': '#3b4252',
@@ -479,6 +508,38 @@ def stylesheet(name: str) -> str:
     QPushButton#exportFormatCard:pressed {{ background: {t['select']}; border-color: {t['focus']}; }}
     QPushButton#exportFormatCard:checked {{ background: {t['accent_soft']}; border-color: {t['accent']}; color: {t['text']}; }}
     QPushButton#exportFormatCard:disabled {{ background: {t['panel2']}; color: {t['disabled']}; border-color: {t['border_subtle']}; }}
+    QPushButton#exportPurposeCard {{ background: {t['panel']}; border: 1px solid {t['border_subtle']}; border-radius: 10px; padding: 0; text-align: left; }}
+    QPushButton#exportPurposeCard:hover {{ background: {t['hover']}; border-color: {t['focus']}; }}
+    QPushButton#exportPurposeCard:focus {{ border-color: {t['focus']}; }}
+    QPushButton#exportPurposeCard:pressed {{ background: {t['select']}; border-color: {t['focus']}; }}
+    QPushButton#exportPurposeCard:checked {{ background: {t['accent_soft']}; border-color: {t['accent']}; }}
+    QPushButton#exportPurposeCard:checked:focus {{ border: 2px solid {t['focus']}; }}
+    QLabel#exportPurposeTitle {{ font-size: 14px; font-weight: 600; }}
+    QLabel#formatBadge {{ background: {t['panel2']}; color: {t['muted']}; border-radius: 4px; padding: 2px 6px; font-size: 11px; }}
+    QLabel#templatePreview {{ background: {t['editor']}; color: {t['text']}; border: 1px solid {t['border_subtle']}; border-radius: 4px; padding: 10px 12px; font-size: 11px; }}
+    QFrame#modeSwitch {{ background: {t['panel']}; border: 1px solid {t['border']}; border-radius: 8px; }}
+    QPushButton#modeSwitchButton {{ background: transparent; color: {t['muted']}; border: 1px solid transparent; border-radius: 6px; padding: 6px 12px; }}
+    QPushButton#modeSwitchButton:hover {{ background: {t['hover']}; color: {t['text']}; }}
+    QPushButton#modeSwitchButton:focus {{ border-color: {t['focus']}; }}
+    QPushButton#modeSwitchButton:checked {{ background: {t['accent_soft']}; color: {t['text']}; border-color: {t['accent']}; }}
+    QLabel#wizardStep {{ color: {t['muted']}; padding-bottom: 8px; }}
+    QLabel#wizardStepCurrent {{ color: {t['text']}; font-weight: 600; padding-bottom: 6px; border-bottom: 2px solid {t['accent']}; }}
+    QFrame#wizardStepLine {{ background: {t['border_subtle']}; border: 0; }}
+    QFrame#wizardActionBar {{ background: {t['bg']}; border-bottom: 1px solid {t['border_subtle']}; }}
+    QLabel#wizardHeading {{ font-size: 16px; font-weight: 600; }}
+    QLabel#wizardLead {{ font-size: 15px; }}
+    QLabel#wizardFileName {{ font-size: 17px; font-weight: 600; }}
+    QLabel#wizardIssueTitle {{ font-weight: 600; }}
+    QLabel#wizardStatusTitle {{ font-size: 15px; font-weight: 600; }}
+    QLabel#wizardOkMark {{ color: {t['success']}; font-weight: 600; }}
+    QFrame#wizardCard {{ background: {t['panel']}; border: 1px solid {t['border_subtle']}; border-radius: 10px; }}
+    QFrame#wizardStatusOk {{ background: {t['success_soft']}; border: 1px solid {t['success']}; border-radius: 10px; }}
+    QFrame#wizardStatusWarn {{ background: {t['warning_soft']}; border: 1px solid {t['warning']}; border-radius: 10px; }}
+    QLabel#wizardBadgeError {{ background: {t['danger_soft']}; color: {t['danger']}; border: 1px solid {t['danger']}; border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; }}
+    QLabel#wizardBadgeWarning {{ background: {t['warning_soft']}; color: {t['warning']}; border: 1px solid {t['warning']}; border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; }}
+    QPushButton#linkButton {{ background: transparent; border: 1px solid transparent; color: {t['muted']}; padding: 4px 2px; text-align: left; }}
+    QPushButton#linkButton:hover {{ color: {t['text']}; }}
+    QPushButton#linkButton:focus {{ border-color: {t['focus']}; }}
     QPushButton#dangerButton {{ color: {t['danger']}; border-color: {t['danger']}; }}
     QPushButton#dangerButton:hover, QPushButton#dangerButton:focus {{ background: {t['danger_soft']}; color: {t['danger']}; border-color: {t['focus']}; }}
     QPushButton#dangerButton:pressed {{ background: {t['select']}; border-color: {t['focus']}; }}
@@ -558,6 +619,11 @@ def stylesheet(name: str) -> str:
     QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 30px; border: 0; background: transparent; }}
     QComboBox QAbstractItemView {{ background: {t['panel']}; color: {t['text']}; border: 1px solid {t['border']}; outline: 0; selection-background-color: {t['accent_soft']}; selection-color: {t['text']}; padding: 4px; }}
     QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QTextEdit:focus, QPlainTextEdit:focus {{ border: 1px solid {t['focus']}; }}
+    QRadioButton {{ spacing: 9px; }}
+    QRadioButton::indicator {{ width: 18px; height: 18px; border: 2px solid {t['muted']}; border-radius: 9px; background: {t['editor']}; }}
+    QRadioButton::indicator:hover {{ border-color: {t['accent']}; }}
+    QRadioButton::indicator:checked {{ background: {t['accent']}; border: 2px solid {t['accent']}; }}
+    QRadioButton::indicator:disabled {{ border-color: {t['disabled']}; background: {t['panel2']}; }}
     QCheckBox:focus, QRadioButton:focus {{ background: {t['accent_soft']}; border-radius: 6px; }}
     QLineEdit:disabled, QComboBox:disabled, QTextEdit:disabled {{ color: {t['disabled']}; background: {t['panel2']}; }}
     QLineEdit#chapterTitle {{ border: 0; border-bottom: 1px solid transparent; padding: 34px 44px 16px 44px; background: {t['editor']}; }}
@@ -595,6 +661,13 @@ def stylesheet(name: str) -> str:
 
     QLabel#microLabel {{ color: {t['muted']}; font-size: 11px; font-weight: 600; letter-spacing: 0.8px; }}
     QFrame#softPanel {{ background: {t['panel2']}; border: 1px solid {t['border_subtle']}; border-radius: 10px; }}
+    QWidget#chapterContextFiller {{ background: transparent; }}
+    QWidget#noticePanel {{ background: {t['warning_soft']}; border: 1px solid {t['warning']}; border-radius: 8px; padding: 8px; }}
+    QWidget#noticePanel QLabel {{ color: {t['warning']}; }}
+    QPushButton#panelHelpButton {{ background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 0; color: {t['muted']}; }}
+    QPushButton#panelHelpButton:hover {{ background: {t['hover']}; }}
+    QPushButton#panelHelpButton:focus {{ border-color: {t['focus']}; }}
+    QPushButton#panelHelpButton:checked {{ background: {t['accent_soft']}; border-color: {t['accent']}; }}
     QCheckBox#publicationToggle {{ spacing: 9px; padding: 8px 6px; font-size: 14px; border-radius: 7px; }}
     QCheckBox#publicationToggle:hover {{ background: {t['hover']}; }}
     QCheckBox#publicationToggle:focus {{ background: {t['accent_soft']}; }}

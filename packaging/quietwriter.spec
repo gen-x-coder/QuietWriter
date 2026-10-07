@@ -58,7 +58,7 @@ datas += _dir('dictionaries')  # optioneel: alleen als tools/fetch_dictionaries.
 datas += _file('documents/licenses/LICENSE', 'documents/licenses')
 datas += _file('documents/licenses/THIRD_PARTY_LICENSES.md', 'documents/licenses')
 
-hiddenimports = collect_submodules('spylls')
+hiddenimports = collect_submodules('spylls') + collect_submodules('docx')
 
 # Qt-modules die QuietWriter niet gebruikt. Scheelt tientallen MB en
 # voorkomt dat PyInstaller ze via een omweg toch meeneemt.

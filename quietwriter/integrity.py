@@ -8,6 +8,8 @@ from pathlib import Path, PurePosixPath
 from .migrations import CURRENT_BOOK_FORMAT, FutureBookFormatError, MigrationError, detected_book_format, validate_manifest_structure
 from .storage import _safe_atomic_write_text, _safe_atomic_write_bytes, CorruptSourceError
 from .planning_validation import FuturePlanningFormatError, validate_planning_payload
+from .manuscript_profile import (CURRENT_MANUSCRIPT_SYNTAX_VERSION, FutureManuscriptSyntaxError,
+                                 ManuscriptSyntaxError, profile_from_manifest)
 
 
 @dataclass(frozen=True)
@@ -57,7 +59,7 @@ def _sha256(path: Path) -> str:
 class BookIntegrityChecker:
     """Read-only integrity audit for a QuietWriter book folder."""
 
-    JSON_FILES = ('planning/characters.json', 'planning/outline.json', 'publication/publication.json', 'export/settings.json')
+    JSON_FILES = ('planning/characters.json', 'planning/outline.json', 'planning/open_points.json', 'publication/publication.json', 'export/settings.json')
     UTF8_FILES = ('planning/notes.md', 'ai/boekprofiel.md', 'ai/memory.md')
 
     def audit_folder(self, folder: Path) -> IntegrityReport:
@@ -92,6 +94,18 @@ class BookIntegrityChecker:
             pass  # already reported above as future_format
         except MigrationError as exc:
             report.issues.append(IntegrityIssue('book_structure_invalid', 'error', 'book.json', str(exc)))
+
+        try:
+            syntax = profile_from_manifest(data)
+            if not syntax.explicit:
+                report.issues.append(IntegrityIssue(
+                    'manuscript_syntax_unversioned', 'warning', 'book.json',
+                    'Dit boek heeft nog geen expliciete manuscriptsyntaxversie; QuietWriter laat het boek ongewijzigd.'
+                ))
+        except FutureManuscriptSyntaxError as exc:
+            report.issues.append(IntegrityIssue('future_manuscript_syntax', 'error', 'book.json', str(exc)))
+        except ManuscriptSyntaxError as exc:
+            report.issues.append(IntegrityIssue('manuscript_syntax_invalid', 'error', 'book.json', str(exc)))
 
         if not str(data.get('id') or '').strip():
             report.issues.append(IntegrityIssue('book_id_missing', 'error', 'book.json', 'Boek-id ontbreekt.'))

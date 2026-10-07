@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QPushButton, QVBoxLayout, QWidget
 )
 from ..i18n import tr
+from .panel_help import PanelHelp
 
 class SearchPanel(QWidget):
     open_match = Signal(object)
@@ -12,10 +13,10 @@ class SearchPanel(QWidget):
     request_replace = Signal()
     request_replace_all = Signal()
 
-    def __init__(self):
+    def __init__(self, settings=None):
         super().__init__()
         lay = QVBoxLayout(self); lay.setContentsMargins(18,18,18,18)
-        lab = QLabel(tr('search.title', 'Zoeken en vervangen')); lab.setObjectName('sectionTitle')
+        self.panel_help = PanelHelp(settings, 'search', tr('search.title', 'Zoeken en vervangen'), tr('panel_help.search', 'Zoek in dit hoofdstuk, deze sectie of het hele boek. Vervang treffers één voor één, of allemaal tegelijk met Alles vervangen.'))
         self.scope = QComboBox(); self.scope.addItem(tr('search.scope.chapter', 'Huidig hoofdstuk'), 'chapter'); self.scope.addItem(tr('search.scope.section', 'Huidige sectie'), 'section'); self.scope.addItem(tr('search.scope.book', 'Hele boek'), 'book')
         self.query = QLineEdit(); self.query.setPlaceholderText(tr('search.placeholder', 'Zoeken…')); self.query.setClearButtonEnabled(True)
         self.replace = QLineEdit(); self.replace.setPlaceholderText(tr('search.replace_placeholder', 'Vervangen door…')); self.replace.setClearButtonEnabled(True)
@@ -36,7 +37,7 @@ class SearchPanel(QWidget):
         self.replace_btn = QPushButton(tr('search.replace','Vervangen')); self.replace_btn.clicked.connect(self.request_replace.emit)
         self.replace_all_btn = QPushButton(tr('search.replace_all','Alles vervangen')); self.replace_all_btn.clicked.connect(self.request_replace_all.emit)
         buttons.addWidget(self.next_btn); buttons.addWidget(self.replace_btn); buttons.addWidget(self.replace_all_btn)
-        lay.addWidget(lab); lay.addWidget(self.scope); lay.addWidget(self.query); lay.addLayout(options)
+        lay.addWidget(self.panel_help); lay.addWidget(self.scope); lay.addWidget(self.query); lay.addLayout(options)
         lay.addWidget(self.summary); lay.addWidget(self.empty); lay.addWidget(self.results, 1)
         lay.addWidget(QLabel(tr('search.replace_label', 'Vervangen door'))); lay.addWidget(self.replace); lay.addLayout(buttons)
         # Creation order differs from visual order because the replacement field

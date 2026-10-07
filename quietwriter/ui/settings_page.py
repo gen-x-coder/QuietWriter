@@ -3,11 +3,12 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QSettings, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
+    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QGridLayout, QLineEdit, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSizePolicy, QVBoxLayout, QWidget
 )
 from .current_page_stack import CurrentPageStack
 from ..workspace_path import normalize_workspace_path
+from ..first_run import request_first_run_reset
 from .. import APP_NAME
 from ..ai.providers import ProviderFactory
 from ..dictionary_catalog import DictionaryCatalog
@@ -19,6 +20,24 @@ from ..font_catalog import recommended_families, system_families_excluding_recom
 from ..manuscript_markup import ManuscriptStyle
 from .dialogs import confirm
 from .about_page import AboutPage
+
+
+class WrappedHeightLabel(QLabel):
+    """Word-wrapped QLabel that reserves height for its actual runtime width."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setWordWrap(True)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+    def sync_height(self) -> None:
+        width = max(1, self.width())
+        needed = self.heightForWidth(width)
+        if needed > 0 and self.minimumHeight() != needed:
+            self.setMinimumHeight(needed)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.sync_height()
 
 class SettingsPage(QWidget):
     DICTIONARY_DOWNLOAD_URL = 'https://extensions.openoffice.org/'
@@ -90,6 +109,9 @@ class SettingsPage(QWidget):
         self.language = QComboBox()
         self.language.addItem(tr('language.dutch', 'Nederlands'), 'nl')
         self.language.addItem(tr('language.english', 'Engels'), 'en')
+        self.language.addItem(tr('language.german', 'Duits'), 'de')
+        self.language.addItem(tr('language.french', 'Frans'), 'fr')
+        self.language.addItem(tr('language.spanish', 'Spaans'), 'es')
         language_value = str(settings.value('language', 'nl') or 'nl')
         language_index = self.language.findData(language_value)
         self.language.setCurrentIndex(language_index if language_index >= 0 else 0)
@@ -102,11 +124,48 @@ class SettingsPage(QWidget):
             gl, tr('settings.general.advanced_options', 'Geavanceerde opties gebruiken'), self.advanced_options,
             tr('settings.general.advanced_options_help', 'Toont specialistische functies die je niet nodig hebt voor dagelijks schrijven. Voorlopig geldt dit voor Integriteit & herstel.')
         )
+        self.guided_export = QCheckBox()
+        self.guided_export.setAccessibleName(tr('settings.general.guided_export', 'Begeleid exporteren'))
+        self.guided_export.setChecked(settings.value('export/guided', True, bool))
+        self._add_settings_field(
+            gl, tr('settings.general.guided_export', 'Begeleid exporteren'), self.guided_export,
+            tr('settings.general.guided_export_help', 'Exporteren begint met een paar korte vragen: wat wil je met je boek doen? Uit: je ziet direct alle exportinstellingen. Je kunt ook op de Exporteren-pagina zelf wisselen.')
+        )
         self._add_settings_section(gl, tr('settings.section.saving', 'Opslaan'))
         saving_info = QLabel(tr('settings.general.autosave_always', 'QuietWriter slaat wijzigingen automatisch op. Ctrl+S blijft beschikbaar om direct op te slaan.'))
         saving_info.setObjectName('muted')
         saving_info.setWordWrap(True)
         gl.addWidget(saving_info)
+
+        self._add_settings_section(gl, tr('settings.section.updates', 'Updates'))
+        self.auto_update_check = QCheckBox()
+        self.auto_update_check.setChecked(settings.value('auto_update_check', False, bool))
+        self._add_settings_field(
+            gl, tr('settings.updates.auto', 'Automatisch controleren op updates'), self.auto_update_check,
+            tr('settings.updates.auto_help', 'Vraagt GitHub na het opstarten alleen naar de nieuwste stabiele versie. Er worden geen boeken of manuscripten verstuurd en QuietWriter downloadt niets automatisch.')
+        )
+        check_now = QPushButton(tr('settings.updates.check_now', 'Nu controleren'))
+        check_now.clicked.connect(lambda: self.main.check_for_updates(silent=False))
+        self._add_settings_field(
+            gl, tr('settings.updates.manual', 'Handmatig controleren'), check_now,
+            tr('settings.updates.manual_help', 'Je kunt altijd handmatig controleren, ook als automatisch controleren uitstaat.')
+        )
+
+        self._add_settings_section(gl, tr('settings.section.help', 'Uitleg'))
+        show_help = QPushButton(tr('settings.help.reset_button', 'Alle uitleg weer tonen'))
+        show_help.clicked.connect(self._reset_panel_help)
+        self._add_settings_field(
+            gl, tr('settings.help.label', 'Uitleg in panelen'), show_help,
+            tr('settings.help.help', 'Toont de korte uitleg in de panelen van de rechterbalk weer, zoals de eerste keer. Je boeken en instellingen blijven ongewijzigd.')
+        )
+
+        self._add_settings_section(gl, tr('settings.section.reset', 'Opnieuw instellen'))
+        reset_button = QPushButton(tr('settings.reset.button', 'Standaardinstellingen herstellen…'))
+        reset_button.clicked.connect(self._reset_settings)
+        self._add_settings_field(
+            gl, tr('settings.reset.label', 'QuietWriter opnieuw instellen'), reset_button,
+            tr('settings.reset.help', 'Herstelt de programma-instellingen en toont bij de volgende start opnieuw de volledige setup. Je boeken en verhalen worden niet verwijderd.')
+        )
         gl.addStretch(1)
         self._add_settings_category(nav_lay, tr('settings.general', 'Algemeen'), general)
 
@@ -184,7 +243,7 @@ class SettingsPage(QWidget):
         self._add_settings_section(slay, tr('settings.section.workspace', 'Werkmap'))
         self.root = QLineEdit(settings.value('workspace', str(Path.home() / 'QuietWriter')))
         choose = QPushButton(tr('settings.storage.choose_folder', 'Map kiezen…')); choose.clicked.connect(self.choose_root)
-        box = QWidget(); box.setMinimumWidth(680); box.setMaximumWidth(860); h = QHBoxLayout(box); h.setContentsMargins(0,0,0,0); h.setSpacing(10); self.root.setMinimumWidth(540); h.addWidget(self.root, 1); h.addWidget(choose)
+        box = QWidget(); box.setMinimumWidth(0); box.setMaximumWidth(760); h = QHBoxLayout(box); h.setContentsMargins(0,0,0,0); h.setSpacing(10); self.root.setMinimumWidth(320); h.addWidget(self.root, 1); h.addWidget(choose)
         self._add_settings_field(slay, tr('settings.storage.workspace', 'Werkmap'), box,
             tr('settings.storage.workspace_help', 'Hier staan je boeken, planning, publicatiestructuur en lokale herstelgegevens. Een wijziging wordt na herstart gebruikt.'))
         self.sync_warning = QLabel('')
@@ -270,7 +329,7 @@ class SettingsPage(QWidget):
             tr('settings.spelling.language_help', 'QuietWriter gebruikt een gevonden Hunspell-woordenboek voor deze taal.'))
 
         self._add_settings_section(spl, tr('settings.section.dictionaries', 'Woordenboeken'))
-        self.dictionary_info = QLabel(''); self.dictionary_info.setObjectName('muted'); self.dictionary_info.setWordWrap(True)
+        self.dictionary_info = WrappedHeightLabel(''); self.dictionary_info.setObjectName('muted')
         self._add_settings_full_width(spl, self.dictionary_info)
         actions_widget = QWidget(); actions = QHBoxLayout(actions_widget); actions.setContentsMargins(0,0,0,0); actions.setSpacing(8)
         self.scan_dict_btn = QPushButton(tr('settings.spelling.rescan', 'Opnieuw zoeken')); self.scan_dict_btn.clicked.connect(self.refresh_dictionaries)
@@ -429,6 +488,13 @@ class SettingsPage(QWidget):
             detail.setObjectName('settingsFieldHelp')
             detail.setWordWrap(True)
             detail.setMaximumWidth(310)
+            detail.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+            # QLabel's height-for-width is not propagated reliably through this
+            # nested settings grid on all Qt/HiDPI combinations. Reserve the
+            # wrapped height explicitly so translated help never gets clipped.
+            needed = detail.heightForWidth(310)
+            if needed > 0:
+                detail.setMinimumHeight(needed)
             iv.addWidget(detail)
         iv.addStretch(1)
         grid.addWidget(info, 0, 0, Qt.AlignTop | Qt.AlignLeft)
@@ -457,12 +523,23 @@ class SettingsPage(QWidget):
     def _add_settings_full_width(self, layout: QVBoxLayout, widget: QWidget):
         host = QWidget()
         host.setObjectName('settingsFullWidth')
+        host.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         h = QHBoxLayout(host)
         h.setContentsMargins(0, 4, 0, 8)
         h.setSpacing(0)
         widget.setMaximumWidth(820)
-        h.addWidget(widget, 1, Qt.AlignLeft)
+        h.addWidget(widget, 1, Qt.AlignTop | Qt.AlignLeft)
         layout.addWidget(host)
+
+    @staticmethod
+    def _reserve_wrapped_label_height(label: QLabel, width: int = 600) -> None:
+        """Keep long full-width settings text readable on HiDPI/narrow pages."""
+        if not label.wordWrap():
+            return
+        effective = max(240, min(width, label.maximumWidth() if label.maximumWidth() < 16777215 else width))
+        needed = label.heightForWidth(effective)
+        if needed > 0:
+            label.setMinimumHeight(needed)
 
     def _add_settings_category(self, nav_layout: QVBoxLayout, text: str, page: QWidget):
         index = self.pages.count()
@@ -498,6 +575,8 @@ class SettingsPage(QWidget):
             int(self.manuscript_paragraph_spacing.value()),
             bool(self.smart_quotes.isChecked()),
             bool(self.advanced_options.isChecked()),
+            bool(self.guided_export.isChecked()),
+            bool(self.auto_update_check.isChecked()),
             self.root.text(),
             self.cover_template.text(),
             bool(self.ai_enabled.isChecked()),
@@ -517,7 +596,7 @@ class SettingsPage(QWidget):
             self.language, self.theme, self.editor_font,
             self.editor_font_size, self.editor_text_width, self.manuscript_line_spacing,
             self.manuscript_indent, self.manuscript_paragraph_spacing,
-            self.smart_quotes, self.advanced_options, self.root, self.cover_template,
+            self.smart_quotes, self.advanced_options, self.guided_export, self.auto_update_check, self.root, self.cover_template,
             self.ai_enabled, self.ai_provider, self.ollama, self.openrouter_key, self.model, self.openrouter_free_only,
             self.ai_disable_thinking, self.ai_quick_actions_expanded,
             self.spell_enabled, self.spell_language,
@@ -595,6 +674,64 @@ class SettingsPage(QWidget):
         else:
             self.sync_warning.clear(); self.sync_warning.hide()
 
+    def _reset_panel_help(self) -> None:
+        self.settings.beginGroup('help')
+        self.settings.remove('')
+        self.settings.endGroup()
+        self.settings.sync()
+        self.save_feedback.setText(tr('settings.help.reset_done', 'De uitleg staat weer open in alle panelen.'))
+        self.save_feedback.adjustSize()
+        self._position_save_feedback()
+        self.save_feedback.show()
+        self.save_feedback.raise_()
+        self._save_feedback_timer.start()
+
+    def _reset_settings(self) -> None:
+        workspace = str(normalize_workspace_path(
+            self.settings.value('workspace', str(Path.home() / APP_NAME)), Path.home() / APP_NAME
+        ))
+        dialog = QDialog(self)
+        dialog.setWindowTitle(tr('settings.reset.title', 'QuietWriter opnieuw instellen'))
+        dialog.setModal(True)
+        dialog.setMinimumWidth(560)
+        layout = QVBoxLayout(dialog)
+        title = QLabel(tr('settings.reset.confirm_title', 'Programma-instellingen terugzetten naar standaardwaarden?'))
+        title.setObjectName('settingsPageTitle')
+        title.setWordWrap(True)
+        layout.addWidget(title)
+        text = QLabel(tr(
+            'settings.reset.confirm_text',
+            'QuietWriter vergeet je voorkeuren en toont bij de volgende start opnieuw de volledige setup. Ook een opgeslagen OpenRouter-sleutel wordt verwijderd. Je huidige werkmap met boeken en verhalen blijft bestaan en wordt niet aangepast.'
+        ))
+        text.setWordWrap(True)
+        layout.addWidget(text)
+        url = QUrl.fromLocalFile(workspace).toString()
+        link = QLabel(tr('settings.reset.workspace_link', 'Werkmap die behouden blijft: <a href="{url}">{path}</a>', url=url, path=workspace))
+        link.setTextFormat(Qt.RichText)
+        link.setOpenExternalLinks(True)
+        link.setWordWrap(True)
+        layout.addWidget(link)
+        buttons = QDialogButtonBox()
+        cancel = buttons.addButton(tr('common.cancel', 'Annuleren'), QDialogButtonBox.RejectRole)
+        reset = buttons.addButton(tr('settings.reset.confirm_button', 'Herstellen en afsluiten'), QDialogButtonBox.DestructiveRole)
+        cancel.clicked.connect(dialog.reject)
+        reset.clicked.connect(dialog.accept)
+        layout.addWidget(buttons)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        request_first_run_reset(self.settings, Path(workspace))
+        if self.settings.status() != QSettings.Status.NoError:
+            QMessageBox.warning(
+                self, tr('settings.reset.error_title', 'Opnieuw instellen mislukt'),
+                tr('settings.reset.error_text', 'De instellingen konden niet betrouwbaar worden teruggezet. Je werkmap is niet aangepast.')
+            )
+            return
+        QMessageBox.information(
+            self, tr('settings.reset.ready_title', 'Opnieuw instellen voorbereid'),
+            tr('settings.reset.ready_text', 'QuietWriter wordt nu afgesloten. Bij de volgende start begint de setup opnieuw. Je werkmap met verhalen blijft op dezelfde plaats staan.')
+        )
+        QApplication.quit()
+
     def choose_root(self):
         p = QFileDialog.getExistingDirectory(self, tr('settings.storage.choose_workspace', 'Kies werkmap'), self.root.text())
         if p:
@@ -624,10 +761,12 @@ class SettingsPage(QWidget):
         entry = self.dictionary_catalog.get(locale) if locale else None
         if not entry:
             self.dictionary_info.setText(tr('settings.spelling.no_dictionaries', 'Geen woordenboeken gevonden. Installeer bijvoorbeeld ONLYOFFICE, LibreOffice of OpenOffice, of voeg zelf een Hunspell-woordenboek toe.'))
+            self.dictionary_info.sync_height()
             self.remove_dict_btn.setEnabled(False)
             return
         aff = tr('settings.spelling.aff_rules', 'met .aff-regels') if entry.aff else tr('settings.spelling.dic_only', 'alleen .dic')
         self.dictionary_info.setText(tr('settings.spelling.dictionary_info', 'Bron: {source} · {locale} · {kind}\n{path}', source=entry.source, locale=entry.locale, kind=aff, path=entry.dic))
+        self.dictionary_info.sync_height()
         self.remove_dict_btn.setEnabled(entry.source == 'Werkmap')
 
     def choose_dictionary(self):
@@ -914,6 +1053,8 @@ class SettingsPage(QWidget):
             'manuscript_paragraph_spacing': int(self.manuscript_paragraph_spacing.value()),
             'smart_quotes': self.smart_quotes.isChecked(),
             'advanced_options': self.advanced_options.isChecked(),
+            'export/guided': self.guided_export.isChecked(),
+            'auto_update_check': self.auto_update_check.isChecked(),
             'autosave': True,
             'workspace': normalized_workspace,
             'ai_enabled': self.ai_enabled.isChecked(),
@@ -962,6 +1103,9 @@ class SettingsPage(QWidget):
         self.original_manuscript_style = new_manuscript_style
         self._preview_theme = self.original_theme
         self.main.settings_saved(old_root, writing_layout_changed=writing_layout_changed)
+        export_page = getattr(self.main, 'export_page', None)
+        if export_page is not None:
+            export_page.apply_mode_setting()
         self._saved_form_state = self._current_form_state()
         self._update_dirty_state()
         self._show_saved_feedback(language_restart=(new_language != old_language))
@@ -985,6 +1129,8 @@ class SettingsPage(QWidget):
         self.smart_quotes.setChecked(self.original_manuscript_style.smart_quotes)
         for widget in (self.theme, self.editor_font, self.editor_font_size, self.editor_text_width, self.manuscript_line_spacing, self.manuscript_indent, self.manuscript_paragraph_spacing, self.smart_quotes): widget.blockSignals(False)
         self.advanced_options.setChecked(self.settings.value('advanced_options', True, bool))
+        self.guided_export.setChecked(self.settings.value('export/guided', True, bool))
+        self.auto_update_check.setChecked(self.settings.value('auto_update_check', False, bool))
         language_value = str(self.settings.value('language', 'nl') or 'nl')
         language_index = self.language.findData(language_value)
         self.language.setCurrentIndex(language_index if language_index >= 0 else 0)

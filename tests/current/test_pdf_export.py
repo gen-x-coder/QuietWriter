@@ -90,7 +90,10 @@ class PdfExport0250Tests(unittest.TestCase):
 
     def test_export_page_exposes_pdf_as_real_format(self):
         source = (Path(__file__).resolve().parents[2] / 'quietwriter/ui/export_page.py').read_text(encoding='utf-8')
-        self.assertIn("export_pdf", source)
+        runner = (Path(__file__).resolve().parents[2] / 'quietwriter/exporting/runner.py').read_text(encoding='utf-8')
+        # Since the guided export, both modes render through exporting/runner.py.
+        self.assertIn("run_export", source)
+        self.assertIn("export_pdf", runner)
         self.assertIn("'PDF exporteren'", source)
         self.assertIn('self.pdf_panel', source)
         self.assertIn('self.pdf_paper_combo', source)

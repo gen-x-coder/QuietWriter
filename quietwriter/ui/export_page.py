@@ -6,13 +6,14 @@ from PySide6.QtCore import QUrl, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
-    QMessageBox, QPushButton, QRadioButton, QScrollArea, QVBoxLayout, QWidget
+    QMessageBox, QPushButton, QRadioButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 )
 
 from ..exporting import (
-    ExportSettingsStore, TEMPLATES, build_export_document, export_epub,
-    export_markdown, export_pdf, run_preflight,
+    ExportSettingsStore, TEMPLATES, build_export_document, run_preflight,
 )
+from ..exporting.runner import destination_for, run_export
+from ..exporting.summary import build_package_summary
 from ..i18n import current_locale, tr
 from ..revisions import ExternalModificationError
 from ..storage import BookBlockedError, CorruptSourceError, StorageWriteError
@@ -37,14 +38,41 @@ class ExportPage(QWidget):
         self._loading_settings = False
         self.last_output: Path | None = None
 
-        root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
-        host = QWidget(); body = QVBoxLayout(host); body.setContentsMargins(42, 32, 42, 32); body.setSpacing(14)
-        scroll.setWidget(host); root.addWidget(scroll)
+        root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
 
+        # Shared header: title, subtitle and the Begeleid / Zelf instellen switch.
+        header = QWidget(); header.setObjectName('exportHeader')
+        header.setMaximumWidth(820 + 84)
+        hl = QHBoxLayout(header); hl.setContentsMargins(42, 32, 42, 6); hl.setSpacing(16)
+        titles = QVBoxLayout(); titles.setSpacing(4)
         heading = QLabel(tr('export.title', 'Exporteren')); heading.setObjectName('title')
         self.subtitle = QLabel(''); self.subtitle.setObjectName('muted'); self.subtitle.setWordWrap(True)
-        body.addWidget(heading); body.addWidget(self.subtitle); body.addSpacing(6)
+        titles.addWidget(heading); titles.addWidget(self.subtitle)
+        hl.addLayout(titles, 1)
+        mode_box = QFrame(); mode_box.setObjectName('modeSwitch')
+        ml_ = QHBoxLayout(mode_box); ml_.setContentsMargins(2, 2, 2, 2); ml_.setSpacing(2)
+        self.mode_group = QButtonGroup(self); self.mode_group.setExclusive(True)
+        self.guided_mode_button = QPushButton(tr('export.mode.guided', 'Begeleid'))
+        self.manual_mode_button = QPushButton(tr('export.mode.manual', 'Zelf instellen'))
+        for button in (self.guided_mode_button, self.manual_mode_button):
+            button.setObjectName('modeSwitchButton'); button.setCheckable(True)
+            self.mode_group.addButton(button); ml_.addWidget(button)
+        self.guided_mode_button.setToolTip(tr('export.mode.guided_tip', 'QuietWriter helpt je stap voor stap'))
+        self.manual_mode_button.setToolTip(tr('export.mode.manual_tip', 'Alle exportinstellingen op één pagina'))
+        hl.addWidget(mode_box, 0, Qt.AlignTop)
+        root.addWidget(header)
+
+        self.mode_stack = QStackedWidget()
+        root.addWidget(self.mode_stack, 1)
+        from .export_wizard import ExportWizard
+        self.wizard = ExportWizard(self)
+        self.mode_stack.addWidget(self.wizard)
+
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
+        host = QWidget(); body = QVBoxLayout(host); body.setContentsMargins(42, 14, 42, 32); body.setSpacing(14)
+        scroll.setWidget(host)
+        self.manual_view = scroll
+        self.mode_stack.addWidget(self.manual_view)
 
         section = QLabel(tr('export.format', 'Formaat')); section.setObjectName('sectionTitle'); body.addWidget(section)
         formats = QHBoxLayout(); formats.setSpacing(10)
@@ -52,7 +80,9 @@ class ExportPage(QWidget):
         self.epub_button = self._format_button('EPUB', tr('export.epub.short', 'Voor e-readers en e-bookapps'), 'epub')
         self.pdf_button = self._format_button('PDF', tr('export.pdf.short', 'Vaste pagina-opmaak voor lezen en print'), 'pdf')
         self.markdown_button = self._format_button('Markdown', tr('export.markdown.short', 'Uitwisselen en back-up'), 'markdown')
-        for button in (self.epub_button, self.pdf_button, self.markdown_button): formats.addWidget(button, 1)
+        self.docx_button = self._format_button('DOCX', tr('export.docx.short', 'Bewerken en uitwisselen met Word'), 'docx')
+        self.qwbook_button = self._format_button('QWBOOK', tr('export.qwbook.short', 'Compleet QuietWriter-boek voor overdracht en back-up'), 'qwbook')
+        for button in (self.epub_button, self.pdf_button, self.markdown_button, self.docx_button, self.qwbook_button): formats.addWidget(button, 1)
         body.addLayout(formats)
 
         self.preflight_box = QFrame(); self.preflight_box.setObjectName('softPanel')
@@ -134,6 +164,19 @@ class ExportPage(QWidget):
         markdown_help.setObjectName('muted'); markdown_help.setWordWrap(True); ml.addWidget(markdown_help)
         body.addWidget(self.markdown_panel)
 
+        self.qwbook_panel = QFrame(); self.qwbook_panel.setObjectName('softPanel')
+        ql = QVBoxLayout(self.qwbook_panel); ql.setContentsMargins(14, 12, 14, 12); ql.setSpacing(6)
+        qt = QLabel(tr('export.qwbook.options_title', 'QuietWriter-back-up')); qt.setObjectName('sectionTitle'); ql.addWidget(qt)
+        self.qwbook_include_history = QCheckBox(tr('export.qwbook.include_history', 'Versiegeschiedenis meenemen'))
+        self.qwbook_include_history.setObjectName('publicationToggle'); self.qwbook_include_history.setChecked(True); ql.addWidget(self.qwbook_include_history)
+        qhelp = QLabel(tr('export.qwbook.include_history_help', 'Uitgeschakeld maakt een kleiner overdrachtsbestand zonder oudere versies. Het huidige boek, media, Planning en boekgegevens blijven wel compleet.'))
+        qhelp.setObjectName('muted'); qhelp.setWordWrap(True); ql.addWidget(qhelp)
+        self.qwbook_include_ai_chat = QCheckBox(tr('export.qwbook.include_ai_chat', 'Meelezer-gesprek meenemen'))
+        self.qwbook_include_ai_chat.setObjectName('publicationToggle'); self.qwbook_include_ai_chat.setChecked(True); ql.addWidget(self.qwbook_include_ai_chat)
+        chat_help = QLabel(tr('export.qwbook.include_ai_chat_help', 'Laat dit uit als je het boek aan iemand anders geeft. Je gesprek met de Meelezer blijft dan alleen op deze computer.'))
+        chat_help.setObjectName('muted'); chat_help.setWordWrap(True); ql.addWidget(chat_help)
+        body.addWidget(self.qwbook_panel)
+
         output_box = QFrame(); output_box.setObjectName('softPanel')
         ol = QVBoxLayout(output_box); ol.setContentsMargins(14, 12, 14, 12); ol.setSpacing(7)
         ot = QLabel(tr('export.output.title', 'Uitvoer')); ot.setObjectName('sectionTitle'); ol.addWidget(ot)
@@ -164,6 +207,10 @@ class ExportPage(QWidget):
         self.pdf_page_numbers.toggled.connect(self._options_changed)
         self.pdf_running_header.toggled.connect(self._options_changed)
         self.pdf_show_sections.toggled.connect(self._options_changed)
+        self.qwbook_include_history.toggled.connect(self._options_changed)
+        self.qwbook_include_ai_chat.toggled.connect(self._options_changed)
+        self.mode_group.buttonClicked.connect(self._mode_clicked)
+        self._apply_mode(self.guided_mode_enabled(), persist=False)
 
     def _format_button(self, title: str, description: str, key: str) -> QPushButton:
         button = QPushButton(f'{title}\n{description}')
@@ -177,10 +224,12 @@ class ExportPage(QWidget):
         return str(checked.property('formatKey')) if checked else 'epub'
 
     def set_book(self, book):
+        previous_id = getattr(self.book, 'id', None)
         self.book = book
         self.last_output = None; self.success_box.hide()
         self._corrupt_source = False
         if not book:
+            self.wizard.set_book(None, reset=True)
             self.setEnabled(False); return
         settings_path = self.store.path(book)
         if settings_path.exists():
@@ -195,7 +244,7 @@ class ExportPage(QWidget):
         self._loading_settings = True
         self.export_settings = self.store.load(book)
         fmt = self.export_settings.get('format', 'epub')
-        {'epub': self.epub_button, 'pdf': self.pdf_button, 'markdown': self.markdown_button}.get(fmt, self.epub_button).setChecked(True)
+        {'epub': self.epub_button, 'pdf': self.pdf_button, 'markdown': self.markdown_button, 'docx': self.docx_button, 'qwbook': self.qwbook_button}.get(fmt, self.epub_button).setChecked(True)
         epub = self.export_settings.get('epub', {})
         idx = self.template_combo.findData(epub.get('template', 'classic')); self.template_combo.setCurrentIndex(max(0, idx))
         self.include_cover.setChecked(bool(epub.get('include_cover', True)))
@@ -209,11 +258,15 @@ class ExportPage(QWidget):
         self.pdf_page_numbers.setChecked(bool(pdf.get('page_numbers', True)))
         self.pdf_running_header.setChecked(bool(pdf.get('running_header', True)))
         self.pdf_show_sections.setChecked(bool(pdf.get('show_section_titles', True)))
+        qwbook = self.export_settings.get('qwbook', {})
+        self.qwbook_include_history.setChecked(bool(qwbook.get('include_history', True)))
+        self.qwbook_include_ai_chat.setChecked(bool(qwbook.get('include_ai_chat', True)))
         self.subtitle.setText(tr('export.subtitle', 'Maak een publicatiebestand van “{title}”.', title=book.title))
         self._refresh_document()
         self._refresh_output_dir()
         self._format_changed()
         self._loading_settings = False
+        self.wizard.set_book(book, reset=previous_id != book.id)
 
     def refresh(self):
         if self.book: self.set_book(self.book)
@@ -238,6 +291,11 @@ class ExportPage(QWidget):
             'show_section_titles': self.pdf_show_sections.isChecked(),
         })
         settings['markdown'] = {}
+        settings['docx'] = {}
+        settings['qwbook'] = {
+            'include_history': self.qwbook_include_history.isChecked(),
+            'include_ai_chat': self.qwbook_include_ai_chat.isChecked(),
+        }
         return settings
 
     def _refresh_document(self):
@@ -267,6 +325,7 @@ class ExportPage(QWidget):
             'language': tr('export.check.language', 'Boektaal: {value}', value=item.value or tr('export.check.missing', 'ontbreekt')),
             'chapters': tr('export.check.chapters', '{value} hoofdstuk(ken)', value=item.value or '0'),
             'images': tr('export.check.images', '{value} afbeelding(en) in het manuscript', value=item.value or '0'),
+            'open_points': tr('export.check.open_points', '{value} open punt(en) in het manuscript. De markeringen worden niet geëxporteerd.', value=item.value),
             'missing_assets': tr('export.check.missing_assets', 'Een of meer afbeeldingen ontbreken of zijn gewijzigd:\n{value}', value=item.value),
             'markdown_images_pending': tr('export.check.markdown_images_pending', 'Markdown-export met afbeeldingen volgt in de volgende mediastap.'),
             'cover': tr('export.check.cover', 'Omslag: {value}', value=item.value),
@@ -281,7 +340,7 @@ class ExportPage(QWidget):
         if not self.document:
             self.preflight_label.setText(tr('export.check.failed', 'Exportcontrole kon niet worden uitgevoerd.'))
             self.export_button.setEnabled(False); return
-        report = run_preflight(self.document, self.format_name, self._settings_from_ui())
+        report = run_preflight(self.document, self.format_name, self._settings_from_ui(), self._package_summary(self.format_name))
         self.preflight_label.setText('\n'.join(self._preflight_text(item) for item in report.items))
         self.export_button.setEnabled(report.can_export)
 
@@ -350,12 +409,18 @@ class ExportPage(QWidget):
         self.epub_panel.setVisible(fmt == 'epub')
         self.pdf_panel.setVisible(fmt == 'pdf')
         self.markdown_panel.setVisible(fmt == 'markdown')
+        self.qwbook_panel.setVisible(fmt == 'qwbook')
         if fmt == 'markdown':
             self.export_button.setText(tr('export.action.markdown', 'Markdown exporteren'))
+        elif fmt == 'docx':
+            self.export_button.setText(tr('export.action.docx', 'DOCX exporteren'))
+        elif fmt == 'qwbook':
+            self.export_button.setText(tr('export.action.qwbook', 'QuietWriter-boek exporteren'))
         elif fmt == 'pdf':
             self.export_button.setText(tr('export.action.pdf', 'PDF exporteren'))
         else:
             self.export_button.setText(tr('export.action.epub', 'EPUB exporteren'))
+        self.open_file_button.setVisible(fmt != 'qwbook')
         self.export_settings = self._settings_from_ui()
         if not self._persist_settings():
             return
@@ -389,35 +454,97 @@ class ExportPage(QWidget):
         self.main.show_editor()
         self.main.editor_page.show_publication_setup()
 
-    def _export(self):
-        if not self.book: return
+    # ------------------------------------------------------------------
+    # Mode: guided (wizard) or manual. One QSettings key, shared with Instellingen.
+    def guided_mode_enabled(self) -> bool:
+        return bool(self.main.settings.value('export/guided', True, bool))
+
+    def _mode_clicked(self, button):
+        self._apply_mode(button is self.guided_mode_button, persist=True)
+
+    def _apply_mode(self, guided: bool, *, persist: bool):
+        if persist:
+            self.main.settings.setValue('export/guided', bool(guided))
+        (self.guided_mode_button if guided else self.manual_mode_button).setChecked(True)
+        if guided:
+            if self.mode_stack.currentWidget() is not self.wizard:
+                self.wizard.restart()
+            self.mode_stack.setCurrentWidget(self.wizard)
+        else:
+            # A wizard draft is never committed by switching modes.
+            self.wizard.discard_draft()
+            if self.book and not self._corrupt_source:
+                self.refresh()
+            self.mode_stack.setCurrentWidget(self.manual_view)
+
+    def apply_mode_setting(self):
+        """Called after Instellingen saved export/guided."""
+        self._apply_mode(self.guided_mode_enabled(), persist=False)
+
+    # ------------------------------------------------------------------
+    # One export route for both modes.
+    def _package_summary(self, format_name: str):
+        if format_name != 'qwbook' or not self.book:
+            return None
+        try:
+            return build_package_summary(self.main.library, self.book)
+        except Exception:
+            return None
+
+    def save_pending_work(self) -> bool:
+        if self.main.editor_page.save() is False: return False
+        if self.main.planning_page.save_pending() is False: return False
+        return True
+
+    def persist_settings_dict(self, settings: dict) -> bool:
+        """Commit export settings through the guarded store path."""
+        if not self.book or self._corrupt_source:
+            return False
+        try:
+            self.store.save(self.book, settings)
+            self.export_settings = self.store.load(self.book)
+            return True
+        except ExternalModificationError as exc:
+            self._resolve_external_change(exc)
+            return False
+        except (CorruptSourceError, BookBlockedError, StorageWriteError) as exc:
+            QMessageBox.warning(self, tr('export.settings_save_title', 'Exportinstellingen niet opgeslagen'), str(exc))
+            return False
+
+    def run_export_flow(self, format_name: str, settings: dict, *, persist_before=None):
+        """Snapshot → preflight → destination/overwrite → run_export.
+
+        Returns an ExportResult or None. `persist_before` lets the manual page keep
+        its historic behaviour (settings saved before rendering); the wizard
+        commits its draft only after a successful export.
+        """
+        if not self.book: return None
         # Save any active manuscript/publication editor before capturing the snapshot.
-        if self.main.editor_page.save() is False: return
-        if self.main.planning_page.save_pending() is False: return
+        if not self.save_pending_work(): return None
         try:
             self.document = build_export_document(self.main.library, self.book)
         except Exception as exc:
-            QMessageBox.critical(self, tr('export.error.title', 'Exporteren'), tr('export.error.snapshot', 'De boeksnapshot kon niet veilig worden gemaakt.\n\n{error}', error=exc)); return
-        self.export_settings = self._settings_from_ui()
-        if not self._persist_settings(): return
-        report = run_preflight(self.document, self.format_name, self.export_settings)
-        self._refresh_preflight()
-        if not report.can_export: return
-
-        suffix = {'epub': '.epub', 'pdf': '.pdf', 'markdown': '.md'}[self.format_name]
-        destination = self._output_dir() / f'{self.document.slug}{suffix}'
+            QMessageBox.critical(self, tr('export.error.title', 'Exporteren'), tr('export.error.snapshot', 'De boeksnapshot kon niet veilig worden gemaakt.\n\n{error}', error=exc)); return None
+        if persist_before is not None and not persist_before(): return None
+        report = run_preflight(self.document, format_name, settings, self._package_summary(format_name))
+        if not report.can_export: return None
+        destination = destination_for(self._output_dir(), self.document, format_name)
         if destination.exists() and not confirm(self, tr('export.overwrite.title', 'Bestand overschrijven'), tr('export.overwrite.text', '“{name}” bestaat al. Wil je dit bestand overschrijven?', name=destination.name)):
-            return
+            return None
         try:
-            if self.format_name == 'epub':
-                export_epub(self.document, destination, self.export_settings)
-            elif self.format_name == 'pdf':
-                export_pdf(self.document, destination, self.export_settings)
-            else:
-                export_markdown(self.document, destination, self.export_settings)
+            result = run_export(self.main.library, self.book, self.document, format_name, settings, destination)
         except Exception as exc:
-            QMessageBox.critical(self, tr('export.error.title', 'Exporteren'), tr('export.error.failed', 'Exporteren is mislukt.\n\n{error}', error=exc)); return
-        self.last_output = destination
+            QMessageBox.critical(self, tr('export.error.title', 'Exporteren'), tr('export.error.failed', 'Exporteren is mislukt.\n\n{error}', error=exc)); return None
+        self.last_output = result.path
+        return result
+
+    def _export(self):
+        if not self.book: return
+        self.export_settings = self._settings_from_ui()
+        result = self.run_export_flow(self.format_name, self.export_settings, persist_before=self._persist_settings)
+        self._refresh_preflight()
+        if result is None: return
+        destination = result.path
         if self.format_name == 'epub':
             self.success_label.setText(tr(
                 'export.success.epub_validated',
@@ -432,6 +559,8 @@ class ExportPage(QWidget):
         self.main.status.showMessage(status_text, 2500)
 
     def _open_file(self):
+        if self.format_name == 'qwbook':
+            return
         if self.last_output and self.last_output.exists(): QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def _open_folder(self):
