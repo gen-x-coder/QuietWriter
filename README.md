@@ -1,5 +1,6 @@
 <div align="center">
-**Nederlands** · [English] (README_EN.md)  
+
+**Nederlands** · [English](README_EN.md)
 
 # QuietWriter
 
