@@ -31,6 +31,6 @@ jobs:
       - name: Static undefined-name check
         run: python tools/check_undefined_names.py
       - name: Active suite
-        run: python -m pytest
+        run: python tools/run_pytest_ci.py
       - name: Qt runtime subset
-        run: python -m pytest -m qt
+        run: python tools/run_pytest_ci.py -m qt
