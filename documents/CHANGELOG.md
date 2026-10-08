@@ -1,4 +1,4 @@
-## 1.3.0-rc1 — releasecandidate voor 1.3.0
+## 1.3.0 — releasecandidate freeze voor de definitieve release
 
 - bevriest de inhoud van 1.3.0 na de Windows-/laptopacceptatie van dev.29;
 - bevat Boekenkast met planken, Presentatiemodus, schrijfdoelen, Planninghulp en de Planning-overlay;

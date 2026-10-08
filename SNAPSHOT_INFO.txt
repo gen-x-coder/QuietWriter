@@ -1,12 +1,12 @@
 QuietWriter release candidate snapshot
 
-Application version: 1.3.0-rc1
+Application version: 1.3.0
 Stable public release: 1.2.32
 - dev.29 Windows/small-screen hardening: visible book-loading feedback, word/pause-based undo grouping, responsive window constraints, theme-correct chapter selection, explicit Integrity checks and quieter AI-context pages
 - dev.28 core-editor finish: safe scene-break paste, update checker and final small polish bundle
 - dev.27 review hardening: opt-in safety, profile-aware themes, wheel guards and popup behaviour
 
-1.3.0-rc1 scope:
+1.3.0 release-candidate scope:
 - Planning overlay is narrower and taller to cover less manuscript text
 - Planning button is hidden entirely when Planning help in editor is disabled
 - Search/Replace keeps a stable result area; no collapsing replacement controls on zero matches
