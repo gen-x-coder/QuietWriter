@@ -56,7 +56,10 @@ class TrashPage(QWidget):
 
     def refresh(self):
         rows = []
+        demo_mode = bool(getattr(self.main, 'start', None) and self.main.start.demo_mode_enabled())
         for row in self.main.library.list_trashed_books():
+            if demo_mode and row.get('book_id') and row.get('book_id') not in self.main.library.shelves.visible_book_ids([row.get('book_id')], demo_mode=True):
+                continue
             rows.append({
                 'kind': 'book',
                 'path': str(row['path']),
@@ -65,6 +68,8 @@ class TrashPage(QWidget):
                 'title': row['title'],
             })
         for row in self.main.library.list_trashed_chapters():
+            if demo_mode and row.get('book_id') and row.get('book_id') not in self.main.library.shelves.visible_book_ids([row.get('book_id')], demo_mode=True):
+                continue
             rows.append({
                 'kind': 'chapter',
                 'path': str(row['path']),
@@ -75,6 +80,8 @@ class TrashPage(QWidget):
                 'book_available': bool(row.get('book_available')),
             })
         for path, fragment in self.main.darlings_page.store.list_trashed():
+            if demo_mode and fragment.source_book_id and fragment.source_book_id not in self.main.library.shelves.visible_book_ids([fragment.source_book_id], demo_mode=True):
+                continue
             rows.append({
                 'kind': 'fragment', 'path': str(path), 'deleted': path.stat().st_mtime,
                 'title': self.main.darlings_page.display_name(fragment),
@@ -95,7 +102,7 @@ class TrashPage(QWidget):
                     title=row['title'], book=row.get('book_title') or row.get('book_id') or '?', date=dt,
                 )
                 if not row.get('book_available'):
-                    label += tr('trash.book_not_active_suffix', '   ·   boek staat niet op de boekenplank')
+                    label += tr('trash.book_not_active_suffix', '   ·   boek staat niet in de boekenkast')
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, row)
             self.list.addItem(item)

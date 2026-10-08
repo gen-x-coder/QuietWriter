@@ -1,0 +1,15 @@
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="QuietWriter-${version}/QuietWriter.exe"
+             product-name="QuietWriter"
+             product-version="${version}"
+             file-version="${version}"
+             company-name="Lucas Bonsel"
+             original-filename="QuietWriter.exe">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

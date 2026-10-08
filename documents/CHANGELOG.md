@@ -1,3 +1,272 @@
+## 1.3.0-rc1 — releasecandidate voor 1.3.0
+
+- bevriest de inhoud van 1.3.0 na de Windows-/laptopacceptatie van dev.29;
+- bevat Boekenkast met planken, Presentatiemodus, schrijfdoelen, Planninghulp en de Planning-overlay;
+- bevat de afgeronde editorfixes voor undo en veilig intern plakken met scènebreuken;
+- bevat de kleine-scherm-, laadfeedback-, thema- en Integriteitspolish uit dev.29;
+- bedoeld voor de Windows portable releasecandidate; bij groen wordt exact dezelfde binary gepromoveerd naar 1.3.0.
+
+## 1.3.0-dev.29 — Windows- en kleine-scherm-hardening
+
+- toont een echte `Boek laden…`-popup rond de bestaande boek-inleesfase; geen cloud- of netwerkdetectie;
+- maakt undo bij menselijk typen platformonafhankelijk door woorden/pauzes als expliciete undo-grenzen te gebruiken;
+- maakt het hoofdvenster responsiever op kleinere Windows-schermen en laat instellingenrijen verder krimpen;
+- gebruikt voor de hoofdstukselectie de actieve themakleur in plaats van de Windows-highlightkleur;
+- laat de synchronisatiewaarschuwing in Instellingen zijn hoogte aanpassen aan de werkelijke breedte;
+- voert Integriteit alleen nog uit na `Integriteit controleren`; tijdens de controle staat de knop op `Controleren…` en is hij uitgeschakeld;
+- verwijdert gewone bronpad-/bestandsmeldingen uit Schrijverspersona, Boekprofiel en Boekgeheugen;
+- maakt de Thinking-keuze volledig `Modelstandaard / Uitgeschakeld`;
+- verwijdert `~/.qttest` alleen wanneer QuietWriter die testmap zelf voor de suite heeft aangemaakt.
+
+## 1.3.0-dev.28 — Kerneditor afronden en kleine polish
+
+- Ctrl+Z behandelt ononderbroken typen weer als een natuurlijke bewerking in plaats van één letter per stap.
+- Intern kopiëren/plakken bewaart nu ook scènebreuken samen met vet/cursief-opmaak.
+- Updatecontrole herkent de definitieve 1.3.0 als nieuwer dan een 1.3.0-dev-build.
+- Opstartscherm toont tijdens de echte boekinleesfase `Boeken laden…`; er is geen Dropbox/OneDrive/netwerkdetectie toegevoegd.
+- Kleine polish gebundeld: enkelvoud `1 boek`, minimaal `ongeveer 1 per dag`, duidelijker Thinking-label, alleen open scènes in automatische Planninghulp, nooit halve ghostscènes, compacte lege Planning-flyout en testartefact-opruiming.
+- `library.json` is ongewijzigd.
+
+## 1.3.0-dev.27 — Hardening na brede dev.26-review
+
+- Hardening na de brede dev.26-review: Qt-testverwachtingen bijgewerkt naar de bedoelde UI.
+- "Vandaag geschreven bijhouden" is alleen nog een apparaatinstelling in Instellingen; Boekdetails kan deze opt-in niet meer stil overschrijven.
+- Keuze-, getal- en datumvelden wijzigen niet meer door scrollen zolang ze geen focus hebben.
+- Editor, hoofdstukboom en boekomslagen gebruiken de actieve profielinstellingen voor thema/typografie.
+- Lege Planning-flyout heeft geen grijs filler-vlak meer en blokkeert Qt-mouse-replay bij sluiten.
+- `library.json` is ongewijzigd.
+
+## 1.3.0-dev.26 — Acceptatiecorrectie en Claude-reviewbasis
+
+- Planning-flyout zonder gekoppelde scènes lijnt titel, uitleg en lege melding nu compact bovenaan uit.
+- Geen functionele wijziging aan Planning, zoeken/vervangen, plakken of schrijfdoelen ten opzichte van dev.25.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.26.
+- Gerichte Claude-reviewopdracht toegevoegd voor code-, runtime- en visuele regressietests over de recente 1.3-iteraties.
+
+## 1.3.0-dev.25 — Laatste acceptatiepolish vóór Claude-review
+
+- Planning-knop blijft zichtbaar bij een gewoon hoofdstuk zolang Planninghulp aan staat, ook als nog geen scènes aan dat hoofdstuk gekoppeld zijn.
+- Planning-flyout toont in dat geval neutraal: `Geen planning voor dit hoofdstuk.`
+- De lege resultatenzone van Zoeken en vervangen gebruikt dezelfde paneelachtergrond als de normale resultatenlijst.
+- Geen wijzigingen aan manuscriptdata, Planningdata of `library.json`.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.25.
+
+## 1.3.0-dev.24 — Editor-polish vóór review
+
+- Planning-overlay is smaller en hoger zodat hij minder manuscript bedekt.
+- Planning-knop is volledig verborgen wanneer Planninghulp in editor is uitgeschakeld.
+- Zoek/vervang-paneel houdt een vaste resultatenzone; nul treffers laat de vervangsectie niet meer omhoog springen.
+- Bij nul treffers wordt niet langer zowel `0 resultaten` als `Geen resultaten gevonden` getoond.
+- Intern Ctrl+C/Ctrl+V behoudt tekst/opmaak maar laat de geplakte tekst niet geselecteerd achter.
+- De bestaande Planning-toggle wordt niet verder gepatcht vóór gerichte Claude-review.
+- Geen wijziging aan Planning-opslag, manuscriptopslag of `library.json`.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.24.
+
+## 1.3.0-dev.23 — Planning-overlay polish
+
+- Planning-knop is nu een echte toggle: nogmaals klikken sluit de overlay betrouwbaar.
+- De Planning-overlay schaalt mee met de editor en gebruikt maximaal ongeveer de helft van de editorbreedte.
+- Zichtbare scènestatussen gebruiken consequent hoofdletters: Idee, Uitgewerkt en Geschreven.
+- De hoofdstukscrollbar kleurt nu ook de groove en lege track met de pagina-achtergrond.
+- Geen wijziging aan Planning-opslagformaat, manuscriptopslag of `library.json`.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.23.
+
+## 1.3.0-dev.22 — Planning tijdens het schrijven
+
+- Subtiele Planning-knop naast Tekstbreedte opent een tijdelijke overlay voor het huidige hoofdstuk.
+- Overlay toont alle gekoppelde scènes met status; open scènes kunnen bewust als Geschreven worden gemarkeerd.
+- Ghosttekst toont voortaan ook scènestatus.
+- Scènestatus is een vaste dropdown en geen vrije tekst.
+- Bij Personages wordt het eerste opgeslagen personage standaard geselecteerd.
+- Scrollbar-track van de hoofdstukkenlijst volgt de pagina-achtergrond.
+- Geen automatische scene-herkenning; Planning blijft los van manuscript, zoeken, export, AI-context en Undo.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.22.
+
+## 1.3.0-dev.21 — Planningworkflow verduidelijkt
+
+- Het Inhoud-lipje gebruikt nu dezelfde pagina-achtergrond als de editor en voelt niet langer als een los paneel.
+- De uitleg boven Planning, Personages en Outline beschrijft nu ook hoe Planning samenwerkt met de planninghulp in lege hoofdstukken.
+- Bestaande scène-status (idee / uitgewerkt / geschreven) wordt in Outline duidelijk zichtbaar als rustige statusbadge; geschreven scènes krijgen een vinkje.
+- Dit is alleen voorbereiding op de volgende workflowstap: status is nog niet via één klik afvinkbaar en er is nog geen Planning-overlay in de editor.
+- Geen wijziging aan Planning-opslagformaat, manuscriptopslag, `library.json` of ghostdata.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.21.
+
+## 1.3.0-dev.20 — Planningduidelijkheid en contextnavigatie
+
+- Personages en Outline hebben nu direct onder de paginatitel een korte uitleg van hun doel.
+- De personageselectie toont alleen namen, is ruimer en volgt visueel dezelfde rustige selectiegrammatica als Instellingen.
+- Planning-subnavigatie en de hoofdstuknavigatie gebruiken nu de pagina-achtergrond; selectie blijft lokaal zichtbaar.
+- De losstaande Ctrl+C/Ctrl+V-selectiebug is op de polish-backlog gezet en bewust niet in deze iteratie gewijzigd.
+- Geen wijziging aan Planning-opslag, manuscriptopslag, `library.json` of ghostlogica.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.20.
+
+## 1.3.0-dev.19 — Planninghulp polish
+
+- `Locatie` en `Personages` staan in de Planninghulp voortaan ieder op een eigen regel.
+- De ghostlaag reserveert ruimte voor een afsluitende melding als niet alle gekoppelde scènes in het zichtbare editorvlak passen; scènes verdwijnen daardoor niet meer stilletjes.
+- De melding verwijst expliciet naar Planning en toont hoeveel scènes nog niet zichtbaar zijn.
+- Het zoek/vervangpaneel heeft een losstaand layoutprobleem dat tijdens Windows-testen is gevonden; dit is hoog op de UI-backlog gezet en bewust niet in deze ghost-polishbuild gewijzigd.
+- Geen wijziging aan manuscriptopslag, `library.json`, woordtelling, export, AI-context of Undo.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.19.
+
+## 1.3.0-dev.18 — Planninghulp in lege hoofdstukken
+
+- Eerste fase van "Planning dichter bij het schrijven": gekoppelde scènes uit Planning verschijnen als zachte hulptekst in een leeg hoofdstuk.
+- De hulp is strikt presentation-only: niets wordt aan het QTextDocument of Markdown toegevoegd en de tekst telt niet mee, verschijnt niet in zoeken/spelling/export/AI-context en raakt Undo niet.
+- Zodra echte tekst in het hoofdstuk staat verdwijnt de Planninghulp; bij terugkeer naar een leeg hoofdstuk verschijnt hij weer.
+- Instellingen > Uiterlijk bevat Planninghulp in editor: Tonen/Verbergen; standaard staat de hulp aan.
+- Terugkeren vanuit Planning ververst de hulp direct.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.18.
+- `library.json` en manuscriptbestanden zijn door deze functie ongewijzigd.
+
+## 1.3.0-dev.17 — Rustigere lettertypepreview
+
+- De preview van het schrijflettertype is hoger en heeft meer binnenruimte.
+- De preview toont alleen nog voorbeeldtekst; de dubbele vermelding van lettertype en puntgrootte is verwijderd.
+- Geen functionele wijzigingen aan schrijftypografie, schrijfdoelen of `library.json`.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.17.
+
+## 1.3.0-dev.16 — Consistente Instellingen-formulieren
+
+- Losse aan/uit-checkboxes in Instellingen zijn vervangen door rustige, afgeronde keuzevelden binnen dezelfde controlkolom als taal, thema en andere waarden.
+- De keuzes gebruiken per instelling natuurlijke tekst zonder de onderliggende instellingen of defaults te veranderen.
+- Actieknoppen zoals Nu controleren, Map kiezen, Modellen ophalen en woordenboekacties gebruiken consequent de secundaire knopstijl.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.16.
+- `library.json` is ongewijzigd.
+
+## 1.3.0-dev.15 — Datum- en omslagpolish
+
+- De einddatumkiezer volgt nu dezelfde QuietWriter-veldopmaak als andere invoercontrols.
+- Boekomslag toont zonder eigen afbeelding een duidelijk previewvak met `Geen omslag`.
+- Omslag verwijderen is alleen actief wanneer er daadwerkelijk een eigen omslag aanwezig of nieuw gekozen is.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.15.
+- `library.json` en de functionele schrijfdoelenlogica zijn ongewijzigd.
+
+## 1.3.0-dev.14 — Rustigere schrijfdoelbediening
+
+- De losse systeemcheckboxes bij Gewenst klaar op en Vandaag geschreven zijn vervangen door gewone keuzelijsten die aansluiten bij de rest van Boekdetails.
+- Einddatum gebruikt nu de keuze Geen einddatum / Einddatum gebruiken; de datumkiezer verschijnt als dezelfde rustige formulierbediening.
+- Vandaag geschreven gebruikt Niet bijhouden / Bijhouden; de opt-in, bewaargedrag en dagtelling zijn functioneel ongewijzigd.
+- De knoppen bij Boekomslag gebruiken nu de bestaande secundaire knopstijl.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.14.
+- `library.json` is ongewijzigd.
+
+## 1.3.0-dev.13 — Boekdetails-formulierpolish
+
+- Schrijfdoel en Boekomslag gebruiken nu hetzelfde label→control-formulierpatroon als de rest van Boekdetails; de kleine losse witte panelen zijn verwijderd.
+- De zichtbare term "lokaal" is uit de optie voor Vandaag geschreven gehaald; de checkbox heet kortweg "Bijhouden".
+- De uitleg van Schrijfdoel beschrijft alleen wat wordt bijgehouden en dat de bestaande telling bij uitschakelen behouden blijft.
+- UI-consistentie van Instellingen en andere formulierpagina's staat nu expliciet hoog op de roadmap voor een aparte systematische polishronde.
+- Publieke release blijft 1.2.32; actieve ontwikkellijn is 1.3.0-dev.13.
+- `library.json` en de functionele schrijfdoelen-/dagtel-logica zijn ongewijzigd.
+
+## 1.3.0-dev.12 — Boekdetails- en datum-UX voor schrijfdoelen
+
+- Schrijfdoel en Boekomslag volgen nu het visuele tweekolomspatroon van Instellingen.
+- Gewenste einddatum heeft een expliciete aan/uit-keuze en compacte datumkiezer.
+- Een nieuwe datum begint op vandaag in plaats van 01-01-1900.
+- Schrijfdoelen, dagtelling en opt-in-logica zijn functioneel ongewijzigd.
+- Versie- en testmetadata bijgewerkt naar 1.3.0-dev.12.
+
+## 1.3.0-dev.11 — Opt-in schrijfdoelen en rustige dagvoortgang
+
+- Per boek een optioneel Woorddoel en gewenste einddatum toegevoegd aan Boekdetails.
+- Boekenkast en editor tonen rustige doelvoortgang zonder meldingen of gamification.
+- Lokale teller `vandaag geschreven` toegevoegd als expliciete opt-in; uitzetten bewaart historie maar stopt verzamelen en telt later niets retroactief in.
+- Dagvoortgang telt alleen positieve groei tussen geslaagde editor-opslagen en blijft buiten de werkmap.
+- Woorddoel en deadline blijven staan bij versieherstel.
+- Canoniek ontwerp vastgelegd in `documents/SCHRIJFDOELEN_DESIGN.md`; roadmap/status bijgewerkt.
+- Versie- en testmetadata bijgewerkt naar 1.3.0-dev.11.
+
+## 1.3.0-dev.10 — Laatste releasepolish na Windows-acceptatie
+- Boekenkast en Presentatiemodus zijn op Windows visueel en functioneel geaccepteerd; er zijn geen aanvullende functionele wijzigingen nodig.
+- Cover-pixmapcaching blijft bewust op de backlog: de gemeten synthetische vertraging was in de echte Windows-test niet hinderlijk.
+- De kopteksten van de Windows dependency-lockfiles verwijzen nu naar QuietWriter 1.3.0 in plaats van de oude 1.2.32 RC.
+- Snapshot- en release-metadata bijgewerkt naar 1.3.0-dev.10.
+- `README.md` en `README_EN.md` blijven bewust ongewijzigd.
+
+## 1.3.0-dev.9 — Privacyvriendelijke woordtellingcache en testisolatie
+- Persistente woordtellingcache gebruikt voortaan SHA-256-hashes van hoofdstukpaden als sleutels; boektitels en volledige paden worden niet meer in het cachebestand opgeslagen.
+- Oude dev.8-cachekeys met volledige paden worden bij laden genegeerd en bij de eerstvolgende refresh vervangen door gehashte sleutels.
+- Qt-tests draaien met `QStandardPaths` testmodus zodat testruns de echte lokale appdatamap niet langer vervuilen met tijdelijke cachebestanden.
+- Geen wijzigingen aan Presentatiemodus, `library.json`, boekformaten of planklogica.
+
+## 1.3.0-dev.8 — Robuuste Presentatiemodus en persistente woordtellingcache
+- Presentatiemodus gebruikt nu de `QSettings`-opslag van het actieve runtimeprofiel; dev en productie houden hun status gescheiden.
+- Ook onverwachte exceptions tijdens het sluiten van een privéboek zetten Presentatiemodus veilig terug naar **uit** en worden gelogd.
+- De woordtellingcache wordt per werkmap lokaal in de appdatamap bewaard, zodat een nieuwe sessie ongewijzigde hoofdstukken niet opnieuw hoeft te tellen.
+- Een ontbrekend, corrupt of niet-schrijfbaar cachebestand is niet fataal en leidt alleen tot opnieuw tellen.
+- Covercaching blijft voorlopig buiten scope en wordt pas toegevoegd als de Windows-test met echte covers daar aanleiding toe geeft.
+
+## 1.3.0-dev.7 — Presentatiemodus en snelle Boekenkast
+- Demo-modus heet in de gebruikersinterface voortaan **Presentatiemodus**; de bestaande interne instellingssleutel blijft compatibel.
+- Een open privéboek wordt bij inschakelen veilig opgeslagen en gesloten; de app keert terug naar de Boekenkast. Als sluiten mislukt, wordt Presentatiemodus weer uitgezet.
+- `open_book()` weigert privéboeken zolang Presentatiemodus actief is, zodat ook toekomstige alternatieve open-routes fail-closed blijven.
+- Woordtellingen van boekkaarten worden per hoofdstuk gecachet op bestandssignatuur (`mtime_ns` + grootte), waardoor ongewijzigde hoofdstukken niet bij iedere refresh opnieuw worden geparsed.
+- Zoeken in de Boekenkast gebruikt een debounce van 200 ms.
+- De Presentatiemodus-tooltip zegt expliciet dat de functie geen beveiliging is.
+
+## 1.3.0-dev.6 — Duidelijke Demo-status en reviewmoment
+- De Demo-modusknop toont nu expliciet **aan** of **uit** en heeft een zichtbare ingeschakelde stijl.
+- De term **Demo-modus** blijft voorlopig staan; de volgende onafhankelijke review beoordeelt ook de productnaam en vertaalbaarheid.
+- Performance is bewust nog niet op gevoel geoptimaliseerd. De Boekenkast wordt eerst gemeten/geprofileerd zodat alleen de echte bottlenecks worden aangepakt.
+- Een gerichte Claude-reviewopdracht is opgenomen voor PySide6, Demo-modus, performance en naamgeving.
+
+## 1.3.0-dev.5 — Boekenkast en Demo-modus
+- De hoofdweergave heet voortaan **Boekenkast** in plaats van Boekenplank.
+- Demo-modus toegevoegd als lokale presentatie-instelling; privéplanken en gekoppelde boeken verdwijnen uit de Boekenkast.
+- Bewaarplaats en Prullenbak filteren in Demo-modus inhoud die aan een privéboek gekoppeld is.
+- Boekenkast-search, aantallen en plank-actiemenu’s lekken in Demo-modus geen privéplanknamen of privéboeken.
+- Onleesbare boekkaarten worden in Demo-modus niet getoond, omdat hun boek-id niet betrouwbaar kan worden vastgesteld.
+- Backlog aangevuld met optioneel direct een nieuw boek op een gekozen plank aanmaken.
+
+## 1.3.0-dev.4 — Boekenplank visuele polish
+
+- Horizontale scrollbars binnen planken verwijderd. Boekkaarten lopen nu automatisch door naar een volgende rij, in dezelfde rustige richting als het Neo-ontwerp.
+- De kleine `⋯`-knop naast **Openen** is vervangen door een duidelijke, volledige knop **Boekacties** onder **Openen**. Het verplaatsmenu blijft via die knop beschikbaar.
+- Bevestigingsvensters voor het verwijderen/resetten van een plank gebruiken nu de QuietWriter-vertalingen voor **Ja** en **Nee** in plaats van de Engelstalige Qt-knoppen.
+- Kaarten zijn iets hoger gemaakt zodat de twee duidelijke actieknoppen zonder visuele drukte passen.
+- Geen wijzigingen aan het shelf-datamodel of de privacylogica in deze iteratie.
+
+## 1.3.0-dev.3 — Neo-boekenplanken en sync-veilige migratie
+
+- De laatste blocker vóór de boekenplank-UI is opgelost: ontbrekende `library.json`-metadata blijft bij queries alleen in het geheugen (`pending_migration`) en wordt pas bij een expliciete plank-/boekactie opgeslagen. Een half gesynchroniseerde tweede computer kan daardoor niet stil alle boeken openbaar maken.
+- Demo-zichtbaarheid blijft fail-closed zolang de plankindeling nog niet canoniek is.
+- Herstelacties weigeren een `library.json` van een nieuwere schemaversie te overschrijven.
+- De lokale proceslock staat niet langer in de gesynchroniseerde werkmap, maar in de lokale tijdelijke map met een werkmapgebonden sleutel.
+- De boekenplank is omgebouwd naar horizontale planken in de Neo-richting. Iedere plank heeft een vaste ID en een inline hernoembare naam.
+- Nieuwe planken kunnen vanuit de boekenkast worden aangemaakt; planken kunnen privé worden gemaakt en niet-standaardplanken kunnen worden verwijderd. Boeken van een verwijderde plank gaan veilig terug naar de standaardplank.
+- Elk boek heeft een compact actiemenu om het naar een andere plank te verplaatsen. Nieuwe en geïmporteerde boeken komen standaard op **Werk in uitvoering**.
+- De standaardplank kan wel worden hernoemd, maar niet privé worden gemaakt of verwijderd.
+- De boekenkast gebruikt per render één geladen shelf-snapshot, zodat plank- en boekzichtbaarheid uit dezelfde consistente toestand komen.
+- Herstelmeldingen voor last-good, noodindeling en future-schema zijn in de boekenkast zichtbaar; metadatawaarschuwingen worden centraal getoond.
+- Nieuwe regressietests dekken pending migration, expliciete eerste write, bescherming van future-schema en de lokale locklocatie.
+- Demo-modus zelf is nog niet als UI-schakelaar toegevoegd; deze dev-versie richt zich op de normale Neo-boekenkast en het daarvoor vereiste fundament.
+
+## 1.3.0-dev.2 — Plankfundament hardening
+
+- Twee blockers uit de onafhankelijke dev.1-review opgelost vóór de UI-laag.
+- Een verdwenen `library.json` migreert niet langer stil opnieuw wanneer een last-good-kopie bestaat; Demo-modus blijft dan fail-closed.
+- Boekaanmaak, DOCX/Markdown-import, QWBOOK-import en prullenbakacties blijven succesvol als alleen de plankmetadata niet kan worden bijgewerkt; de plankfout wordt als niet-blokkerende waarschuwing bewaard.
+- De standaardplank krijgt een deterministische ID zodat onafhankelijke 1.2→1.3-migraties dezelfde basis produceren.
+- Lokale gelijktijdige plankbewerkingen worden met een lock geserialiseerd en na schrijven opnieuw gecontroleerd; geen stille verloren operaties meer in de race-test.
+- Nieuwere `library.json`-schema's geven voor queries een veilige read-only/fail-closed toestand in plaats van een exception.
+- Ongeldige boek→plankverwijzingen blijven leesbaar voor veilige fallback, maar blokkeren writes tot herstel.
+- Expliciete herstel-API toegevoegd: last-good terugzetten of de indeling bewust resetten naar de standaardplank.
+- Queries kunnen één geladen snapshot hergebruiken zodat een UI-render consistent kan blijven.
+- Regressietests uitgebreid met privacyherstel, half-succesvolle boekoperaties, deterministische migratie, future-schema, recovery en multiprocessing-concurrency.
+
+## 1.3.0-dev.1 — Fundament voor meerdere boekenplanken
+
+- Nieuwe werkmap-brede `library.json` als enige bron van waarheid voor de relatie `book_id -> shelf_id`; `book.json` en `.qwbook` blijven vrij van lokale plankmetadata.
+- Iedere werkmap krijgt één publieke standaardplank **Werk in uitvoering**; bestaande live boeken en boeken in de prullenbak worden bij de eenmalige migratie aan die plank gekoppeld zonder hun boekbestanden te wijzigen.
+- Planken hebben vaste interne UUID's en hernoembare namen. Een boek hoort structureel bij precies één plank.
+- De standaardplank kan niet privé worden gemaakt of verwijderd.
+- Verplaatsen, hernoemen, privéstatus en verwijderen van planken worden als kleine operaties op de nieuwste schijfversie toegepast en atomair opgeslagen; een last-good-kopie biedt herstel bij beschadigde bibliotheekmetadata.
+- Boeken in de prullenbak behouden hun planktoewijzing; definitief verwijderen ruimt de mapping op.
+- De eerste centrale zichtbaarheidregels zijn aanwezig: privéplanken kunnen in Demo-modus worden gefilterd en ontbrekende/ongeldige relaties worden daar fail-closed behandeld. De Demo-UI zelf volgt in een volgende 1.3-dev iteratie.
+- Nieuwe regressietests dekken migratie, export/import, prullenbak, corruptieherstel, synchronisatiegedrag en de kerninvarianten van het plankmodel.
+
 ## 1.2.32 — Migratiedialoog en releasepolish
 
 - De Windows-RC-build gebruikt nu Python 3.12.10 met vastgepinde runtime- en PyInstaller-dependencies; stille dependency-upgrades zijn uit de buildroute verwijderd.

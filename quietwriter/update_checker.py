@@ -29,13 +29,26 @@ def _version_tuple(value: str) -> tuple[int, ...]:
     return tuple(int(part) for part in match.group(1).split('.'))
 
 
+def _is_prerelease(value: str) -> bool:
+    text = str(value or '').strip().lstrip('vV').lower()
+    return bool(re.search(r'-(?:dev|alpha|beta|rc)(?:[.\-]?\d+)?(?:$|[+\-])', text))
+
+
 def is_newer_version(candidate: str, current: str = __version__) -> bool:
     new = _version_tuple(candidate)
     old = _version_tuple(current)
     if not new or not old:
         return False
     size = max(len(new), len(old))
-    return new + (0,) * (size - len(new)) > old + (0,) * (size - len(old))
+    new_padded = new + (0,) * (size - len(new))
+    old_padded = old + (0,) * (size - len(old))
+    if new_padded != old_padded:
+        return new_padded > old_padded
+
+    # A final release is newer than a development/RC build with the same
+    # numeric version. This matters for dev testers when 1.3.0 is published:
+    # 1.3.0 must be offered over 1.3.0-dev.28 instead of being treated as equal.
+    return _is_prerelease(current) and not _is_prerelease(candidate)
 
 
 class UpdateChecker(QObject):

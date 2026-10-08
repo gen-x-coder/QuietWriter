@@ -64,8 +64,8 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 - Verborgen pagina's mogen via stacks geen minimumafmetingen van het hoofdvenster bepalen.
 - Controleer releases op lage laptophoogte en 100%, 125% en 150% schaal wanneer mogelijk.
 
-## Boekenplank
-- Op brede schermen gebruikt de boekenplank een gecentreerde contentas met een maximum breedte; lege ruimte wordt links en rechts gebalanceerd.
+## Boekenkast
+- Op brede schermen gebruikt de boekenkast een gecentreerde contentas met een maximum breedte; lege ruimte wordt links en rechts gebalanceerd.
 - Hero-inhoud, zoek/sorteerbediening en kaartgrid volgen dezelfde horizontale ankers.
 - Boek- en nieuw-boekkaarten gebruiken exact dezelfde buitenmaat en een responsive grid; voeg geen decoratieve zijpanelen toe alleen om brede schermen te vullen.
 
@@ -294,7 +294,7 @@ Tekstprompts voor hoofdstukken en secties gebruiken QuietWriter's eigen `prompt_
 
 ### Boeknavigatie en editorbron
 
-- **HUIDIG BOEK** en alle boekniveau-knoppen zijn uitsluitend zichtbaar wanneer `MainWindow.active_book()` werkelijk een boek bevat. Koude start, loskoppelen en terugkeer naar de Boekenplank gebruiken dezelfde centrale zichtbaarheidstoestand.
+- **HUIDIG BOEK** en alle boekniveau-knoppen zijn uitsluitend zichtbaar wanneer `MainWindow.active_book()` werkelijk een boek bevat. Koude start, loskoppelen en terugkeer naar de Boekenkast gebruiken dezelfde centrale zichtbaarheidstoestand.
 - `ManuscriptEditor.source_text()` is de gedeelde persistente tekstbron voor manuscriptachtige editors. Dirty-baselines, conflict-snapshots en writes mogen niet elk een eigen Qt-tekstconversie gebruiken.
 - Editors die alleen presentatie opnieuw toepassen (typografie, highlighting, spelling) mogen geen bestand materialiseren of autosave starten wanneer hun broninhoud niet veranderde.
 - Bewerkingen die het volledige document opnieuw opbouwen gebruiken de persistente bronrepresentatie, zodat harde spaties en andere betekenisvolle Unicode buiten het bewerkte fragment intact blijven.
@@ -310,7 +310,7 @@ Tekstprompts voor hoofdstukken en secties gebruiken QuietWriter's eigen `prompt_
 - De linkerrail heeft vier semantische groepen: **BIBLIOTHEEK**, **HUIDIG BOEK**, **AI-CONTEXT** en **PROGRAMMA**. Een groepskop is alleen zichtbaar wanneer de rail is uitgeklapt én minstens één item in die groep zichtbaar is.
 - Railzichtbaarheid wordt volledig afgeleid uit één effectief toestandsmodel: open boek (runtime), AI aan/uit en Geavanceerde opties aan/uit (opgeslagen of tijdelijke Settings-preview). De renderer leest zelf geen `QSettings` en voert geen navigatieacties uit.
 - De renderer mag uitsluitend tekenen/zichtbaarheid veranderen. Paneel sluiten, een verborgen actieve pagina verlaten en een Settings-terugkeerdoel aanpassen zijn commit-side-effects en gebeuren nooit tijdens een preview.
-- Fallback bij een gecommitteerd verborgen navigatiedoel is centraal: **Inhoud** wanneer een boek open is, anders **Boekenplank**. Er mogen geen afzonderlijke fallbackregels per feature ontstaan.
+- Fallback bij een gecommitteerd verborgen navigatiedoel is centraal: **Inhoud** wanneer een boek open is, anders **Boekenkast**. Er mogen geen afzonderlijke fallbackregels per feature ontstaan.
 - **AI-CONTEXT** betekent gegevens die AI voor het geopende boek kan gebruiken. Boekgeheugen en Boekprofiel horen hier; Schrijverspersona is globaal en staat onder **PROGRAMMA**.
 - Een rail met alle functies zichtbaar moet bruikbaar blijven bij 700–768 px vensterhoogte. De navigatie mag scrollen; de inhoud van de rail mag de minimumhoogte van het hoofdvenster niet opdrijven. De scrollbar reserveert breedte binnen de bestaande rail zodat labels niet afbreken.
 - Tests voor de rail halen hun verwachting niet uitsluitend uit hetzelfde model als de productcode. Naast modelinvarianten bestaan handmatig uitgeschreven referentietoestanden voor koude start, volledig boek en boek zonder AI/Geavanceerd.

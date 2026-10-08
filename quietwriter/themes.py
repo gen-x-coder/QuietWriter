@@ -487,6 +487,9 @@ def stylesheet(name: str) -> str:
     QFrame#bookCard:hover, QFrame#newBookCard:hover {{ border: 1px solid {t['border']}; }}
     QLabel#bookCoverTitle {{ font-family: "Merriweather", Georgia, serif; font-size: 22px; background: transparent; }}
     QLabel#newBookPlus {{ font-size: 42px; color: {t['accent']}; background: transparent; }}
+    QProgressBar#bookGoalProgress {{ background: {t['border_subtle']}; border: 0; border-radius: 2px; }}
+    QProgressBar#bookGoalProgress::chunk {{ background: {t['accent']}; border-radius: 2px; }}
+    QLabel#coverPlaceholder {{ background: {t['editor']}; color: {t['muted']}; border: 1px dashed {t['border']}; border-radius: 9px; padding: 6px; }}
 
     QPushButton {{ background: transparent; color: {t['text']}; border: 1px solid {t['border']}; border-radius: 8px; padding: 8px 12px; }}
     QPushButton:hover {{ background: {t['hover']}; border-color: {t['focus']}; }}
@@ -502,6 +505,7 @@ def stylesheet(name: str) -> str:
     QPushButton#secondaryButton:hover {{ background: {t['hover']}; border-color: {t['focus']}; }}
     QPushButton#secondaryButton:focus {{ border-color: {t['focus']}; }}
     QPushButton#secondaryButton:pressed {{ background: {t['select']}; border-color: {t['focus']}; }}
+    QPushButton#secondaryButton:checked {{ background: {t['select']}; border-color: {t['focus']}; }}
     QPushButton#exportFormatCard {{ background: {t['panel']}; border: 1px solid {t['border_subtle']}; border-radius: 10px; padding: 12px 14px; text-align: left; font-weight: 600; }}
     QPushButton#exportFormatCard:hover {{ background: {t['hover']}; border-color: {t['focus']}; }}
     QPushButton#exportFormatCard:focus {{ border-color: {t['focus']}; }}
@@ -573,9 +577,20 @@ def stylesheet(name: str) -> str:
     QPushButton#aiActionButton:focus {{ border-color: {t['focus']}; }}
     QPushButton#aiActionButton:pressed {{ background: {t['accent']}; border-color: {t['focus']}; }}
 
-    QPushButton#contentsEdgeButton {{ background: {t['panel2']}; color: {t['text']}; border: 1px solid {t['border_subtle']}; border-left: 0; border-top-left-radius: 0px; border-bottom-left-radius: 0px; border-top-right-radius: 9px; border-bottom-right-radius: 9px; padding: 4px; }}
+    QPushButton#contentsEdgeButton {{ background: {t['bg']}; color: {t['text']}; border: 1px solid {t['border_subtle']}; border-left: 0; border-top-left-radius: 0px; border-bottom-left-radius: 0px; border-top-right-radius: 9px; border-bottom-right-radius: 9px; padding: 4px; }}
     QPushButton#contentsEdgeButton:hover, QPushButton#contentsEdgeButton:focus {{ background: {t['hover']}; border-color: {t['focus']}; }}
     QPushButton#contentsEdgeButton:pressed {{ background: {t['select']}; border-color: {t['focus']}; }}
+    QPushButton#planningOverlayButton {{ background: transparent; color: {t['muted']}; border: 1px solid {t['border_subtle']}; border-radius: 8px; padding: 6px 10px; }}
+    QPushButton#planningOverlayButton:hover, QPushButton#planningOverlayButton:focus {{ background: {t['hover']}; color: {t['text']}; border-color: {t['focus']}; }}
+    QPushButton#planningOverlayButton:pressed {{ background: {t['select']}; }}
+    QPushButton#planningOverlayButton:checked {{ background: {t['accent_soft']}; color: {t['text']}; border-color: {t['accent']}; }}
+    QPushButton#planningOverlayButton:disabled {{ color: {t['disabled']}; border-color: {t['border_subtle']}; background: transparent; }}
+    QFrame#planningOverlay {{ background: {t['panel']}; border: 1px solid {t['border']}; border-radius: 12px; }}
+    QWidget#planningOverlayHost {{ background: transparent; }}
+    QWidget#planningOverlayFiller {{ background: transparent; border: 0; }}
+    QScrollArea#planningOverlayScroll {{ background: transparent; border: 0; }}
+    QScrollArea#planningOverlayScroll > QWidget > QWidget {{ background: transparent; }}
+    QFrame#planningOverlayScene {{ background: {t['bg']}; border: 1px solid {t['border_subtle']}; border-radius: 9px; }}
     QFrame#flyout {{ background: {t['panel']}; border: 1px solid {t['border']}; border-radius: 4px; }}
     QFrame#insertChoiceCard {{ background: {t['panel']}; border: 1px solid {t['border_subtle']}; border-radius: 10px; }}
     QPushButton#flyoutButton {{ background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 10px 14px; text-align: left; font-weight: 600; min-width: 190px; }}
@@ -593,7 +608,7 @@ def stylesheet(name: str) -> str:
     QToolButton#sceneBreakDelete:hover {{ background: {t['accent_soft']}; color: {t['danger']}; border-color: {t['border']}; }}
     QToolButton#sceneBreakDelete:pressed {{ background: {t['select']}; }}
 
-    QLineEdit, QComboBox, QTextEdit, QPlainTextEdit {{
+    QLineEdit, QComboBox, QDateEdit, QTextEdit, QPlainTextEdit {{
         background: {t['editor']}; color: {t['text']}; border: 1px solid {t['border']};
         border-radius: 9px; padding: 8px 10px; selection-background-color: {t['accent']};
     }}
@@ -616,16 +631,18 @@ def stylesheet(name: str) -> str:
     QSpinBox::up-button:hover, QSpinBox::down-button:hover {{ background: {t['accent_soft']}; }}
     QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {{ background: {t['select']}; }}
     QComboBox {{ padding-right: 34px; }}
+    QDateEdit {{ padding-right: 30px; }}
+    QDateEdit::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: 0; background: transparent; }}
     QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 30px; border: 0; background: transparent; }}
     QComboBox QAbstractItemView {{ background: {t['panel']}; color: {t['text']}; border: 1px solid {t['border']}; outline: 0; selection-background-color: {t['accent_soft']}; selection-color: {t['text']}; padding: 4px; }}
-    QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QTextEdit:focus, QPlainTextEdit:focus {{ border: 1px solid {t['focus']}; }}
+    QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QSpinBox:focus, QTextEdit:focus, QPlainTextEdit:focus {{ border: 1px solid {t['focus']}; }}
     QRadioButton {{ spacing: 9px; }}
     QRadioButton::indicator {{ width: 18px; height: 18px; border: 2px solid {t['muted']}; border-radius: 9px; background: {t['editor']}; }}
     QRadioButton::indicator:hover {{ border-color: {t['accent']}; }}
     QRadioButton::indicator:checked {{ background: {t['accent']}; border: 2px solid {t['accent']}; }}
     QRadioButton::indicator:disabled {{ border-color: {t['disabled']}; background: {t['panel2']}; }}
     QCheckBox:focus, QRadioButton:focus {{ background: {t['accent_soft']}; border-radius: 6px; }}
-    QLineEdit:disabled, QComboBox:disabled, QTextEdit:disabled {{ color: {t['disabled']}; background: {t['panel2']}; }}
+    QLineEdit:disabled, QComboBox:disabled, QDateEdit:disabled, QTextEdit:disabled {{ color: {t['disabled']}; background: {t['panel2']}; }}
     QLineEdit#chapterTitle {{ border: 0; border-bottom: 1px solid transparent; padding: 34px 44px 16px 44px; background: {t['editor']}; }}
     QLineEdit#chapterTitle:focus {{ border: 0; border-bottom: 1px solid {t['accent']}; }}
     QTextEdit#editor {{ border: 0; padding: 30px 18px; line-height: 1.6; }}
@@ -639,19 +656,35 @@ def stylesheet(name: str) -> str:
     QListWidget::item:hover, QTreeWidget::item:hover {{ background: {t['hover']}; }}
     QListWidget::item:selected, QTreeWidget::item:selected {{ background: {t['accent_soft']}; color: {t['text']}; }}
     QListWidget::item:disabled, QTreeWidget::item:disabled {{ color: {t['muted']}; background: transparent; }}
-    QTreeWidget#manuscriptTree::item {{ border-radius: 0px; }}
+    QWidget#searchResultArea, QListWidget#searchResults, QLabel#searchEmptyResults {{ background: {t['panel']}; }}
+    QWidget#searchResultArea {{ border-radius: 8px; }}
+    QLabel#searchEmptyResults {{ color: {t['muted']}; border-radius: 8px; }}
+    QWidget#manuscriptSidebar {{ background: {t['bg']}; }}
+    QTreeWidget#manuscriptTree {{ background: transparent; border: 0; border-radius: 0; }}
+    QTreeWidget#manuscriptTree QScrollBar:vertical {{ background: {t['bg']}; border: 0; }}
+    QTreeWidget#manuscriptTree QScrollBar::groove:vertical {{ background: {t['bg']}; border: 0; }}
+    QTreeWidget#manuscriptTree QScrollBar::add-page:vertical, QTreeWidget#manuscriptTree QScrollBar::sub-page:vertical {{ background: {t['bg']}; }}
+    QTreeWidget#manuscriptTree QScrollBar:horizontal {{ background: {t['bg']}; border: 0; }}
+    QTreeWidget#manuscriptTree QScrollBar::groove:horizontal {{ background: {t['bg']}; border: 0; }}
+    QTreeWidget#manuscriptTree QScrollBar::add-page:horizontal, QTreeWidget#manuscriptTree QScrollBar::sub-page:horizontal {{ background: {t['bg']}; }}
+    QTreeWidget#manuscriptTree::item {{ border-radius: 6px; }}
 
 
-    QFrame#planningSidebar {{ background: {t['panel2']}; border-right: 1px solid {t['border_subtle']}; }}
+    QFrame#planningSidebar {{ background: {t['bg']}; border-right: 1px solid {t['border_subtle']}; }}
     QPushButton#planningNavButton {{ border: 1px solid transparent; border-left: 3px solid transparent; border-radius: 8px; padding: 10px 12px; text-align: left; color: {t['muted']}; }}
     QPushButton#planningNavButton:hover {{ background: {t['hover']}; color: {t['text']}; }}
     QPushButton#planningNavButton:focus {{ border-color: {t['focus']}; border-left-color: {t['focus']}; color: {t['text']}; }}
     QPushButton#planningNavButton:pressed {{ background: {t['select']}; color: {t['text']}; }}
     QPushButton#planningNavButton:checked {{ background: {t['accent_soft']}; color: {t['text']}; border-left: 3px solid {t['accent']}; font-weight: 600; }}
     QPushButton#planningNavButton:checked:focus {{ border-color: {t['focus']}; border-left-color: {t['accent']}; }}
-    QFrame#planningListPanel {{ background: {t['panel']}; border-right: 1px solid {t['border_subtle']}; }}
+    QFrame#planningListPanel {{ background: {t['bg']}; border-right: 1px solid {t['border_subtle']}; }}
+    QListWidget#planningCharacterList {{ background: transparent; border: 0; border-radius: 0; padding: 0; }}
+    QListWidget#planningCharacterList::item {{ min-height: 30px; padding: 7px 10px; border: 1px solid transparent; border-left: 3px solid transparent; border-radius: 8px; }}
+    QListWidget#planningCharacterList::item:hover {{ background: {t['hover']}; }}
+    QListWidget#planningCharacterList::item:selected {{ background: {t['accent_soft']}; color: {t['text']}; border-left: 3px solid {t['accent']}; font-weight: 600; }}
     QLabel#planningMicroLabel {{ color: {t['muted']}; font-size: 11px; font-weight: 600; letter-spacing: 0.8px; }}
     QFrame#sceneCard {{ background: {t['panel']}; border: 1px solid {t['border_subtle']}; border-radius: 10px; }}
+    QLabel#sceneStatusBadge {{ color: {t['muted']}; background: {t['panel2']}; border: 1px solid {t['border_subtle']}; border-radius: 8px; padding: 3px 8px; font-size: 11px; }}
     QLabel#outlineChapterTitle {{ background: {t['panel2']}; border-radius: 8px; padding: 8px 10px; font-weight: 600; }}
     QPushButton#relationChip {{ background: {t['accent_soft']}; color: {t['text']}; border: 1px solid transparent; border-radius: 12px; padding: 5px 10px; text-align: left; }}
     QPushButton#relationChip:hover {{ color: {t['accent']}; }}

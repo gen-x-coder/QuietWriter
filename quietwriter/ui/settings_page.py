@@ -1,6 +1,6 @@
 
 from pathlib import Path
-from PySide6.QtCore import Qt, QSettings, QTimer, QUrl
+from PySide6.QtCore import Qt, QSettings, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
@@ -19,6 +19,7 @@ from ..editor_view import DEFAULT_TEXT_WIDTH, normalize_text_width
 from ..font_catalog import recommended_families, system_families_excluding_recommended
 from ..manuscript_markup import ManuscriptStyle
 from .dialogs import confirm
+from .form_controls import QuietComboBox, QuietSpinBox
 from .about_page import AboutPage
 
 
@@ -38,6 +39,26 @@ class WrappedHeightLabel(QLabel):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.sync_height()
+
+
+
+class SettingsBooleanChoice(QuietComboBox):
+    """QuietWriter-style two-state choice with QCheckBox-compatible helpers."""
+    toggled = Signal(bool)
+
+    def __init__(self, checked=False, false_text=None, true_text=None, parent=None):
+        super().__init__(parent)
+        self.addItem(false_text or tr('settings.choice.disabled', 'Uitgeschakeld'), False)
+        self.addItem(true_text or tr('settings.choice.enabled', 'Ingeschakeld'), True)
+        self.setChecked(bool(checked))
+        self.currentIndexChanged.connect(lambda _index: self.toggled.emit(self.isChecked()))
+
+    def isChecked(self):
+        return bool(self.currentData())
+
+    def setChecked(self, checked):
+        index = self.findData(bool(checked))
+        self.setCurrentIndex(index if index >= 0 else 0)
 
 class SettingsPage(QWidget):
     DICTIONARY_DOWNLOAD_URL = 'https://extensions.openoffice.org/'
@@ -106,7 +127,7 @@ class SettingsPage(QWidget):
             tr('settings.general.intro', 'Basisgedrag van QuietWriter.')
         )
         self._add_settings_section(gl, tr('settings.section.program', 'Programma'))
-        self.language = QComboBox()
+        self.language = QuietComboBox()
         self.language.addItem(tr('language.dutch', 'Nederlands'), 'nl')
         self.language.addItem(tr('language.english', 'Engels'), 'en')
         self.language.addItem(tr('language.german', 'Duits'), 'de')
@@ -117,20 +138,26 @@ class SettingsPage(QWidget):
         self.language.setCurrentIndex(language_index if language_index >= 0 else 0)
         self._add_settings_field(gl, tr('settings.general.language', 'Programmataal'), self.language,
             tr('settings.general.language_help', 'De gekozen taal wordt na een herstart van QuietWriter toegepast.'))
-        self.advanced_options = QCheckBox()
+        self.advanced_options = SettingsBooleanChoice(settings.value('advanced_options', True, bool), tr('settings.choice.not_use', 'Niet gebruiken'), tr('settings.choice.use', 'Gebruiken'))
         self.advanced_options.setAccessibleName(tr('settings.general.advanced_options', 'Geavanceerde opties gebruiken'))
-        self.advanced_options.setChecked(settings.value('advanced_options', True, bool))
         self._add_settings_field(
             gl, tr('settings.general.advanced_options', 'Geavanceerde opties gebruiken'), self.advanced_options,
             tr('settings.general.advanced_options_help', 'Toont specialistische functies die je niet nodig hebt voor dagelijks schrijven. Voorlopig geldt dit voor Integriteit & herstel.')
         )
-        self.guided_export = QCheckBox()
+        self.guided_export = SettingsBooleanChoice(settings.value('export/guided', True, bool), tr('settings.export.direct', 'Direct alle instellingen'), tr('settings.export.guided', 'Begeleid'))
         self.guided_export.setAccessibleName(tr('settings.general.guided_export', 'Begeleid exporteren'))
-        self.guided_export.setChecked(settings.value('export/guided', True, bool))
         self._add_settings_field(
             gl, tr('settings.general.guided_export', 'Begeleid exporteren'), self.guided_export,
             tr('settings.general.guided_export_help', 'Exporteren begint met een paar korte vragen: wat wil je met je boek doen? Uit: je ziet direct alle exportinstellingen. Je kunt ook op de Exporteren-pagina zelf wisselen.')
         )
+        self._add_settings_section(gl, tr('settings.section.progress', 'Schrijfvoortgang'))
+        self.writing_progress_enabled = SettingsBooleanChoice(settings.value('writing_progress_enabled', False, bool), tr('writing_goal.track_off', 'Niet bijhouden'), tr('writing_goal.track_on', 'Bijhouden'))
+        self.writing_progress_enabled.setAccessibleName(tr('settings.progress.enable', 'Vandaag geschreven bijhouden'))
+        self._add_settings_field(
+            gl, tr('settings.progress.enable', 'Vandaag geschreven bijhouden'), self.writing_progress_enabled,
+            tr('settings.progress.enable_help', 'Opt-in: QuietWriter telt alleen positieve groei die je zelf in de editor opslaat. De dagtelling blijft lokaal op deze computer en wordt niet gesynchroniseerd. Uitzetten stopt het bijhouden; bestaande voortgang blijft bewaard voor wanneer je dit later weer inschakelt.')
+        )
+
         self._add_settings_section(gl, tr('settings.section.saving', 'Opslaan'))
         saving_info = QLabel(tr('settings.general.autosave_always', 'QuietWriter slaat wijzigingen automatisch op. Ctrl+S blijft beschikbaar om direct op te slaan.'))
         saving_info.setObjectName('muted')
@@ -138,13 +165,12 @@ class SettingsPage(QWidget):
         gl.addWidget(saving_info)
 
         self._add_settings_section(gl, tr('settings.section.updates', 'Updates'))
-        self.auto_update_check = QCheckBox()
-        self.auto_update_check.setChecked(settings.value('auto_update_check', False, bool))
+        self.auto_update_check = SettingsBooleanChoice(settings.value('auto_update_check', False, bool), tr('settings.updates.not_automatic', 'Niet automatisch'), tr('settings.updates.automatic', 'Automatisch'))
         self._add_settings_field(
             gl, tr('settings.updates.auto', 'Automatisch controleren op updates'), self.auto_update_check,
             tr('settings.updates.auto_help', 'Vraagt GitHub na het opstarten alleen naar de nieuwste stabiele versie. Er worden geen boeken of manuscripten verstuurd en QuietWriter downloadt niets automatisch.')
         )
-        check_now = QPushButton(tr('settings.updates.check_now', 'Nu controleren'))
+        check_now = QPushButton(tr('settings.updates.check_now', 'Nu controleren')); check_now.setObjectName('secondaryButton')
         check_now.clicked.connect(lambda: self.main.check_for_updates(silent=False))
         self._add_settings_field(
             gl, tr('settings.updates.manual', 'Handmatig controleren'), check_now,
@@ -152,7 +178,7 @@ class SettingsPage(QWidget):
         )
 
         self._add_settings_section(gl, tr('settings.section.help', 'Uitleg'))
-        show_help = QPushButton(tr('settings.help.reset_button', 'Alle uitleg weer tonen'))
+        show_help = QPushButton(tr('settings.help.reset_button', 'Alle uitleg weer tonen')); show_help.setObjectName('secondaryButton')
         show_help.clicked.connect(self._reset_panel_help)
         self._add_settings_field(
             gl, tr('settings.help.label', 'Uitleg in panelen'), show_help,
@@ -160,7 +186,7 @@ class SettingsPage(QWidget):
         )
 
         self._add_settings_section(gl, tr('settings.section.reset', 'Opnieuw instellen'))
-        reset_button = QPushButton(tr('settings.reset.button', 'Standaardinstellingen herstellen…'))
+        reset_button = QPushButton(tr('settings.reset.button', 'Standaardinstellingen herstellen…')); reset_button.setObjectName('secondaryButton')
         reset_button.clicked.connect(self._reset_settings)
         self._add_settings_field(
             gl, tr('settings.reset.label', 'QuietWriter opnieuw instellen'), reset_button,
@@ -175,34 +201,31 @@ class SettingsPage(QWidget):
             tr('settings.appearance.intro', 'Pas het thema en de schrijftypografie aan. Voorbeelden worden direct toegepast; Opslaan maakt de keuze blijvend.')
         )
         self._add_settings_section(al, tr('settings.section.display', 'Weergave'))
-        self.theme = QComboBox(); self.theme.addItems(THEMES.keys()); self.theme.setCurrentText(settings.value('theme', 'Helder'))
+        self.theme = QuietComboBox(); self.theme.addItems(THEMES.keys()); self.theme.setCurrentText(settings.value('theme', 'Helder'))
         self._add_settings_field(al, tr('settings.appearance.theme', 'Kleurenschema'), self.theme,
             tr('settings.appearance.theme_help', 'Past de volledige interface direct als voorbeeld aan.'))
 
         self._add_settings_section(al, tr('settings.section.typography', 'Schrijftypografie'))
-        self.editor_font = QComboBox(); self._populate_font_combo(self.original_typography.family)
+        self.editor_font = QuietComboBox(); self._populate_font_combo(self.original_typography.family)
         self.font_preview = QLabel(tr('settings.appearance.font_sample', 'De eerste zin van een nieuw verhaal begint vaak met één enkel idee.'))
         self.font_preview.setObjectName('fontPreviewSample'); self.font_preview.setWordWrap(True)
-        self.font_preview_meta = QLabel('')
-        self.font_preview_meta.setObjectName('fontPreviewMeta')
         preview_card = QFrame()
         preview_card.setObjectName('fontPreviewCard')
-        pv = QVBoxLayout(preview_card); pv.setContentsMargins(16, 12, 16, 12); pv.setSpacing(5)
+        pv = QVBoxLayout(preview_card); pv.setContentsMargins(20, 18, 20, 18); pv.setSpacing(0)
         pv.addWidget(self.font_preview)
-        pv.addWidget(self.font_preview_meta)
         font_control = QWidget()
         font_control.setObjectName('settingsInlineControl')
         fh = QHBoxLayout(font_control); fh.setContentsMargins(0, 0, 0, 0); fh.setSpacing(16)
-        self.editor_font.setMinimumWidth(280); self.editor_font.setMaximumWidth(340)
-        preview_card.setMinimumWidth(420); preview_card.setMaximumWidth(560); preview_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.editor_font.setMinimumWidth(220); self.editor_font.setMaximumWidth(340)
+        preview_card.setMinimumWidth(320); preview_card.setMaximumWidth(560); preview_card.setMinimumHeight(92); preview_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         fh.addWidget(self.editor_font, 0, Qt.AlignTop); fh.addWidget(preview_card, 1)
         self._add_settings_field(al, tr('settings.appearance.font', 'Schrijflettertype'), font_control,
             tr('settings.appearance.font_help', 'Aanbevolen lettertypen worden door QuietWriter zelf geladen. Daaronder blijven alle beschikbare systeemlettertypen zichtbaar.'))
 
-        self.editor_font_size = QSpinBox(); self.editor_font_size.setRange(11, 24); self.editor_font_size.setSuffix(' pt'); self.editor_font_size.setValue(self.original_typography.point_size)
+        self.editor_font_size = QuietSpinBox(); self.editor_font_size.setRange(11, 24); self.editor_font_size.setSuffix(' pt'); self.editor_font_size.setValue(self.original_typography.point_size)
         self._add_settings_field(al, tr('settings.appearance.font_size', 'Tekstgrootte'), self.editor_font_size)
 
-        self.editor_text_width = QComboBox()
+        self.editor_text_width = QuietComboBox()
         for key, label in (
             ('extra_narrow', tr('editor.text_width.extra_narrow', 'Extra smal')),
             ('narrow', tr('editor.text_width.narrow', 'Smal')),
@@ -220,10 +243,14 @@ class SettingsPage(QWidget):
         )
 
         self._add_settings_section(al, tr('settings.section.manuscript', 'Manuscript'))
-        self.manuscript_line_spacing = QSpinBox(); self.manuscript_line_spacing.setRange(120, 200); self.manuscript_line_spacing.setSuffix(' %'); self.manuscript_line_spacing.setValue(int(settings.value('manuscript_line_spacing', 155, int) or 155))
-        self.manuscript_indent = QSpinBox(); self.manuscript_indent.setRange(0, 60); self.manuscript_indent.setSuffix(' px'); self.manuscript_indent.setValue(int(settings.value('manuscript_indent', 28, int) or 28))
-        self.manuscript_paragraph_spacing = QSpinBox(); self.manuscript_paragraph_spacing.setRange(0, 24); self.manuscript_paragraph_spacing.setSuffix(' px'); self.manuscript_paragraph_spacing.setValue(int(settings.value('manuscript_paragraph_spacing', 8, int) or 8))
-        self.smart_quotes = QCheckBox(tr('settings.appearance.smart_quotes', 'Slimme aanhalingstekens')); self.smart_quotes.setChecked(settings.value('smart_quotes', True, bool))
+        self.manuscript_line_spacing = QuietSpinBox(); self.manuscript_line_spacing.setRange(120, 200); self.manuscript_line_spacing.setSuffix(' %'); self.manuscript_line_spacing.setValue(int(settings.value('manuscript_line_spacing', 155, int) or 155))
+        self.manuscript_indent = QuietSpinBox(); self.manuscript_indent.setRange(0, 60); self.manuscript_indent.setSuffix(' px'); self.manuscript_indent.setValue(int(settings.value('manuscript_indent', 28, int) or 28))
+        self.manuscript_paragraph_spacing = QuietSpinBox(); self.manuscript_paragraph_spacing.setRange(0, 24); self.manuscript_paragraph_spacing.setSuffix(' px'); self.manuscript_paragraph_spacing.setValue(int(settings.value('manuscript_paragraph_spacing', 8, int) or 8))
+        self.smart_quotes = SettingsBooleanChoice(settings.value('smart_quotes', True, bool))
+        self.planning_ghosts_enabled = SettingsBooleanChoice(
+            settings.value('planning_ghosts_enabled', True, bool),
+            tr('settings.choice.hide', 'Verbergen'), tr('settings.choice.show', 'Tonen')
+        )
         self._add_settings_field(al, tr('settings.appearance.line_spacing', 'Regelafstand'), self.manuscript_line_spacing,
             tr('settings.appearance.line_spacing_help', 'Bepaalt de verticale ruimte tussen regels in de schrijfeditor.'))
         self._add_settings_field(al, tr('settings.appearance.indent', 'Alinea-inspringing'), self.manuscript_indent,
@@ -232,6 +259,8 @@ class SettingsPage(QWidget):
             tr('settings.appearance.paragraph_spacing_help', 'Voegt subtiele extra ruimte tussen opeenvolgende alinea’s toe.'))
         self._add_settings_field(al, tr('settings.appearance.smart_quotes', 'Slimme aanhalingstekens'), self.smart_quotes,
             tr('settings.appearance.smart_quotes_help', 'Zet een tijdens het typen ingevoerd recht dubbel aanhalingsteken om naar een typografisch openings- of sluitteken.'))
+        self._add_settings_field(al, tr('settings.appearance.planning_ghosts', 'Planninghulp in editor'), self.planning_ghosts_enabled,
+            tr('settings.appearance.planning_ghosts_help', 'Toont bij een leeg hoofdstuk de gekoppelde scènes uit Planning als zachte hulptekst. Deze tekst wordt niet onderdeel van het manuscript, telt niet mee en wordt niet geëxporteerd.'))
         al.addStretch(1)
         self._add_settings_category(nav_lay, tr('settings.appearance', 'Uiterlijk'), appearance)
 
@@ -242,12 +271,12 @@ class SettingsPage(QWidget):
         )
         self._add_settings_section(slay, tr('settings.section.workspace', 'Werkmap'))
         self.root = QLineEdit(settings.value('workspace', str(Path.home() / 'QuietWriter')))
-        choose = QPushButton(tr('settings.storage.choose_folder', 'Map kiezen…')); choose.clicked.connect(self.choose_root)
+        choose = QPushButton(tr('settings.storage.choose_folder', 'Map kiezen…')); choose.setObjectName('secondaryButton'); choose.clicked.connect(self.choose_root)
         box = QWidget(); box.setMinimumWidth(0); box.setMaximumWidth(760); h = QHBoxLayout(box); h.setContentsMargins(0,0,0,0); h.setSpacing(10); self.root.setMinimumWidth(320); h.addWidget(self.root, 1); h.addWidget(choose)
         self._add_settings_field(slay, tr('settings.storage.workspace', 'Werkmap'), box,
             tr('settings.storage.workspace_help', 'Hier staan je boeken, planning, publicatiestructuur en lokale herstelgegevens. Een wijziging wordt na herstart gebruikt.'))
-        self.sync_warning = QLabel('')
-        self.sync_warning.setObjectName('syncWarning'); self.sync_warning.setWordWrap(True)
+        self.sync_warning = WrappedHeightLabel('')
+        self.sync_warning.setObjectName('syncWarning')
         self._add_settings_full_width(slay, self.sync_warning)
         self.root.textChanged.connect(self.update_sync_warning)
 
@@ -264,13 +293,12 @@ class SettingsPage(QWidget):
             tr('settings.ai.intro', 'De AI Meelezer is een tweede paar ogen voor jouw manuscript. Hij helpt met feedback, persona- en stijlcontrole, feiten, continuïteit en consistentie, maar neemt het schrijven niet van je over. Hij schrijft of herschrijft geen manuscripttekst en wijzigt je manuscript nooit zelfstandig. QuietWriter bevat zelf geen AI-model: je verbindt een lokaal model via Ollama of een extern model via OpenRouter.')
         )
         self._add_settings_section(ail, tr('settings.section.ai_usage', 'Gebruik'))
-        self.ai_enabled = QCheckBox(tr('settings.ai.enable', 'AI Meelezer gebruiken'))
-        self.ai_enabled.setChecked(settings.value('ai_enabled', True, bool))
+        self.ai_enabled = SettingsBooleanChoice(settings.value('ai_enabled', True, bool), tr('settings.choice.not_use', 'Niet gebruiken'), tr('settings.choice.use', 'Gebruiken'))
         self._add_settings_field(ail, tr('settings.ai.enable', 'AI Meelezer gebruiken'), self.ai_enabled,
             tr('settings.ai.enable_help', 'Toont de Meelezer in de editor. Staat dit uit, dan blijven de AI-instellingen bewaard maar zijn ze niet actief en wordt er geen AI-provider gebruikt.'))
 
         self._add_settings_section(ail, tr('settings.section.provider', 'Provider'))
-        self.ai_provider = QComboBox(); self.ai_provider.addItem(tr('settings.ai.ollama_local', 'Ollama (lokaal)'), 'ollama'); self.ai_provider.addItem('OpenRouter', 'openrouter')
+        self.ai_provider = QuietComboBox(); self.ai_provider.addItem(tr('settings.ai.ollama_local', 'Ollama (lokaal)'), 'ollama'); self.ai_provider.addItem('OpenRouter', 'openrouter')
         provider_value = str(settings.value('ai_provider', 'ollama') or 'ollama')
         idx = self.ai_provider.findData(provider_value); self.ai_provider.setCurrentIndex(max(0, idx))
         self.ollama = QLineEdit(settings.value('ollama_url', 'http://127.0.0.1:11434'))
@@ -283,10 +311,9 @@ class SettingsPage(QWidget):
             tr('settings.ai.openrouter_key_help', 'Alleen relevant wanneer OpenRouter als provider is gekozen. De sleutel wordt lokaal in je QuietWriter-instellingen bewaard.'))
 
         self._add_settings_section(ail, tr('settings.section.model', 'Model'))
-        self.model = QComboBox(); self.model.setEditable(False)
-        self.ai_refresh_button = QPushButton(tr('settings.ai.refresh_models', 'Modellen ophalen')); self.ai_refresh_button.clicked.connect(self.refresh_models)
-        self.openrouter_free_only = QCheckBox(tr('settings.ai.openrouter_free_only', 'Alleen gratis modellen tonen'))
-        self.openrouter_free_only.setChecked(settings.value('openrouter_free_only', False, bool))
+        self.model = QuietComboBox(); self.model.setEditable(False)
+        self.ai_refresh_button = QPushButton(tr('settings.ai.refresh_models', 'Modellen ophalen')); self.ai_refresh_button.setObjectName('secondaryButton'); self.ai_refresh_button.clicked.connect(self.refresh_models)
+        self.openrouter_free_only = SettingsBooleanChoice(settings.value('openrouter_free_only', False, bool), tr('settings.ai.all_models', 'Alle modellen'), tr('settings.ai.free_models', 'Alleen gratis'))
         self.openrouter_free_only.setToolTip(tr('settings.ai.openrouter_free_only_help', 'Toont alleen OpenRouter-modellen waarvan de actuele prompt- en outputprijs nul zijn. Gebruik Modellen ophalen om de prijsstatus te verversen.'))
         self.openrouter_free_only.toggled.connect(self._openrouter_free_filter_changed)
         modelbox = QWidget(); mv = QVBoxLayout(modelbox); mv.setContentsMargins(0,0,0,0); mv.setSpacing(5)
@@ -297,12 +324,10 @@ class SettingsPage(QWidget):
             tr('settings.ai.model_help', 'QuietWriter stuurt alleen de context die je in de Meelezer-zijbalk kiest, samen met je schrijverspersona.\n🧠 = bij dit model kan thinking worden uitgeschakeld. Zonder thinking zijn antwoorden vaak sneller en directer. Het effect verschilt per model.'))
 
         self._add_settings_section(ail, tr('settings.section.ai_behavior', 'Gedrag'))
-        self.ai_disable_thinking = QCheckBox(tr('settings.ai.disable_thinking', 'Thinking uitschakelen'))
-        self.ai_disable_thinking.setChecked(settings.value('ai_disable_thinking', False, bool))
-        self._add_settings_field(ail, tr('settings.ai.disable_thinking', 'Thinking uitschakelen'), self.ai_disable_thinking,
+        self.ai_disable_thinking = SettingsBooleanChoice(settings.value('ai_disable_thinking', False, bool), tr('settings.ai.thinking_default', 'Modelstandaard'), tr('settings.ai.thinking_off', 'Uitgeschakeld'))
+        self._add_settings_field(ail, tr('settings.ai.disable_thinking', 'Thinking'), self.ai_disable_thinking,
             tr('settings.ai.disable_thinking_help', 'Vraagt de gekozen provider om reasoning/thinking uit te schakelen wanneer het model dit ondersteunt. Laat dit uit om de standaardinstelling van het model te gebruiken.'))
-        self.ai_quick_actions_expanded = QCheckBox(tr('settings.ai.quick_actions_expanded', 'Snelacties standaard uitklappen'))
-        self.ai_quick_actions_expanded.setChecked(settings.value('ai_quick_actions_expanded', False, bool))
+        self.ai_quick_actions_expanded = SettingsBooleanChoice(settings.value('ai_quick_actions_expanded', False, bool), tr('settings.ai.quick_actions_collapsed', 'Ingeklapt'), tr('settings.ai.quick_actions_open', 'Uitgeklapt'))
         self._add_settings_field(ail, tr('settings.ai.quick_actions_expanded', 'Snelacties standaard uitklappen'), self.ai_quick_actions_expanded,
             tr('settings.ai.quick_actions_expanded_help', 'Toont de drie Meelezer-snelacties direct wanneer het paneel opent. Staat dit uit, dan blijven ze bereikbaar via de knop Snelacties zonder permanente ruimte in te nemen.'))
         self._ai_controls = (self.ai_provider, self.ollama, self.openrouter_key, self.model, self.ai_refresh_button, self.openrouter_free_only, self.ai_disable_thinking, self.ai_quick_actions_expanded)
@@ -320,11 +345,11 @@ class SettingsPage(QWidget):
             tr('settings.spelling.intro', 'Beheer de spellingscontrole en de gevonden Hunspell-woordenboeken.')
         )
         self._add_settings_section(spl, tr('settings.section.checking', 'Controle'))
-        self.spell_enabled = QCheckBox(tr('settings.spelling.enable', 'Spellingscontrole inschakelen')); self.spell_enabled.setChecked(settings.value('spell_enabled', True, bool))
+        self.spell_enabled = SettingsBooleanChoice(settings.value('spell_enabled', True, bool))
         self._add_settings_field(spl, tr('settings.spelling.check', 'Spellingscontrole'), self.spell_enabled,
             tr('settings.spelling.check_help', 'Onderstreept onbekende woorden in de editor. Je manuscripttekst zelf wordt nooit automatisch aangepast.'))
         self.dictionary_catalog = DictionaryCatalog(Path(settings.value('workspace', str(Path.home() / 'QuietWriter'))) / 'dictionaries')
-        self.spell_language = QComboBox(); self.spell_language.currentIndexChanged.connect(self.update_dictionary_info)
+        self.spell_language = QuietComboBox(); self.spell_language.currentIndexChanged.connect(self.update_dictionary_info)
         self._add_settings_field(spl, tr('settings.spelling.language', 'Taal'), self.spell_language,
             tr('settings.spelling.language_help', 'QuietWriter gebruikt een gevonden Hunspell-woordenboek voor deze taal.'))
 
@@ -332,10 +357,10 @@ class SettingsPage(QWidget):
         self.dictionary_info = WrappedHeightLabel(''); self.dictionary_info.setObjectName('muted')
         self._add_settings_full_width(spl, self.dictionary_info)
         actions_widget = QWidget(); actions = QHBoxLayout(actions_widget); actions.setContentsMargins(0,0,0,0); actions.setSpacing(8)
-        self.scan_dict_btn = QPushButton(tr('settings.spelling.rescan', 'Opnieuw zoeken')); self.scan_dict_btn.clicked.connect(self.refresh_dictionaries)
-        self.add_dict_btn = QPushButton(tr('settings.spelling.add_dictionary', 'Toevoegen…')); self.add_dict_btn.clicked.connect(self.choose_dictionary)
-        self.remove_dict_btn = QPushButton(tr('common.delete', 'Verwijderen')); self.remove_dict_btn.clicked.connect(self.remove_dictionary)
-        self.download_dict_btn = QPushButton(tr('settings.spelling.download_site', 'Downloadsite')); self.download_dict_btn.clicked.connect(self.open_dictionary_download)
+        self.scan_dict_btn = QPushButton(tr('settings.spelling.rescan', 'Opnieuw zoeken')); self.scan_dict_btn.setObjectName('secondaryButton'); self.scan_dict_btn.clicked.connect(self.refresh_dictionaries)
+        self.add_dict_btn = QPushButton(tr('settings.spelling.add_dictionary', 'Toevoegen…')); self.add_dict_btn.setObjectName('secondaryButton'); self.add_dict_btn.clicked.connect(self.choose_dictionary)
+        self.remove_dict_btn = QPushButton(tr('common.delete', 'Verwijderen')); self.remove_dict_btn.setObjectName('secondaryButton'); self.remove_dict_btn.clicked.connect(self.remove_dictionary)
+        self.download_dict_btn = QPushButton(tr('settings.spelling.download_site', 'Downloadsite')); self.download_dict_btn.setObjectName('secondaryButton'); self.download_dict_btn.clicked.connect(self.open_dictionary_download)
         for btn in (self.scan_dict_btn, self.add_dict_btn, self.remove_dict_btn, self.download_dict_btn):
             actions.addWidget(btn)
         actions.addStretch(1)
@@ -421,7 +446,6 @@ class SettingsPage(QWidget):
         size = int(self.editor_font_size.value())
         font = typography_from_values(family, max(14, size)).body_font()
         self.font_preview.setFont(font)
-        self.font_preview_meta.setText(tr('settings.appearance.font_preview_meta', '{family} · {size} pt', family=family, size=size))
 
     def _make_settings_page(self, title: str, intro: str):
         page = QWidget()
@@ -469,14 +493,15 @@ class SettingsPage(QWidget):
         grid.setContentsMargins(0, 14, 0, 14)
         grid.setHorizontalSpacing(38)
         grid.setVerticalSpacing(0)
-        grid.setColumnMinimumWidth(0, 320)
+        grid.setColumnMinimumWidth(0, 240)
         grid.setColumnStretch(0, 0)
         grid.setColumnStretch(1, 1)
 
         info = QWidget()
         info.setObjectName('settingsRowInfo')
-        info.setFixedWidth(320)
-        info.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        info.setMinimumWidth(240)
+        info.setMaximumWidth(320)
+        info.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         iv = QVBoxLayout(info)
         iv.setContentsMargins(0, 0, 0, 0)
         iv.setSpacing(5)
@@ -501,7 +526,7 @@ class SettingsPage(QWidget):
 
         control_host = QWidget()
         control_host.setObjectName('settingsRowControl')
-        control_host.setMinimumWidth(320)
+        control_host.setMinimumWidth(240)
         control_host.setMaximumWidth(860)
         control_host.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         cv = QVBoxLayout(control_host)
@@ -510,10 +535,10 @@ class SettingsPage(QWidget):
         if isinstance(widget, QSpinBox):
             widget.setMinimumWidth(160); widget.setMaximumWidth(200)
         elif isinstance(widget, QComboBox):
-            widget.setMinimumWidth(260); widget.setMaximumWidth(380)
+            widget.setMinimumWidth(220); widget.setMaximumWidth(380)
         elif isinstance(widget, QLineEdit):
-            widget.setMinimumWidth(360); widget.setMaximumWidth(680)
-        elif not isinstance(widget, QCheckBox):
+            widget.setMinimumWidth(260); widget.setMaximumWidth(680)
+        else:
             widget.setMaximumWidth(860)
         cv.addWidget(widget, 0, Qt.AlignTop | Qt.AlignLeft)
         cv.addStretch(1)
@@ -574,9 +599,11 @@ class SettingsPage(QWidget):
             int(self.manuscript_indent.value()),
             int(self.manuscript_paragraph_spacing.value()),
             bool(self.smart_quotes.isChecked()),
+            bool(self.planning_ghosts_enabled.isChecked()),
             bool(self.advanced_options.isChecked()),
             bool(self.guided_export.isChecked()),
             bool(self.auto_update_check.isChecked()),
+            bool(self.writing_progress_enabled.isChecked()),
             self.root.text(),
             self.cover_template.text(),
             bool(self.ai_enabled.isChecked()),
@@ -596,7 +623,7 @@ class SettingsPage(QWidget):
             self.language, self.theme, self.editor_font,
             self.editor_font_size, self.editor_text_width, self.manuscript_line_spacing,
             self.manuscript_indent, self.manuscript_paragraph_spacing,
-            self.smart_quotes, self.advanced_options, self.guided_export, self.auto_update_check, self.root, self.cover_template,
+            self.smart_quotes, self.planning_ghosts_enabled, self.advanced_options, self.guided_export, self.auto_update_check, self.writing_progress_enabled, self.root, self.cover_template,
             self.ai_enabled, self.ai_provider, self.ollama, self.openrouter_key, self.model, self.openrouter_free_only,
             self.ai_disable_thinking, self.ai_quick_actions_expanded,
             self.spell_enabled, self.spell_language,
@@ -1052,9 +1079,11 @@ class SettingsPage(QWidget):
             'manuscript_indent': int(self.manuscript_indent.value()),
             'manuscript_paragraph_spacing': int(self.manuscript_paragraph_spacing.value()),
             'smart_quotes': self.smart_quotes.isChecked(),
+            'planning_ghosts_enabled': self.planning_ghosts_enabled.isChecked(),
             'advanced_options': self.advanced_options.isChecked(),
             'export/guided': self.guided_export.isChecked(),
             'auto_update_check': self.auto_update_check.isChecked(),
+            'writing_progress_enabled': self.writing_progress_enabled.isChecked(),
             'autosave': True,
             'workspace': normalized_workspace,
             'ai_enabled': self.ai_enabled.isChecked(),
@@ -1127,10 +1156,12 @@ class SettingsPage(QWidget):
         self.manuscript_indent.setValue(self.original_manuscript_style.paragraph_indent_px)
         self.manuscript_paragraph_spacing.setValue(self.original_manuscript_style.paragraph_spacing_px)
         self.smart_quotes.setChecked(self.original_manuscript_style.smart_quotes)
+        self.planning_ghosts_enabled.setChecked(self.settings.value('planning_ghosts_enabled', True, bool))
         for widget in (self.theme, self.editor_font, self.editor_font_size, self.editor_text_width, self.manuscript_line_spacing, self.manuscript_indent, self.manuscript_paragraph_spacing, self.smart_quotes): widget.blockSignals(False)
         self.advanced_options.setChecked(self.settings.value('advanced_options', True, bool))
         self.guided_export.setChecked(self.settings.value('export/guided', True, bool))
         self.auto_update_check.setChecked(self.settings.value('auto_update_check', False, bool))
+        self.writing_progress_enabled.setChecked(self.settings.value('writing_progress_enabled', False, bool))
         language_value = str(self.settings.value('language', 'nl') or 'nl')
         language_index = self.language.findData(language_value)
         self.language.setCurrentIndex(language_index if language_index >= 0 else 0)

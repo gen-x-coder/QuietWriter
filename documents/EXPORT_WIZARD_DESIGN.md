@@ -161,7 +161,7 @@ voorselectie en blijft Volgende uitgeschakeld. Daarna wordt het laatst gebruikte
   map.
 - Knoppen **Bestand openen** (primair) en **Map openen**. Bij QWBOOK alleen **Map openen** (zoals in 1.0.20).
 - Eén korte hulptekst per doel, bijvoorbeeld "Hoe zet ik het op mijn e-reader?" of "Stuur dit bestand naar de andere
-  QuietWriter-gebruiker. Die kiest **Boek importeren** op de Boekenplank."
+  QuietWriter-gebruiker. Die kiest **Boek importeren** op de Boekenkast."
 - Rechts in de actiebalk: **Nog een export maken**. Dat gaat terug naar stap 1, met het doel voorgeselecteerd.
 - Geen QMessageBox bij succes (bestaande regel). Wel de statusbalkmelding zoals nu.
 

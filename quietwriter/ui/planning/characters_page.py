@@ -184,12 +184,13 @@ class CharactersPage(QWidget):
         add = QPushButton(tr('planning.characters.new', 'Nieuw personage')); add.setObjectName('primaryButton'); add.clicked.connect(self.add_character)
         top.addWidget(page_title); top.addStretch(); top.addWidget(add)
         root.addLayout(top)
+        info = QLabel(tr('planning.characters.page_description', 'Leg personages vast die je tijdens het schrijven wilt kunnen terugvinden. Beschrijf hun rol, karakter, motivatie, doelen en relaties; deze informatie blijft buiten het manuscript en kan bij gekoppelde scènes als planninghulp terugkomen.'))
+        info.setObjectName('muted'); info.setWordWrap(True); root.addWidget(info)
 
         body = QHBoxLayout(); body.setContentsMargins(0,0,0,0); body.setSpacing(0)
-        side = QFrame(); side.setObjectName('planningListPanel'); side.setFixedWidth(190)
-        sl = QVBoxLayout(side); sl.setContentsMargins(16,18,14,22); sl.setSpacing(8)
-        list_label=QLabel(tr('planning.characters.list_heading', 'PERSONAGES')); list_label.setObjectName('planningMicroLabel'); sl.addWidget(list_label)
-        self.list = QListWidget(); self.list.currentItemChanged.connect(self._selection_changed); sl.addWidget(self.list,1)
+        side = QFrame(); side.setObjectName('planningListPanel'); side.setFixedWidth(220)
+        sl = QVBoxLayout(side); sl.setContentsMargins(4,6,12,22); sl.setSpacing(4)
+        self.list = QListWidget(); self.list.setObjectName('planningCharacterList'); self.list.setSpacing(4); self.list.currentItemChanged.connect(self._selection_changed); sl.addWidget(self.list,1)
         self.detail = CharacterDetail(); self.detail.saveRequested.connect(self.save_character); self.detail.deleteRequested.connect(self.delete_character); self.detail.relationRequested.connect(self.add_relation); self.detail.relationDeleteRequested.connect(self.delete_relation); self.detail.navigateCharacter.connect(self.select_character)
         self.canvas = CurrentPageStack(); self.canvas.setObjectName('planningCanvas')
         self.blank = QWidget(); self.blank.setObjectName('planningBlankCanvas')
@@ -211,14 +212,17 @@ class CharactersPage(QWidget):
             return
         self.owner.clear_source_error('characters')
         self.setEnabled(True)
-        self.refresh_list()
-        self.close_detail()
+        if self.characters:
+            self.refresh_list(keep_id=self.characters[0].id)
+        else:
+            self.refresh_list()
+            self.close_detail()
 
     def refresh_list(self, keep_id=None):
         self.list.blockSignals(True); self.list.clear()
         selected = None
         for c in self.characters:
-            item = QListWidgetItem(c.name + (f'\n{c.role}' if c.role else '')); item.setData(Qt.UserRole,c.id); self.list.addItem(item)
+            item = QListWidgetItem(c.name); item.setData(Qt.UserRole,c.id); self.list.addItem(item)
             if c.id == keep_id: selected = item
         self.list.blockSignals(False)
         if selected:

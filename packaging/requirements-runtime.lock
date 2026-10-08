@@ -1,4 +1,4 @@
-# QuietWriter 1.2.32 Windows RC runtime lock
+# QuietWriter 1.3.0 Windows runtime lock
 # Vastgelegd op Windows / Python 3.12.10 op 2026-10-07.
 PySide6==6.11.2
 PySide6_Addons==6.11.2

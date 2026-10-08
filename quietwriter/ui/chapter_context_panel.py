@@ -23,6 +23,7 @@ class ChapterContextPanel(QWidget):
         self.store = PlanningStore(library)
         self.book = None
         self.chapter_id = None
+        self.context = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
@@ -71,6 +72,7 @@ class ChapterContextPanel(QWidget):
     def clear(self, message: str | None = None):
         self.book = None
         self.chapter_id = None
+        self.context = None
         self._clear_rows()
         self.scroll.hide()
         self.empty_filler.show()
@@ -112,7 +114,9 @@ class ChapterContextPanel(QWidget):
             scenes = self.store.load_scenes(book)
             characters = self.store.load_characters(book)
             context = build_chapter_context(chapter_id, scenes, characters)
+            self.context = context
         except FuturePlanningFormatError:
+            self.context = None
             self._clear_rows()
             self.scroll.hide()
             self.empty_filler.show()
@@ -124,6 +128,7 @@ class ChapterContextPanel(QWidget):
             self.open_button.setEnabled(True)
             return
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError, CorruptSourceError):
+            self.context = None
             self._clear_rows()
             self.scroll.hide()
             self.empty_filler.show()

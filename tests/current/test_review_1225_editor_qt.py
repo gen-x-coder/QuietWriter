@@ -72,6 +72,7 @@ def test_internal_clipboard_preserves_formatting_but_plain_text_is_visible():
     ed.insertFromMimeData(mime)
     assert _visible(ed)[1][1] == _visible(ed)[0][1]
     assert '**heel**' in ed.source_text() and '*erg*' in ed.source_text()
+    assert not ed.textCursor().hasSelection()
 
 
 def test_external_paste_of_image_markdown_stays_literal():

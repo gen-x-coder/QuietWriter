@@ -23,19 +23,21 @@ class SceneDialog(QDialog):
         self.chapter=QComboBox(); self.chapter.addItem(tr('planning.outline.loose_idea', 'Los idee'), None)
         for ch in chapters: self.chapter.addItem(ch.title, ch.id)
         idx=self.chapter.findData(scene.chapter_id); self.chapter.setCurrentIndex(max(0,idx))
-        self.location=QLineEdit(scene.location); self.status=QComboBox(); self.status.setEditable(True)
+        self.location=QLineEdit(scene.location); self.status=QComboBox(); self.status.setEditable(False)
         for value, key, label in (
-            ('idee', 'planning.status.idea', 'idee'),
-            ('uitgewerkt', 'planning.status.developed', 'uitgewerkt'),
-            ('geschreven', 'planning.status.written', 'geschreven'),
+            ('idee', 'planning.status.idea', 'Idee'),
+            ('uitgewerkt', 'planning.status.developed', 'Uitgewerkt'),
+            ('geschreven', 'planning.status.written', 'Geschreven'),
         ):
             self.status.addItem(tr(key, label), value)
         known_status_index = self.status.findData(scene.status)
         if known_status_index >= 0:
             self.status.setCurrentIndex(known_status_index)
         else:
-            self.status.setCurrentIndex(-1)
-            self.status.setEditText(scene.status)
+            # Oude/onbekende statuswaarden blijven leesbaar en selecteerbaar,
+            # maar de status is bewust nooit vrije tekst.
+            self.status.addItem(scene.status or tr('planning.status.idea', 'Idee'), scene.status or 'idee')
+            self.status.setCurrentIndex(self.status.count() - 1)
         form.addRow(tr('planning.outline.field.title', 'Titel'),self.title); form.addRow(tr('planning.outline.field.chapter', 'Hoofdstuk'),self.chapter); form.addRow(tr('planning.outline.field.synopsis', 'Synopsis'),self.synopsis); form.addRow(tr('planning.outline.field.location', 'Locatie'),self.location); form.addRow(tr('planning.outline.field.status', 'Status'),self.status)
         self.character_checks=[]; chars=QWidget(); cl=QVBoxLayout(chars); cl.setContentsMargins(0,0,0,0)
         for char in characters:
@@ -56,17 +58,17 @@ class SceneCard(QFrame):
         lay=QVBoxLayout(self); lay.setContentsMargins(14,11,14,11); lay.setSpacing(5)
         top=QHBoxLayout(); title=QLabel(scene.title); title.setObjectName('sectionTitle'); edit=QPushButton(tr('planning.outline.edit', 'Bewerken')); edit.setObjectName('compactButton'); delete=QPushButton('×'); delete.setObjectName('compactButton'); delete.setToolTip(tr('planning.outline.delete_tip', 'Scène verwijderen')); edit.clicked.connect(lambda:edit_fn(scene.id)); delete.clicked.connect(lambda:delete_fn(scene.id)); top.addWidget(title); top.addStretch(); top.addWidget(edit); top.addWidget(delete); lay.addLayout(top)
         if scene.synopsis: syn=QLabel(scene.synopsis); syn.setWordWrap(True); lay.addWidget(syn)
+        status_display = {
+            'idee': tr('planning.status.idea', 'Idee'),
+            'uitgewerkt': tr('planning.status.developed', 'Uitgewerkt'),
+            'geschreven': tr('planning.status.written', 'Geschreven'),
+        }.get(scene.status, scene.status or tr('planning.status.idea', 'Idee'))
+        status_prefix = '✓ ' if scene.status == 'geschreven' else ('◐ ' if scene.status == 'uitgewerkt' else '○ ')
+        badge = QLabel(status_prefix + status_display); badge.setObjectName('sceneStatusBadge'); lay.addWidget(badge, 0)
         meta=[]
         names=[character_names.get(cid) for cid in scene.character_ids if character_names.get(cid)]
         if names: meta.append(tr('planning.outline.meta.characters', 'personages: {names}', names=', '.join(names)))
         if scene.location: meta.append(tr('planning.outline.meta.location', 'locatie: {location}', location=scene.location))
-        if scene.status:
-            status_display = {
-                'idee': tr('planning.status.idea', 'idee'),
-                'uitgewerkt': tr('planning.status.developed', 'uitgewerkt'),
-                'geschreven': tr('planning.status.written', 'geschreven'),
-            }.get(scene.status, scene.status)
-            meta.append(tr('planning.outline.meta.status', 'status: {status}', status=status_display))
         if meta: m=QLabel(' · '.join(meta)); m.setObjectName('muted'); m.setWordWrap(True); lay.addWidget(m)
 
 
@@ -75,6 +77,7 @@ class OutlinePage(QWidget):
         super().__init__(); self.owner=planning_page; self.scenes=[]
         root=QVBoxLayout(self); root.setContentsMargins(28,24,34,30); root.setSpacing(12)
         top=QHBoxLayout(); title=QLabel(tr('planning.outline.title', 'Outline')); title.setObjectName('title'); add=QPushButton(tr('planning.outline.new_scene', 'Nieuwe scène')); add.setObjectName('primaryButton'); add.clicked.connect(self.add_scene); top.addWidget(title); top.addStretch(); top.addWidget(add); root.addLayout(top)
+        info=QLabel(tr('planning.outline.description', 'Bouw je verhaal op uit scènes en koppel ze aan hoofdstukken. Leg per scène vast wat er moet gebeuren en gebruik de status om te zien wat nog een idee is, al is uitgewerkt of al is geschreven. Open scènes kunnen in een leeg hoofdstuk als planninghulp verschijnen.')); info.setObjectName('muted'); info.setWordWrap(True); root.addWidget(info)
         self.scroll=QScrollArea(); self.scroll.setWidgetResizable(True); self.scroll.setFrameShape(QFrame.NoFrame); self.host=QWidget(); self.list=QVBoxLayout(self.host); self.list.setContentsMargins(0,0,8,20); self.list.setSpacing(8); self.scroll.setWidget(self.host); root.addWidget(self.scroll,1)
 
     def load(self):

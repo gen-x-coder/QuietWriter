@@ -2,7 +2,7 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QPushButton, QVBoxLayout, QWidget
+    QListWidgetItem, QPushButton, QStackedLayout, QVBoxLayout, QWidget
 )
 from ..i18n import tr
 from .panel_help import PanelHelp
@@ -25,8 +25,16 @@ class SearchPanel(QWidget):
         self.whole_word = QCheckBox(tr('search.whole_word', 'Heel woord'))
         options.addWidget(self.case_sensitive); options.addWidget(self.whole_word); options.addStretch()
         self.summary = QLabel(''); self.summary.setObjectName('muted')
-        self.empty = QLabel(tr('search.no_results', 'Geen resultaten gevonden.')); self.empty.setObjectName('muted'); self.empty.setAlignment(Qt.AlignCenter); self.empty.hide()
+        self.empty = QLabel(tr('search.no_results', 'Geen resultaten gevonden.')); self.empty.setObjectName('searchEmptyResults'); self.empty.setAlignment(Qt.AlignCenter)
         self.results = QListWidget()
+        self.results.setObjectName('searchResults')
+        self.result_area = QWidget()
+        self.result_area.setObjectName('searchResultArea')
+        self.result_stack = QStackedLayout(self.result_area)
+        self.result_stack.setContentsMargins(0, 0, 0, 0)
+        self.result_stack.addWidget(self.results)
+        self.result_stack.addWidget(self.empty)
+        self.result_stack.setCurrentWidget(self.results)
         # Mouse navigation is intentionally single-click: result rows are
         # navigation targets, not objects that need a separate selection step.
         # itemActivated remains for Enter/Return keyboard activation.
@@ -38,7 +46,7 @@ class SearchPanel(QWidget):
         self.replace_all_btn = QPushButton(tr('search.replace_all','Alles vervangen')); self.replace_all_btn.clicked.connect(self.request_replace_all.emit)
         buttons.addWidget(self.next_btn); buttons.addWidget(self.replace_btn); buttons.addWidget(self.replace_all_btn)
         lay.addWidget(self.panel_help); lay.addWidget(self.scope); lay.addWidget(self.query); lay.addLayout(options)
-        lay.addWidget(self.summary); lay.addWidget(self.empty); lay.addWidget(self.results, 1)
+        lay.addWidget(self.summary); lay.addWidget(self.result_area, 1)
         lay.addWidget(QLabel(tr('search.replace_label', 'Vervangen door'))); lay.addWidget(self.replace); lay.addLayout(buttons)
         # Creation order differs from visual order because the replacement field
         # is constructed before the option row. Keep Tab/Shift+Tab predictable.
@@ -58,9 +66,8 @@ class SearchPanel(QWidget):
     def show_results(self, rows):
         self.results.clear()
         active = bool(self.query.text().strip())
-        self.empty.setVisible(active and not rows)
-        self.results.setVisible(bool(rows) or not active)
-        self.summary.setText((tr('search.result.one', '{count} resultaat', count=len(rows)) if len(rows) == 1 else tr('search.result.many', '{count} resultaten', count=len(rows))) if active else '')
+        self.result_stack.setCurrentWidget(self.empty if active and not rows else self.results)
+        self.summary.setText((tr('search.result.one', '{count} resultaat', count=len(rows)) if len(rows) == 1 else tr('search.result.many', '{count} resultaten', count=len(rows))) if active and rows else '')
         for row in rows:
             cid, title, snippet, start, length = row
             item = QListWidgetItem(f'{title}\n{snippet}')

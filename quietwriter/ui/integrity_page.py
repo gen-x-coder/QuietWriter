@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
+    QApplication, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
     QPushButton, QVBoxLayout, QWidget,
 )
 
@@ -36,7 +36,7 @@ class IntegrityPage(QWidget):
         top = QHBoxLayout()
         title = QLabel(tr('integrity.title', 'Integriteit & herstel'))
         title.setObjectName('title')
-        self.refresh_button = QPushButton(tr('integrity.refresh', 'Opnieuw controleren'))
+        self.refresh_button = QPushButton(tr('integrity.refresh', 'Integriteit controleren'))
         self.refresh_button.setObjectName('secondaryButton')
         self.refresh_button.clicked.connect(self.refresh)
         self.migrate_button = QPushButton(tr('integrity.migrate', 'Boekformaat bijwerken'))
@@ -87,24 +87,30 @@ class IntegrityPage(QWidget):
     def set_book(self, book):
         self.book = book
         self.setEnabled(bool(book))
+        self.report = None
+        self.list.clear()
+        self.details.clear()
+        self.repair_button.setEnabled(False)
+        self.migrate_button.setEnabled(False)
+        self.migrate_button.setVisible(False)
         if book:
-            self.refresh()
+            self.summary.setText(tr('integrity.not_checked', 'Nog niet gecontroleerd.'))
         else:
-            self.report = None
-            self.list.clear()
             self.summary.setText(tr('integrity.no_book', 'Geen boek geopend.'))
-            self.details.clear()
-            self.repair_button.setEnabled(False)
-            self.migrate_button.setEnabled(False)
-            self.migrate_button.setVisible(False)
 
     def adopt_book(self, book):
         self.book = book
         self.setEnabled(bool(book))
-        # adopt_active_book() calls every page. During our own pre/post-audit
-        # reload that must not recursively start another integrity refresh.
-        if self.isVisible() and not self._central_reload_in_progress:
-            self.refresh()
+        # Integriteit is bewust op verzoek. Een boekwissel of externe reload
+        # mag geen volledige audit starten alleen omdat deze pagina zichtbaar is.
+        self.report = None
+        self.list.clear()
+        self.details.clear()
+        self.repair_button.setEnabled(False)
+        self.migrate_button.setEnabled(False)
+        self.migrate_button.setVisible(False)
+        if book:
+            self.summary.setText(tr('integrity.not_checked', 'Nog niet gecontroleerd.'))
 
     def _adopt_latest_disk_state(self):
         """Reload the current book centrally without saving anything.
@@ -139,6 +145,19 @@ class IntegrityPage(QWidget):
         return latest
 
     def refresh(self):
+        if not self.book:
+            return
+        self.refresh_button.setText(tr('integrity.checking', 'Controleren...'))
+        self.refresh_button.setEnabled(False)
+        QApplication.processEvents()
+        try:
+            self._run_integrity_check()
+        finally:
+            self.refresh_button.setText(tr('integrity.refresh', 'Integriteit controleren'))
+            self.refresh_button.setEnabled(bool(self.book))
+            QApplication.processEvents()
+
+    def _run_integrity_check(self):
         self.list.clear()
         self.details.clear()
         self.repair_button.setEnabled(False)

@@ -1,8 +1,8 @@
 # QuietWriter — onderzoek intern boek- en manuscriptmodel
 
-**Status:** onderzoeksdocument, nog geen architectuurbesluit
-**Baseline:** QuietWriter 1.2.13
-**Datum:** 6 oktober 2026
+**Status:** onderzoeksdocument, nog geen architectuurbesluit  
+**Baseline:** QuietWriter 1.2.13  
+**Datum:** 6 oktober 2026  
 **Doelgroep:** QuietWriter-ontwikkelaars en onafhankelijke reviewers, waaronder Claude
 
 Dit document onderzoekt of QuietWriter op langere termijn Markdown moet blijven gebruiken als canonieke manuscriptopslag, of dat een ander model beter past bij een groeiende gebruikersgroep en rijkere boekfunctionaliteit.
@@ -153,7 +153,7 @@ Interessant als voorbeeld van een formeel intern DocumentModel/AST met parsers/s
 # 6. Architectuuropties
 
 ## Optie A — huidige Markdown behouden
-Voordelen: minimaal migratierisico, leesbaar, goede diffs, sync/recovery eenvoudig.
+Voordelen: minimaal migratierisico, leesbaar, goede diffs, sync/recovery eenvoudig.  
 Nadelen: tabellen/media/annotaties vragen steeds meer eigen syntax en beschermingslogica.
 
 ## Optie B — QuietWriter Flavored Markdown (QWM)
@@ -287,10 +287,10 @@ Geen roundtrip-eis. Bepaal:
 - welke features alleen warning opleveren.
 
 ## Stap 4 — vijf opties vergelijken
-A. huidige Markdown
-B. QWM, inclusief custom syntax versus embedded HTML
-C. HTML + sidecars
-D. JSON/AST
+A. huidige Markdown  
+B. QWM, inclusief custom syntax versus embedded HTML  
+C. HTML + sidecars  
+D. JSON/AST  
 E. DocumentModel + open storage
 
 ## Stap 5 — challenge de architectuur

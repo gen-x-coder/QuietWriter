@@ -86,6 +86,22 @@ class UndoReviewQtRuntimeTests(unittest.TestCase):
         editor.setTextCursor(cursor)
         return editor, first
 
+    def test_one_ctrl_z_undoes_one_uninterrupted_typing_run(self):
+        editor = ManuscriptEditor()
+        try:
+            editor.reset_undo_history()
+            for ch in 'Dit is een volledige testzin.':
+                self._press(editor, 0, Qt.NoModifier, ch)
+            self.assertEqual(editor.toPlainText(), 'Dit is een volledige testzin.')
+
+            self._press(editor, Qt.Key_Z, Qt.ControlModifier)
+            self.assertEqual(editor.toPlainText(), '')
+
+            self._press(editor, Qt.Key_Y, Qt.ControlModifier)
+            self.assertEqual(editor.toPlainText(), 'Dit is een volledige testzin.')
+        finally:
+            editor.close()
+
     def test_ctrl_z_converges_past_first_character_and_enter(self):
         editor, first = self._editor_with_first_sentence()
         try:

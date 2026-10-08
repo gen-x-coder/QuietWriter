@@ -85,11 +85,26 @@ class InlineSpan:
 
 
 def parse_inline_spans(text: str) -> list[InlineSpan]:
-    """Parse QuietWriter's deliberately small inline-Markdown subset."""
+    """Parse QuietWriter's deliberately small inline-Markdown subset.
+
+    A physical scene-break line (``***``) is structural manuscript syntax, not
+    three inline emphasis markers. Excluding those ranges here prevents two
+    separate scene breaks from accidentally pairing into one giant bold/italic
+    span when a fragment is copied and pasted elsewhere in the manuscript.
+    """
     spans: list[InlineSpan] = []
     opened: dict[str, tuple[int, int]] = {}
     i = 0
     n = len(text)
+
+    scene_ranges: list[tuple[int, int]] = []
+    offset = 0
+    for raw in text.splitlines(keepends=True):
+        line = raw[:-1] if raw.endswith('\n') else raw
+        if is_scene_break_line(line):
+            scene_ranges.append((offset, offset + len(line)))
+        offset += len(raw)
+    scene_index = 0
 
     def open_or_close(kind: str, start: int, end: int, *, close_start: int | None = None, close_end: int | None = None):
         if kind in opened:
@@ -102,6 +117,14 @@ def parse_inline_spans(text: str) -> list[InlineSpan]:
             opened[kind] = (start, end)
 
     while i < n:
+        while scene_index < len(scene_ranges) and i >= scene_ranges[scene_index][1]:
+            scene_index += 1
+        if scene_index < len(scene_ranges):
+            scene_start, scene_end = scene_ranges[scene_index]
+            if scene_start <= i < scene_end:
+                i = scene_end
+                continue
+
         if 'code' in opened:
             if text.startswith('`', i) and not _is_escaped(text, i):
                 open_or_close('code', i, i + 1)

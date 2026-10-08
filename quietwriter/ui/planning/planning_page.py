@@ -31,7 +31,7 @@ class PlanningPage(QWidget):
         root=QVBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
         header=QWidget(); header_layout=QVBoxLayout(header); header_layout.setContentsMargins(32,26,36,14); header_layout.setSpacing(6)
         title=QLabel(tr('planning.title', 'Planning')); title.setObjectName('title')
-        info=QLabel(tr('planning.info', 'Werk hier de personages, scènes en vrije notities van dit boek uit. Planning helpt je het verhaal te structureren zonder de manuscripttekst zelf te veranderen.'))
+        info=QLabel(tr('planning.info', 'Planning is je werkruimte naast het manuscript. Werk hier personages en scènes uit en koppel scènes aan hoofdstukken. In een leeg hoofdstuk kan QuietWriter die planning als zachte hulptekst tonen; zodra je begint te schrijven verdwijnt die hulp vanzelf.'))
         info.setObjectName('muted'); info.setWordWrap(True)
         self._source_errors = {}
         self.source_warning = QLabel('')

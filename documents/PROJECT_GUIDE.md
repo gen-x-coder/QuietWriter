@@ -1,6 +1,6 @@
 # QuietWriter — projectgids
 
-**Status:** QuietWriter-dev staat op **1.2.32** en is de actuele releasecandidate-bron. De manuscript-/DocumentView-refactor is onafhankelijk beoordeeld als afgerond/releasecandidate. De publieke repository heeft nog 1.1.0 als releasebasis; 1.2.32 wordt eerst als vaste unsigned Windows-RC gebouwd en op false positives/reputatie gecontroleerd voordat dezelfde bron en dezelfde geteste portable ZIP publiek worden uitgebracht.
+**Status:** QuietWriter **1.2.32** is de publieke stabiele release. De 1.3-lijn is bevroren op **1.3.0-rc1** voor de Windows releasecandidate. De 1.3-lijn bevat inmiddels de nieuwe Boekenkast met planken en Presentatiemodus; dev.11 introduceerde opt-in schrijfdoelen en lokale dagvoortgang; dev.18 startte Planning dichter bij het schrijven met presentation-only Planninghulp in lege hoofdstukken; dev.19 polijst de sceneweergave en maakt afgekapt gebleven scènes expliciet zichtbaar; dev.20 maakte Planning zelf duidelijker en trok context-subnavigatie visueel gelijk; dev.21 verduidelijkte de Planningworkflow en maakte scènestatus zichtbaar; dev.22 voegde de on-demand Planning-overlay in de editor toe, maakte Status een vaste dropdown en liet scènes bewust als Geschreven markeren; dev.23 polijstte die workflow; dev.24 maakt de overlay smaller/hoger, koppelt de Planning-knop aan de Planninghulp-instelling en repareert de losse zoek/vervang- en plakselectiebugs; dev.25 laat de Planning-knop ook zonder gekoppelde scènes beschikbaar en trekt de lege zoekstatus visueel gelijk. dev.26 maakte de lege flyout compact en vormde de basis voor een brede review; dev.27 verwerkte de review-hardening rond tests, opt-in, scrollwiel, profielinstellingen en popupgedrag; dev.28 rondt de kerneditor af met natuurlijke undo, veilige scènebreuk-plakacties, de updatecheck en een kleine polishbundel. dev.29 richt zich op echt Windows-/laptopgebruik: betrouwbare undo bij menselijke typesnelheid, zichtbare boeklaadfeedback, kleine-schermgedrag, thema-accenten en expliciete Integriteit.
 
 ## Wat QuietWriter is
 
@@ -26,7 +26,7 @@ De kernwaarden zijn:
 
 ## Huidige productstaat
 
-In 1.2.32 zijn onder andere aanwezig:
+In de stabiele 1.2.32 zijn onder andere aanwezig:
 
 - manuscript en hoofdstukstructuur;
 - Planning, scènes en personages;
@@ -69,6 +69,7 @@ Oudere boeken worden niet stil aangepast. Wanneer een syntaxmigratie nodig is, v
 ## Belangrijkste codegebieden
 
 - `quietwriter/storage.py`, `revisions.py`, `integrity.py`, `migrations.py`: opslag en veiligheid.
+- `quietwriter/library_shelves.py`: werkmap-brede boekenkasten, planktoewijzing, herstel en toekomstige Demo-zichtbaarheid.
 - `quietwriter/document_view.py`: centrale read-only interpretatie van manuscriptsyntaxis en bronranges.
 - `quietwriter/import_document.py`: neutraal importmodel tussen externe formaten en QuietWriter-bron.
 - `quietwriter/ui/editor_page.py`, `manuscript_editor.py`, `manuscript_markup.py`: manuscript/editor.
@@ -85,6 +86,7 @@ Oudere boeken worden niet stil aangepast. Wanneer een syntaxmigratie nodig is, v
 **Boekprofiel** = regels en karakter van dit specifieke boek.  
 **Boekgeheugen** = duurzame feiten, afspraken en besluiten.  
 **Schrijverspersona** = globale stijl/voorkeuren van de schrijver.
+**Boekenkast** = lokale werkmaporganisatie; geen onderdeel van het manuscript of een losse `.qwbook`-export.
 
 Deze lagen mogen niet stil in elkaar overlopen.
 
@@ -108,8 +110,8 @@ Deze lagen mogen niet stil in elkaar overlopen.
 - `gen-x-coder/QuietWriter`: publieke open-source- en releaserepository.
 - de SignPath Foundation-aanvraag is afgewezen wegens nog onvoldoende publieke adoptiesignalen; dit blokkeert de release niet;
 - de Windows-release wordt voorlopig unsigned gebouwd zonder UPX/obfuscatie, met lokaal gecompileerde PyInstaller-bootloader en gepubliceerde SHA-256-hashes;
-- vóór publicatie wordt één vaste releasecandidate gebouwd en exact die EXE/ZIP op false positives en reputatie gecontroleerd;
-- na die controle wordt dezelfde bron naar de publieke repository gepromoveerd en dezelfde geteste portable ZIP gepubliceerd.
+- stabiele releases worden als vaste Windows-build bevroren, gecontroleerd en met SHA-256 gepubliceerd;
+- actieve featureontwikkeling gebruikt oplopende prereleaseversies op de komende minor-lijn (nu `1.3.0-dev.X`). Na publicatie van 1.3.0 gaan eventuele gebruikersfixes naar `1.3.1`, terwijl nieuwe featureontwikkeling dan op `1.4.0-dev.X` doorgaat.
 
 Zie `RELEASE_PROCESS.md`.
 

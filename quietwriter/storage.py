@@ -179,6 +179,8 @@ class Library:
         # crash can never leave a stale workspace lock behind.
         self._tracked_revisions: dict[str, BookRevision] = {}
         self._blocked_book_ids: set[str] = set()
+        self._shelves = None
+        self._shelf_metadata_warnings: list[str] = []
         self.last_list_errors: list[dict] = []
         for d in [self.books_dir, self.covers_dir, self.archive_dir, self.trash_dir,
                   self.persona_dir, self.dict_dir, self.cache_dir]:
@@ -187,6 +189,35 @@ class Library:
         persona = self.persona_dir / 'schrijver.md'
         if not persona.exists():
             _safe_atomic_write_text(persona, default_persona_markdown())
+
+    @property
+    def shelves(self):
+        """Workspace-level bookshelf metadata, loaded lazily."""
+        if self._shelves is None:
+            from .library_shelves import ShelfLibraryStore
+            self._shelves = ShelfLibraryStore(self.root, self.books_dir, self.trash_dir)
+        return self._shelves
+
+    def _best_effort_shelf_update(self, action: str, callback):
+        """Run shelf bookkeeping without turning a successful book action into a failure.
+
+        Shelf placement is library presentation metadata. If it cannot be updated,
+        the book operation remains successful; normal mode can show an unmapped book
+        on the default shelf in memory, while Demo mode fails closed.
+        """
+        try:
+            return callback()
+        except Exception as exc:
+            from .library_shelves import ShelfLibraryError
+            if not isinstance(exc, (ShelfLibraryError, OSError)):
+                raise
+            self._shelf_metadata_warnings.append(f'{action}: {exc}')
+            return None
+
+    def pop_shelf_metadata_warnings(self) -> tuple[str, ...]:
+        warnings = tuple(self._shelf_metadata_warnings)
+        self._shelf_metadata_warnings.clear()
+        return warnings
 
     def _cleanup_stale_import_staging(self, *, older_than_seconds: float = 24 * 60 * 60):
         """Remove abandoned DOCX staging trees from earlier crashed sessions.
@@ -350,6 +381,8 @@ class Library:
                 'published': 'No',
                 'synopsis': '',
                 'cover_file': '',
+                'writing_goal_words': 0,
+                'writing_goal_date': '',
                 'last_used': datetime.now().timestamp(),
             },
         )
@@ -358,6 +391,7 @@ class Library:
         section.chapters.append(chapter)
         book.sections.append(section)
         self.save_manifest(book)
+        self._best_effort_shelf_update('Boek aangemaakt; plankindeling kon niet worden bijgewerkt', lambda: self.shelves.assign_new(book.id))
         return book
 
     def load_book(self, folder: Path) -> Book:
@@ -390,6 +424,8 @@ class Library:
         metadata.setdefault('published', 'No')
         metadata.setdefault('synopsis', '')
         metadata.setdefault('cover_file', '')
+        metadata.setdefault('writing_goal_words', 0)
+        metadata.setdefault('writing_goal_date', '')
         if not metadata['cover_file'] and not has_book_local_media_manifest:
             local_cover_dir = Path(folder) / 'assets' / 'cover'
             has_local_cover = any((local_cover_dir / f'cover{ext}').exists() for ext in self.COVER_EXTENSIONS)
@@ -975,12 +1011,19 @@ class Library:
                 wanted.add(target.resolve())
                 _safe_atomic_write_text(target, source.read_text(encoding='utf-8') if source.exists() else '')
 
+        live_goal_words = (live_book.metadata or {}).get('writing_goal_words', 0)
+        live_goal_date = (live_book.metadata or {}).get('writing_goal_date', '')
         restored = Book(
             id=snapshot.id, title=snapshot.title, path=live_book.path,
             format_version=snapshot.format_version, sections=copy.deepcopy(snapshot.sections), metadata=copy.deepcopy(snapshot.metadata),
             extra_manifest=copy.deepcopy(snapshot.extra_manifest),
         )
         restored.metadata['last_used'] = datetime.now().timestamp()
+        # A writing goal describes the writer's current intention, not historic
+        # manuscript content. Restoring old text must therefore never rewind or
+        # delete the live goal/deadline.
+        restored.metadata['writing_goal_words'] = live_goal_words
+        restored.metadata['writing_goal_date'] = live_goal_date
         self._write_manifest_unchecked(restored)
         self._sync_snapshot_auxiliary_dir(live_book, snapshot, 'planning')
         self._sync_snapshot_auxiliary_dir(live_book, snapshot, 'publication')
@@ -1243,7 +1286,9 @@ class Library:
             target = self.books_dir / f'{base}-{counter}'
             counter += 1
         shutil.move(str(trash_path), str(target))
-        return self.load_book(target)
+        restored = self.load_book(target)
+        self._best_effort_shelf_update('Boek hersteld; plankindeling kon niet worden bijgewerkt', lambda: self.shelves.assign_new(restored.id))
+        return restored
 
     def permanently_delete_trashed_book(self, trash_path: Path):
         trash_path = Path(trash_path)
@@ -1256,8 +1301,11 @@ class Library:
         if trash_path.exists() and self.trash_dir in trash_path.parents:
             shutil.rmtree(trash_path)
             self._purge_chapter_trash_for_book(book_id)
+            if book_id:
+                self._best_effort_shelf_update('Boek verwijderd; plankindeling kon niet worden bijgewerkt', lambda: self.shelves.forget(book_id))
 
     def empty_trash(self):
+        trashed_book_ids = [row.get('book_id', '') for row in self.list_trashed_books()]
         errors = []
         for root in (self.trash_dir / 'books', self.trash_dir / 'chapters'):
             if not root.exists():
@@ -1272,6 +1320,8 @@ class Library:
                     errors.append(f'{p.name}: {exc}')
         if errors:
             raise OSError('Niet alle onderdelen van de prullenbak konden worden verwijderd:\n' + '\n'.join(errors))
+        if trashed_book_ids:
+            self._best_effort_shelf_update('Prullenbak geleegd; plankindeling kon niet worden bijgewerkt', lambda: self.shelves.forget_many(trashed_book_ids))
 
     def remove_cover(self, book: Book):
         self.verify_book_unchanged(book)
@@ -1349,6 +1399,8 @@ class Library:
                 'published': 'No',
                 'synopsis': '',
                 'cover_file': '',
+                'writing_goal_words': 0,
+                'writing_goal_date': '',
                 'last_used': datetime.now().timestamp(),
             },
         )
@@ -1446,7 +1498,9 @@ class Library:
 
             self._write_manifest_unchecked(book)
             published = self._publish_staged_import(book, final_path)
-            return published, tuple(imported.warnings or ())
+            self._best_effort_shelf_update('Boek geïmporteerd; plankindeling kon niet worden bijgewerkt', lambda: self.shelves.assign_new(published.id))
+            shelf_warnings = self.pop_shelf_metadata_warnings()
+            return published, tuple(imported.warnings or ()) + shelf_warnings
         except Exception:
             if stage_path.exists():
                 shutil.rmtree(stage_path, ignore_errors=True)

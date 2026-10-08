@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, QSettings, Signal, QMimeData, QTimer
-from PySide6.QtGui import QColor, QDrag, QPainter, QPalette, QPen, QPixmap
+from PySide6.QtGui import QColor, QDrag, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QTreeWidget
 
 from ..themes import THEMES
@@ -13,8 +13,9 @@ class ManuscriptTree(QTreeWidget):
 
     MIME_TYPE = 'application/x-quietwriter-chapter'
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, settings=None):
         super().__init__(parent)
+        self.settings = settings or QSettings('QuietWriter', 'QuietWriter')
         self.setColumnCount(2)
         self.setHeaderHidden(True)
         self.header().setStretchLastSection(False)
@@ -189,7 +190,7 @@ class ManuscriptTree(QTreeWidget):
         pix.fill(Qt.transparent)
         painter = QPainter(pix)
         try:
-            painter.setPen(QColor(THEMES.get(str(QSettings('QuietWriter', 'QuietWriter').value('theme', 'Helder')), THEMES['Helder'])['muted']))
+            painter.setPen(QColor(THEMES.get(str(self.settings.value('theme', 'Helder')), THEMES['Helder'])['muted']))
             painter.drawText(pix.rect().adjusted(8, 0, -8, 0), Qt.AlignVCenter | Qt.AlignLeft, source_title)
         finally:
             painter.end()
@@ -304,7 +305,8 @@ class ManuscriptTree(QTreeWidget):
         if not painter.isActive():
             return
         try:
-            painter.setPen(QPen(self.palette().color(QPalette.Highlight), 3))
+            theme = THEMES.get(str(self.settings.value('theme', 'Helder') or 'Helder'), THEMES['Helder'])
+            painter.setPen(QPen(QColor(theme['accent']), 3))
             if selection_rect is not None:
                 x = max(1, selection_rect.left() + 1)
                 painter.drawLine(x, selection_rect.top() + 3, x, selection_rect.bottom() - 3)

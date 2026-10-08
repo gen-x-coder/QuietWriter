@@ -16,3 +16,9 @@ def test_update_version_comparison_is_numeric():
 
 def test_invalid_release_tag_is_not_treated_as_newer():
     assert is_newer_version("latest", "1.0.12") is False
+
+
+def test_final_release_is_newer_than_same_numbered_dev_or_rc_build():
+    assert is_newer_version('1.3.0', '1.3.0-dev.28') is True
+    assert is_newer_version('v1.3.0', '1.3.0-rc2') is True
+    assert is_newer_version('1.3.0-dev.28', '1.3.0') is False

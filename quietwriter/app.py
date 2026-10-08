@@ -67,7 +67,7 @@ def run():
             splash.close(); return 1
         models = discover_startup_models(settings, splash)
         splash.set_status(tr('splash.interface', 'Interface opbouwen…'))
-        win=MainWindow(settings,library,models)
+        win=MainWindow(settings, library, models, startup_status=splash.set_status)
         win._crash_ui_bridge = crash_ui
         splash.set_status(tr('splash.window', 'Venster voorbereiden…')); win.show(); splash.finish_when_ready(win)
         if not smoke_test and settings.value('auto_update_check', False, bool):

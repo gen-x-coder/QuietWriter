@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from PySide6.QtCore import QMimeData, QPoint, QRect, QSettings, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import (QAction, QColor, QFontMetricsF, QKeySequence, QPainter, QPen,
+from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QFontMetricsF, QKeySequence, QPainter, QPen,
                            QTextBlockFormat, QTextCharFormat, QTextCursor)
 from PySide6.QtWidgets import QApplication, QMenu, QTextEdit, QToolButton
 
@@ -42,7 +42,7 @@ class ManuscriptEditor(QTextEdit):
     zodat typografische Unicode niet stil door ``toPlainText()`` normaliseert.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, settings=None):
         super().__init__(parent)
         self.text_width_preset = DEFAULT_TEXT_WIDTH
         self.max_text_width = text_width_pixels(self.text_width_preset)
@@ -54,20 +54,32 @@ class ManuscriptEditor(QTextEdit):
         # to get trapped behind a QTextBlockFormat command on Qt/Windows.
         self._format_join_previous = False
         self._suppress_formatting_schedule = False
+        # Consecutive direct keystrokes are joined into one natural undo run.
+        # The previous implementation wrapped every single character in its own
+        # edit block, making Ctrl+Z remove one letter at a time on Windows.
+        self._typing_run_end: int | None = None
+        self._typing_idle_timer = QTimer(self)
+        self._typing_idle_timer.setSingleShot(True)
+        self._typing_idle_timer.setInterval(900)
+        self._typing_idle_timer.timeout.connect(self._finish_typing_run)
         self._selection_range: tuple[int, int] | None = None
         self._image_resolver = None
         self._image_cards: dict[int, ImageBlockCard] = {}
         self._selected_image_block: int | None = None
         self._image_sync_pending = False
         self._image_layout_pending = False
-        self.settings = QSettings('QuietWriter', 'QuietWriter')
+        self.settings = settings or QSettings('QuietWriter', 'QuietWriter')
         self.typography = WritingTypography.from_settings(self.settings)
         self.manuscript_style = ManuscriptStyle.from_settings(self.settings)
 
 
         self._format_timer = QTimer(self)
         self._format_timer.setSingleShot(True)
-        self._format_timer.setInterval(90)
+        # Human typing is slower than synthetic QTest input. A 90 ms visual
+        # formatting delay could therefore fire between ordinary Windows
+        # keystrokes and split Qt's undo chain per character. Keep presentation
+        # formatting behind the same natural typing pause used by Undo.
+        self._format_timer.setInterval(1000)
         self._format_timer.timeout.connect(self.apply_visual_formatting)
 
         self._selection_timer = QTimer(self)
@@ -83,6 +95,11 @@ class ManuscriptEditor(QTextEdit):
         self._last_cursor_position = 0
         self._escape_cursor_guard = False
         self._last_escape_cursor_position = 0
+        # Planninghulp is een pure paintlaag. De inhoud wordt nooit aan het
+        # QTextDocument toegevoegd en kan daardoor niet worden opgeslagen,
+        # gezocht, gespeld, geëxporteerd of door Undo geraakt.
+        self._planning_ghost_scenes = ()
+        self._planning_ghost_enabled = True
         self.cursorPositionChanged.connect(self._escape_cursor_changed)
         self.verticalScrollBar().valueChanged.connect(self._schedule_image_layout)
         self.horizontalScrollBar().valueChanged.connect(self._schedule_image_layout)
@@ -359,6 +376,14 @@ class ManuscriptEditor(QTextEdit):
                     position, insertion = start, escape_literal_text(source.text(), at_line_start=(self.document().findBlock(start).position() == start))
                 new = base[:position] + insertion + base[position:]
                 self._replace_changed_text(current, new, position, position + len(insertion))
+                # Formatting actions deliberately leave their changed range selected,
+                # but paste should behave like a normal editor: the insertion is not
+                # selected afterwards and the caret continues at its end.
+                caret = self.textCursor()
+                max_pos = max(0, self.document().characterCount() - 1)
+                caret.setPosition(min(position + len(insertion), max_pos))
+                self.setTextCursor(caret)
+                self._selection_range = None
                 return
         # External/unknown clipboard text is prose, never executable manuscript
         # syntax. Managed ids are stripped and all ambiguous syntax is escaped.
@@ -481,6 +506,151 @@ class ManuscriptEditor(QTextEdit):
             point_size = self.settings.value('editor_font_size', 15, int)
         self.apply_typography(typography_from_values(preferred, point_size))
 
+    def set_planning_ghosts(self, scenes, *, enabled: bool = True):
+        """Set read-only Planning hints painted over an otherwise empty chapter."""
+        self._planning_ghost_scenes = tuple(scenes or ())
+        self._planning_ghost_enabled = bool(enabled)
+        self.viewport().update()
+
+    def planning_ghosts_visible(self) -> bool:
+        return bool(
+            self._planning_ghost_enabled
+            and self._planning_ghost_scenes
+            and not self.isReadOnly()
+            and self.document().isEmpty()
+        )
+
+    @staticmethod
+    def _ghost_detail_lines(scene):
+        lines = []
+        status = str(getattr(scene, 'status', '') or 'idee')
+        status_text = {
+            'idee': tr('planning.status.idea', 'Idee'),
+            'uitgewerkt': tr('planning.status.developed', 'Uitgewerkt'),
+            'geschreven': tr('planning.status.written', 'Geschreven'),
+        }.get(status, status)
+        prefix = '✓' if status == 'geschreven' else ('◐' if status == 'uitgewerkt' else '○')
+        lines.append(tr('planning.ghost.status', 'Status: {status}', status=f'{prefix} {status_text}'))
+        if getattr(scene, 'location', ''):
+            lines.append(tr('planning.ghost.location', 'Locatie: {location}', location=scene.location))
+        names = tuple(getattr(scene, 'character_names', ()) or ())
+        if names:
+            lines.append(tr('planning.ghost.characters', 'Personages: {names}', names=', '.join(names)))
+        for key, fallback, value in (
+            ('chapter_context.goal', 'Doel', getattr(scene, 'goal', '')),
+            ('chapter_context.conflict', 'Conflict', getattr(scene, 'conflict', '')),
+            ('chapter_context.outcome', 'Uitkomst', getattr(scene, 'outcome', '')),
+        ):
+            if value:
+                lines.append(f"{tr(key, fallback)}: {value}")
+        return lines
+
+    def _paint_planning_ghosts(self, painter: QPainter, theme: dict):
+        if not self.planning_ghosts_visible():
+            return
+
+        viewport = self.viewport().rect()
+        if viewport.width() < 180 or viewport.height() < 100:
+            return
+        left = 18
+        right = max(left + 80, viewport.width() - 18)
+        width = right - left
+        y = 24
+        bottom = viewport.height() - 20
+        scene_bottom = bottom - 24 if len(self._planning_ghost_scenes) > 1 else bottom
+
+        base = QFont(self.font())
+        muted = QColor(theme['muted'])
+        muted.setAlpha(118)
+        stronger = QColor(theme['muted'])
+        stronger.setAlpha(155)
+        accent = QColor(theme['accent'])
+        accent.setAlpha(135)
+
+        header_font = QFont(base)
+        header_font.setPointSizeF(max(8.5, base.pointSizeF() - 2.0))
+        header_font.setBold(True)
+        painter.setFont(header_font)
+        painter.setPen(accent)
+        header_h = QFontMetrics(header_font).height() + 2
+        painter.drawText(QRect(left, y, width, header_h), Qt.AlignLeft | Qt.AlignVCenter,
+                         tr('planning.ghost.from_planning', 'Uit Planning'))
+        y += header_h + 12
+
+        scenes = self._planning_ghost_scenes
+        shown = 0
+        for scene in scenes:
+            if y >= scene_bottom - 38:
+                break
+
+            title_font = QFont(base)
+            title_font.setBold(True)
+            body_font = QFont(base)
+            body_font.setItalic(True)
+            detail_font = QFont(base)
+            detail_font.setPointSizeF(max(9.0, base.pointSizeF() - 1.5))
+            detail_font.setItalic(False)
+
+            title = (getattr(scene, 'title', '') or tr('chapter_context.scene', 'Scène')).strip()
+            synopsis = (getattr(scene, 'synopsis', '') or '').strip()
+            detail_lines = self._ghost_detail_lines(scene)
+
+            # Measure the complete scene first. Never draw a title/synopsis when
+            # there is not enough room for the complete scene underneath it;
+            # otherwise the footer can say that the same scene is still hidden.
+            probe_y = y
+            title_rect = QFontMetrics(title_font).boundingRect(
+                QRect(left, probe_y, width, max(24, scene_bottom - probe_y)),
+                Qt.TextWordWrap, title,
+            )
+            probe_y += title_rect.height() + 5
+            synopsis_rect = None
+            if synopsis:
+                synopsis_rect = QFontMetrics(body_font).boundingRect(
+                    QRect(left, probe_y, width, max(24, scene_bottom - probe_y)),
+                    Qt.TextWordWrap, synopsis,
+                )
+                probe_y += synopsis_rect.height() + 6
+            detail_rects = []
+            detail_metrics = QFontMetrics(detail_font)
+            for line in detail_lines:
+                rect = detail_metrics.boundingRect(
+                    QRect(left, probe_y, width, max(20, scene_bottom - probe_y)),
+                    Qt.TextWordWrap, line,
+                )
+                detail_rects.append((line, rect))
+                probe_y += rect.height() + 3
+            probe_y += 14
+            if probe_y > scene_bottom:
+                break
+
+            painter.setFont(title_font)
+            painter.setPen(stronger)
+            painter.drawText(QRect(left, y, width, title_rect.height()), Qt.TextWordWrap, title)
+            y += title_rect.height() + 5
+
+            if synopsis and synopsis_rect is not None:
+                painter.setFont(body_font)
+                painter.setPen(muted)
+                painter.drawText(QRect(left, y, width, synopsis_rect.height()), Qt.TextWordWrap, synopsis)
+                y += synopsis_rect.height() + 6
+
+            painter.setFont(detail_font)
+            painter.setPen(muted)
+            for line, rect in detail_rects:
+                painter.drawText(QRect(left, y, width, rect.height()), Qt.TextWordWrap, line)
+                y += rect.height() + 3
+
+            shown += 1
+            y += 14
+
+        remaining = len(scenes) - shown
+        if remaining > 0 and y < bottom - 18:
+            painter.setFont(header_font)
+            painter.setPen(muted)
+            painter.drawText(QRect(left, y, width, 20), Qt.AlignLeft | Qt.AlignVCenter,
+                             tr('planning.ghost.more_scenes', '… nog {count} meer in Planning', count=remaining))
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_margins()
@@ -505,6 +675,11 @@ class ManuscriptEditor(QTextEdit):
     def _update_margins(self):
         side = max(self.min_side_margin, (max(0, self.width()) - self.max_text_width) // 2)
         self.setViewportMargins(side, 30, side, 42)
+
+
+    def _finish_typing_run(self):
+        """End the current human typing group without touching document text."""
+        self._typing_run_end = None
 
     def _schedule_formatting_for_text_edit(self, *_args):
         """Schedule presentation layout as part of the user's preceding edit.
@@ -583,6 +758,8 @@ class ManuscriptEditor(QTextEdit):
         only the corrupting side effect (the stray ``_format_join_previous``
         arm from ``textChanged``); do not attempt to fix formatting here.
         """
+        self._typing_run_end = None
+        self._typing_idle_timer.stop()
         self._suppress_formatting_schedule = True
         try:
             super().undo()
@@ -592,6 +769,8 @@ class ManuscriptEditor(QTextEdit):
 
     def redo(self):
         """Redo one step; see :meth:`undo` for why no compensating reformat runs here."""
+        self._typing_run_end = None
+        self._typing_idle_timer.stop()
         self._suppress_formatting_schedule = True
         try:
             super().redo()
@@ -797,6 +976,12 @@ class ManuscriptEditor(QTextEdit):
         self.hide_selection_toolbar()
         modifiers = event.modifiers()
         key = event.key()
+        direct_text_input = bool(event.text()) and not (
+            modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)
+        )
+        if not direct_text_input:
+            self._typing_run_end = None
+            self._typing_idle_timer.stop()
         current_image = self.current_image_block()
 
         if current_image is not None:
@@ -950,6 +1135,8 @@ class ManuscriptEditor(QTextEdit):
             quote = smart_double_quote(self.source_text(), cursor.position())
             cursor.insertText(quote)
             self.setTextCursor(cursor)
+            self._typing_run_end = None
+            self._typing_idle_timer.stop()
             return
 
         # Direct typing is prose. The edit is committed as one transaction and
@@ -960,7 +1147,15 @@ class ManuscriptEditor(QTextEdit):
         if plain_typing:
             cursor = self._normalise_selection_around_escapes(self.textCursor())
             before_kind = classify_block_line(cursor.block().text())
-            cursor.beginEditBlock()
+            join_typing_run = bool(
+                self._typing_run_end is not None
+                and not cursor.hasSelection()
+                and cursor.position() == self._typing_run_end
+            )
+            if join_typing_run:
+                cursor.joinPreviousEditBlock()
+            else:
+                cursor.beginEditBlock()
             if cursor.hasSelection():
                 cursor.removeSelectedText()
             if len(typed) == 1:
@@ -982,8 +1177,20 @@ class ManuscriptEditor(QTextEdit):
             )
             cursor.endEditBlock()
             self.setTextCursor(cursor)
+            # Group normal human typing by word. This is deliberately explicit
+            # instead of relying on Qt's platform-dependent merge timing. A
+            # whitespace character belongs to the word just typed and closes
+            # that undo group; otherwise a short pause closes it.
+            if typed.isspace():
+                self._typing_run_end = None
+                self._typing_idle_timer.stop()
+            else:
+                self._typing_run_end = cursor.position()
+                self._typing_idle_timer.start()
             event.accept()
             return
+        self._typing_run_end = None
+        self._typing_idle_timer.stop()
         super().keyPressEvent(event)
 
     def current_open_point(self):
@@ -1408,6 +1615,7 @@ class ManuscriptEditor(QTextEdit):
             card.set_theme(theme)
         # Scene breaks are stored as literal *** but rendered as a quiet divider.
         painter = QPainter(self.viewport())
+        self._paint_planning_ghosts(painter, theme)
         color = QColor(theme['muted'])
         color.setAlpha(145)
         pen = QPen(color)

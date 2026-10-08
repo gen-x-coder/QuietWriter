@@ -111,13 +111,6 @@ class PersonaPage(QWidget):
         top.addWidget(self.example_button, 0, Qt.AlignTop)
         outer.addLayout(top)
 
-        path_label = QLabel(tr(
-            'persona.file_help',
-            'Bronbestand: {path}. Het blijft gewone Markdown en is ook buiten QuietWriter leesbaar en bewerkbaar.'
-        ).format(path=str(self.library.persona_path())))
-        path_label.setObjectName('muted'); path_label.setWordWrap(True)
-        outer.addWidget(path_label)
-
         body = QHBoxLayout(); body.setSpacing(18)
         nav_host = QFrame(); nav_host.setObjectName('settingsNav')
         nav_layout = QVBoxLayout(nav_host); nav_layout.setContentsMargins(8, 8, 8, 8); nav_layout.setSpacing(6)
@@ -189,7 +182,7 @@ class PersonaPage(QWidget):
         self.save_button.setEnabled(dirty)
         self.status.setText(
             tr('persona.unsaved', 'Niet-opgeslagen wijzigingen') if dirty
-            else tr('persona.saved', 'Opgeslagen in schrijver.md')
+            else ''
         )
 
     def reload(self, *, force: bool = False):

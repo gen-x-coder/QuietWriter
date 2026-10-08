@@ -58,9 +58,11 @@ def test_editable_combo_preserves_custom_relation_after_previous_selection():
     assert value(c, default="kent") == "neighbor of"
 
 
-def test_custom_scene_load_clears_combo_index_before_edit_text():
+def test_scene_status_is_closed_but_preserves_unknown_legacy_value():
     src = (ROOT / "quietwriter/ui/planning/outline_page.py").read_text(encoding="utf-8")
-    assert "self.status.setCurrentIndex(-1)" in src
+    assert "self.status.setEditable(False)" in src
+    assert "self.status.addItem(scene.status or tr('planning.status.idea', 'Idee'), scene.status or 'idee')" in src
+    assert "self.status.setEditText(scene.status)" not in src
     assert "editable_combo_value(self.status, default='idee')" in src
 
 

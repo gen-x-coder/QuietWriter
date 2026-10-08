@@ -29,7 +29,7 @@ class BundledFontResourceTests(unittest.TestCase):
     def test_application_registers_fonts_before_window_creation(self):
         source = (ROOT / 'quietwriter' / 'app.py').read_text(encoding='utf-8')
         self.assertIn('register_bundled_fonts()', source)
-        self.assertLess(source.index('register_bundled_fonts()'), source.index('MainWindow(settings,library,models)'))
+        self.assertLess(source.index('register_bundled_fonts()'), source.index('MainWindow(settings, library, models, startup_status=splash.set_status)'))
 
     def test_about_page_exposes_version_author_and_font_licenses(self):
         source = (ROOT / 'quietwriter' / 'ui' / 'about_page.py').read_text(encoding='utf-8')

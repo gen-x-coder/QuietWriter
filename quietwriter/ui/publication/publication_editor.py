@@ -32,12 +32,12 @@ class SimpleStructuredPage(QWidget):
 
 
 class FreeTextPage(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, settings=None):
         super().__init__(parent); self.key=None; self.dirty=False; self.corrupt=False; self._clean_text=''
         root=QVBoxLayout(self); root.setContentsMargins(30,24,30,24); root.setSpacing(10)
         top=QHBoxLayout(); self.title=QLabel(''); self.title.setObjectName('title'); top.addWidget(self.title); top.addStretch()
         self.save_button=QPushButton(tr('common.save', 'Opslaan')); self.save_button.setObjectName('primaryButton'); self.save_button.setEnabled(False); top.addWidget(self.save_button); root.addLayout(top)
-        self.editor=ManuscriptEditor(); self.editor.max_text_width=100000; self.editor.min_side_margin=10; self.editor._update_margins(); root.addWidget(self.editor,1)
+        self.editor=ManuscriptEditor(settings=settings); self.editor.max_text_width=100000; self.editor.min_side_margin=10; self.editor._update_margins(); root.addWidget(self.editor,1)
         self.timer=QTimer(self); self.timer.setSingleShot(True); self.timer.setInterval(2200)
         self.editor.textChanged.connect(self._changed)
 
@@ -66,7 +66,7 @@ class PublicationEditor(QWidget):
         self.stack=CurrentPageStack(); root=QVBoxLayout(self); root.setContentsMargins(0,0,0,0); root.addWidget(self.stack)
         self.title_page=SimpleStructuredPage(tr('publication.title_page.title', 'Titelpagina'),[('title',tr('publication.title_page.book_title', 'Boektitel')),('subtitle',tr('publication.title_page.subtitle', 'Subtitel')),('author',tr('publication.title_page.author', 'Auteur / pseudoniem')),('publisher',tr('publication.title_page.publisher', 'Uitgever / imprint'))])
         self.epigraph=SimpleStructuredPage(tr('publication.epigraph.title', 'Epigraaf'),[('quote',tr('publication.epigraph.quote', 'Citaat')),('source',tr('publication.epigraph.source', 'Bron / auteur'))])
-        self.copyright=CopyrightPage(); self.contents=ContentsPage(); self.free_text=FreeTextPage()
+        self.copyright=CopyrightPage(); self.contents=ContentsPage(); self.free_text=FreeTextPage(settings=self.main.settings)
         for widget in (self.title_page,self.copyright,self.epigraph,self.contents,self.free_text): self.stack.addWidget(widget)
         self.title_page.save_button.clicked.connect(lambda:self._save_structured('title_page',self.title_page.data()))
         self.epigraph.save_button.clicked.connect(lambda:self._save_structured('epigraph',self.epigraph.data()))

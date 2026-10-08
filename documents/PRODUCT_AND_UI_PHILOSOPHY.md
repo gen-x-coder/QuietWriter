@@ -23,7 +23,7 @@ Gebruik een klein aantal paginatypen: overzicht, detail/formulier, document, ins
 Toon details wanneer ze relevant zijn. Geen permanent dashboard of extra statuslaag alleen omdat informatie beschikbaar is. Niet-interactieve kaarten krijgen geen hover alsof ze klikbaar zijn.
 
 ## Navigatie
-De linkerrail is declaratieve state, geen reeks losse `setVisible()`-regels. Bij een verborgen huidige bestemming geldt één fallback: Inhoud als een boek open is, anders Boekenplank. Programmatische navigatie gebruikt dezelfde route als gebruikersnavigatie.
+De linkerrail is declaratieve state, geen reeks losse `setVisible()`-regels. Bij een verborgen huidige bestemming geldt één fallback: Inhoud als een boek open is, anders Boekenkast. Programmatische navigatie gebruikt dezelfde route als gebruikersnavigatie.
 
 ## Responsive en DPI
 Test lage laptophoogte, 100%, 125% en 150% schaal. Hidden pages mogen minimumsize niet bepalen. Lange titels worden ge-elided in plaats van het venster breder te maken. Automatische paneelcollapse is een UX-keuze, geen standaard technische fix.

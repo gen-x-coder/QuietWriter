@@ -380,3 +380,25 @@ class ManuscriptSourceSerializationTests(unittest.TestCase):
         self.assertEqual(classify_block_line(source), 'scene')
         with self.assertRaises(ValueError):
             serialize_block_source('scene', 'tekst')
+
+
+def test_scene_break_lines_are_not_parsed_as_inline_emphasis():
+    from quietwriter.manuscript_syntax import parse_inline_spans
+
+    source = 'Voor.\n\n***\n\nNa.\n\n***\n\nEinde.'
+    spans = parse_inline_spans(source)
+    assert not any(source[span.open_start:span.open_end].startswith('*') for span in spans)
+
+
+def test_internal_fragment_with_scene_break_can_be_inserted_at_line_boundary():
+    from quietwriter.manuscript_markup import prepare_markdown_insertion
+
+    fragment = 'Regel een.\n\n**Vet** en *cursief*.\n\n***\n\nNa de breuk.'
+    base = 'Bestaand hoofdstuk.\n'
+    position, insertion = prepare_markdown_insertion(base, len(base), fragment)
+    assert position == len(base)
+    assert insertion == fragment
+    result = base[:position] + insertion + base[position:]
+    assert result.count('***') == 1
+    assert '**Vet**' in result
+    assert '*cursief*' in result

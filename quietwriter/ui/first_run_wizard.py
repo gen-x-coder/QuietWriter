@@ -282,9 +282,9 @@ class FirstRunWizard(QDialog):
 
     def _page_tour_books(self) -> QWidget:
         page, lay = self._shell(
-            'first_run.tour_books_title', 'Boekenplank en schrijven',
+            'first_run.tour_books_title', 'Boekenkast en schrijven',
             'first_run.tour_books_text',
-            'Je boeken staan op de Boekenplank. Open een boek om hoofdstukken te schrijven en ordenen. QuietWriter slaat tijdens het schrijven automatisch op; Versiegeschiedenis helpt je eerdere versies terug te vinden.',
+            'Je boeken staan op de Boekenkast. Open een boek om hoofdstukken te schrijven en ordenen. QuietWriter slaat tijdens het schrijven automatisch op; Versiegeschiedenis helpt je eerdere versies terug te vinden.',
         )
         lay.addStretch(1)
         return page

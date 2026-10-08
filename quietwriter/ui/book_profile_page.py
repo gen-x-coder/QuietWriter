@@ -41,8 +41,7 @@ class BookProfilePage(QWidget):
         info.setObjectName('muted'); info.setWordWrap(True)
         outer.addWidget(title); outer.addWidget(info)
 
-        self.path_label = QLabel(); self.path_label.setObjectName('muted'); self.path_label.setWordWrap(True)
-        outer.addWidget(self.path_label)
+        self.path_label = QLabel(); self.path_label.hide()
 
         body = QHBoxLayout(); body.setSpacing(18)
         nav_host = QFrame(); nav_host.setObjectName('settingsNav')
@@ -121,7 +120,7 @@ class BookProfilePage(QWidget):
         else:
             self.status.setText(
                 tr('book_profile.unsaved', 'Niet-opgeslagen wijzigingen') if self.dirty
-                else tr('book_profile.saved', 'Opgeslagen in ai/boekprofiel.md')
+                else ''
             )
 
     def set_book(self, book, *, force: bool = False):

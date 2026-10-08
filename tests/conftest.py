@@ -4,6 +4,11 @@ from pathlib import Path
 import pytest
 
 
+if importlib.util.find_spec('PySide6') is not None:
+    from PySide6.QtCore import QStandardPaths
+    QStandardPaths.setTestModeEnabled(True)
+
+
 @pytest.fixture(autouse=True)
 def fail_on_unexpected_modal_dialog(monkeypatch):
     """Prevent any unexpected modal Qt dialog from hanging the test suite.
@@ -101,3 +106,34 @@ def pytest_collection_modifyitems(config, items):
                 pass
         if uses_app_fixture or imports_pyside:
             item.add_marker(qt_marker)
+
+
+@pytest.fixture(scope='session', autouse=True)
+def _cleanup_qt_test_artifacts():
+    """Verwijder alleen testartefacten die deze testrun zelf kan hebben gemaakt.
+
+    QStandardPaths test mode gebruikt ~/.qttest. Die map is uitsluitend Qt-testdata.
+    De standaardwoordenboekmap onder ~/QuietWriter wordt alleen verwijderd als hij
+    vóór de suite niet bestond en na afloop nog leeg is; echte gebruikersdata wordt
+    dus nooit aangeraakt.
+    """
+    import shutil
+
+    qt_test_root = Path.home() / '.qttest'
+    qt_test_root_existed = qt_test_root.exists()
+    dictionary_dir = Path.home() / 'QuietWriter' / 'dictionaries'
+    dictionary_existed = dictionary_dir.exists()
+    yield
+
+    if importlib.util.find_spec('PySide6') is not None and not qt_test_root_existed:
+        shutil.rmtree(qt_test_root, ignore_errors=True)
+
+    if not dictionary_existed:
+        try:
+            if dictionary_dir.is_dir() and not any(dictionary_dir.iterdir()):
+                dictionary_dir.rmdir()
+                parent = dictionary_dir.parent
+                if parent.is_dir() and not any(parent.iterdir()):
+                    parent.rmdir()
+        except OSError:
+            pass

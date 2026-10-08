@@ -260,7 +260,15 @@ class DarlingsPage(QWidget):
             current_id = self._loaded_fragment.id
 
         fragments = self.store.list_fragments()
-        errors = list(self.store.last_list_errors)
+        demo_mode = bool(getattr(self.main, 'start', None) and self.main.start.demo_mode_enabled())
+        if demo_mode:
+            source_ids = {fragment.source_book_id for fragment in fragments if fragment.source_book_id}
+            visible_ids = self.main.library.shelves.visible_book_ids(source_ids, demo_mode=True)
+            fragments = [
+                fragment for fragment in fragments
+                if not fragment.source_book_id or fragment.source_book_id in visible_ids
+            ]
+        errors = [] if demo_mode else list(self.store.last_list_errors)
         all_tags = sorted({tag for fragment in fragments for tag in fragment.tags}, key=str.casefold)
 
         self._loading = True

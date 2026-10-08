@@ -8,12 +8,13 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QAction, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QFileDialog, QFrame, QHBoxLayout, QInputDialog, QMainWindow,
-    QLabel, QMessageBox, QPushButton, QScrollArea, QStatusBar, QVBoxLayout, QWidget
+    QLabel, QMessageBox, QPushButton, QProgressDialog, QScrollArea, QStatusBar, QVBoxLayout, QWidget, QLayout
 )
 
 from .current_page_stack import CurrentPageStack
 from .darlings_page import DarlingsPage
 from .. import APP_NAME
+from ..crash_logging import log_exception
 from ..icon_theme import app_icon_path, icon, set_icon_theme
 from ..i18n import tr
 from ..search import BookSearchIndex
@@ -40,7 +41,7 @@ from .trash_page import TrashPage
 from .rail_model import RAIL_GROUPS, RailState, build_rail_view, fallback_destination
 
 class MainWindow(QMainWindow):
-    def __init__(self, settings, library, models):
+    def __init__(self, settings, library, models, startup_status=None):
         super().__init__(); self.settings=settings; self.library=library
         self.models = [str(item.get('name')) if isinstance(item, dict) else str(item) for item in (models or [])]
         self._active_book = None
@@ -60,7 +61,8 @@ class MainWindow(QMainWindow):
         self._update_checker.finished.connect(self._update_check_finished)
         self._update_checker.failed.connect(self._update_check_failed)
 
-        wrap = QWidget(); self.setCentralWidget(wrap); root = QHBoxLayout(wrap); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
+        wrap = QWidget(); self.setCentralWidget(wrap); root = QHBoxLayout(wrap); root.setContentsMargins(0,0,0,0); root.setSpacing(0); root.setSizeConstraint(QLayout.SetNoConstraint)
+        self.setMinimumSize(900, 600)
         self.rail = QFrame(); self.rail.setObjectName('toolrail')
         self.rail_shell_layout = QVBoxLayout(self.rail)
         self.rail_shell_layout.setContentsMargins(5, 10, 5, 10)
@@ -79,7 +81,11 @@ class MainWindow(QMainWindow):
         self._rail_separator_widgets = {}
 
         self.stack = CurrentPageStack()
-        self.start = StartPage(library)
+        if startup_status is not None:
+            startup_status(tr('splash.books', 'Boeken laden…'))
+        self.start = StartPage(library, settings)
+        if startup_status is not None:
+            startup_status(tr('splash.interface', 'Interface opbouwen…'))
         self.darlings_page = DarlingsPage(self)
         self.editor_page = EditorPage(self)
         self.persona = PersonaPage(library)
@@ -108,7 +114,7 @@ class MainWindow(QMainWindow):
         self.rail_shell_layout.addWidget(self.rail_scroll, 1)
 
         self.library_group_label = self._register_nav_group('library', tr('nav.group.library', 'BIBLIOTHEEK'))
-        self.bookshelf_button = self._register_nav_item('bookshelf', 'shelf', tr('nav.bookshelf', 'Boekenplank'), self.go_home)
+        self.bookshelf_button = self._register_nav_item('bookshelf', 'shelf', tr('nav.bookshelf', 'Boekenkast'), self.go_home)
         self.darlings_button = self._register_nav_item('darlings', 'darlings', tr('nav.darlings', 'Bewaarplaats'), self.show_darlings)
 
         self._register_nav_separator('current_book')
@@ -167,6 +173,7 @@ class MainWindow(QMainWindow):
         self._configure_rail_tab_order()
 
         self.start.open_book.connect(self.open_book); self.start.new_book.connect(self.new_book); self.start.import_book.connect(self.import_book)
+        self.start.demo_mode_changed.connect(self._demo_mode_changed)
         self.restore_state(); self._apply_feature_visibility(); self._apply_nav_width(); self._apply_toolrail_width(); QTimer.singleShot(0, self.editor_page._position_contents_edge_button)
         self.stack.currentChanged.connect(self._mode_changed); self._mode_changed(0)
 
@@ -185,6 +192,33 @@ class MainWindow(QMainWindow):
         self.apply_editor_text_width(self.settings.value('editor_text_width', DEFAULT_TEXT_WIDTH))
         self._refresh_theme_icons(self._active_theme)
         self.editor_page.ai.apply_theme(self._active_theme)
+
+    def _book_visible_in_presentation_mode(self, book) -> bool:
+        if book is None:
+            return True
+        loaded = self.library.shelves.load()
+        return book.id in self.library.shelves.visible_book_ids(
+            [book.id], demo_mode=True, loaded=loaded
+        )
+
+    def _demo_mode_changed(self, enabled: bool):
+        self.darlings_page.refresh()
+        self.trash.refresh()
+        if not enabled:
+            return
+        book = self.active_book()
+        if book is None or self._book_visible_in_presentation_mode(book):
+            return
+
+        try:
+            self.go_home()
+        except Exception as exc:
+            log_exception(type(exc), exc, exc.__traceback__, label='Presentatiemodus sluiten', notify=False)
+
+        if self.active_book() is not None:
+            # Revert through StartPage itself so the exact settings store used by
+            # the active runtime profile is updated as well.
+            self.start.demo_toggle.setChecked(False)
 
     def active_book(self):
         """Return the single live Book object for the current workspace book."""
@@ -593,6 +627,7 @@ class MainWindow(QMainWindow):
             return
         if self.active_book():
             self.stack.setCurrentWidget(self.editor_page)
+            self.editor_page.refresh_chapter_context()
         else:
             self.go_home()
 
@@ -779,20 +814,49 @@ class MainWindow(QMainWindow):
                 tr('book.import.warnings', 'Het boek is geïmporteerd. Niet alles uit Word kon worden overgenomen:\n\n{warnings}', warnings='\n'.join(f'• {item}' for item in warnings)),
             )
 
+    def _show_book_loading(self):
+        dialog = QProgressDialog(tr('book.loading', 'Boek laden…'), '', 0, 0, self)
+        dialog.setWindowTitle(tr('book.loading_title', 'Boek openen'))
+        dialog.setCancelButton(None)
+        dialog.setMinimumDuration(0)
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.setMinimumWidth(320)
+        dialog.show()
+        QApplication.processEvents()
+        return dialog
+
+    @staticmethod
+    def _close_book_loading(dialog):
+        if dialog is not None:
+            dialog.close()
+            dialog.deleteLater()
+            QApplication.processEvents()
+
     def open_book(self, book):
+        if self.start.demo_mode_enabled() and not self._book_visible_in_presentation_mode(book):
+            self.start.refresh()
+            self.stack.setCurrentWidget(self.start)
+            self._sync_nav_selection()
+            return
         if self.planning_page.book and self.planning_page.book.id != book.id:
             if self.planning_page.save_pending() is False:
                 return
+        loading = self._show_book_loading()
         try:
-            # The bookshelf object may predate a Dropbox/OneDrive sync. touch_book
+            # The bookshelf object may predate a synced-folder refresh. touch_book
             # reloads book.json first and only updates last_used on that fresh graph.
             live = self.library.touch_book(book)
         except Exception as exc:
+            self._close_book_loading(loading)
             QMessageBox.warning(self, tr('book.open_failed.title', 'Boek openen'), tr('book.open_failed.text', 'Het boek kon niet veilig worden geopend.\n\n{error}', error=exc))
             return
 
         syntax = profile_from_manifest(live.extra_manifest or {})
         if not syntax.explicit:
+            self._close_book_loading(loading)
+            loading = None
             migration_box = QMessageBox(self)
             migration_box.setIcon(QMessageBox.Question)
             migration_box.setWindowTitle(tr('book.syntax_migration.title', 'Boek eenmalig bijwerken'))
@@ -877,13 +941,18 @@ class MainWindow(QMainWindow):
                     5000,
                 )
 
-        if self.editor_page.load_book(live) is False:
-            return
-        self.book_profile_page.set_book(live, force=True)
-        self.book_memory_page.set_book(live, force=True)
-        self._apply_feature_visibility()
-        self.stack.setCurrentWidget(self.editor_page)
-        self._sync_nav_selection()
+        if loading is None:
+            loading = self._show_book_loading()
+        try:
+            if self.editor_page.load_book(live) is False:
+                return
+            self.book_profile_page.set_book(live, force=True)
+            self.book_memory_page.set_book(live, force=True)
+            self._apply_feature_visibility()
+            self.stack.setCurrentWidget(self.editor_page)
+            self._sync_nav_selection()
+        finally:
+            self._close_book_loading(loading)
 
     def _replace_book_details_page(self, book):
         old_page = self.book_details_page
@@ -958,6 +1027,7 @@ class MainWindow(QMainWindow):
             self.editor_page.book = book
             self.editor_page.book_title_label.setText(book.title)
             self.export_page.set_book(book)
+            self.editor_page.update_counts()
         self.status.showMessage(tr('book_details.saved_status', 'Boekdetails opgeslagen'), 2500)
 
     def _book_details_deleted(self, book):
@@ -1325,6 +1395,9 @@ class MainWindow(QMainWindow):
             state, spell_enabled=self.settings.value('spell_enabled', True, bool)
         )
         self.editor_page.ai.apply_settings()
+        if self.editor_page.book:
+            self.editor_page.update_counts()
+            self.editor_page.refresh_chapter_context()
         if self.settings.value('workspace') != old_root:
             QMessageBox.information(self, tr('settings.workspace_changed_title', 'Werkmap gewijzigd'), tr('settings.workspace_changed_text', 'De nieuwe werkmap wordt gebruikt nadat de applicatie opnieuw is gestart.'))
         self.status.showMessage(tr('settings.saved', 'Instellingen opgeslagen'), 2500)

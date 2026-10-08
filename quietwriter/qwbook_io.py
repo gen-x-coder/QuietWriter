@@ -434,6 +434,10 @@ def import_qwbook(library: Library, source: Path) -> Book:
         os.replace(temp_book, final_path)
         imported = library.load_book(final_path)
         library.track_book(imported)
+        library._best_effort_shelf_update(
+            'Boek geïmporteerd; plankindeling kon niet worden bijgewerkt',
+            lambda: library.shelves.assign_new(imported.id),
+        )
         shutil.rmtree(temp_root, ignore_errors=True)
         temp_root = None
         return imported
