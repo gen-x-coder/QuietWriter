@@ -95,7 +95,7 @@ class UndoReviewQtRuntimeTests(unittest.TestCase):
             self.assertEqual(editor.toPlainText(), 'Dit is een volledige testzin.')
 
             self._press(editor, Qt.Key_Z, Qt.ControlModifier)
-            self.assertEqual(editor.toPlainText(), '')
+            self.assertEqual(editor.toPlainText(), 'Dit is een volledige ')
 
             self._press(editor, Qt.Key_Y, Qt.ControlModifier)
             self.assertEqual(editor.toPlainText(), 'Dit is een volledige testzin.')
