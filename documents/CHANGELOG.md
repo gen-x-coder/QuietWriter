@@ -1,12 +1,12 @@
-## 1.3.1-dev.1 — woordenboekbron kiezen voor spellingscontrole
+## 1.3.1 — spellingsuggesties begrensd en woordenboekbron kiesbaar
 
-- start een aparte 1.3.1-hotfixlijn vanaf de stabiele 1.3.0-code, los van de doorlopende 1.4-ontwikkeling;
-- Instellingen > Spelling laat naast de taal nu ook de gevonden woordenboekbron kiezen;
-- meerdere woordenboeken voor hetzelfde locale blijven tegelijk beschikbaar in plaats van vooraf te worden weggefilterd;
-- ondersteunde bronnen: Meegeleverd, ONLYOFFICE, LibreOffice, OpenOffice en zelf toegevoegde compatibele Hunspell-bestanden;
+- voorkomt dat het spellingspaneel minutenlang kan vastlopen op lange of vreemde onbekende woorden;
+- begrenst de dure edit-candidatefase van spylls tot ongeveer één seconde per getoond woord en laat daarna de snellere ngram-/fallbacksuggesties doorgaan;
+- voegt een regressietest toe voor pathologische MAP-combinaties en behoudt normale correcties zoals `bannaan` → `banaan`;
+- Instellingen > Spelling laat naast de taal ook de gevonden woordenboekbron kiezen;
+- meerdere woordenboeken voor hetzelfde locale blijven beschikbaar: Meegeleverd, ONLYOFFICE, LibreOffice, OpenOffice en zelf toegevoegde compatibele Hunspell-bestanden;
 - de gekozen bron wordt lokaal bewaard in `spell_dictionary_source` en valt veilig terug wanneer die bron later ontbreekt;
-- regressietests en een expliciete 1.4-overdrachtsnotitie voorkomen dat de hotfix bij verdere ontwikkeling verloren gaat;
-- de gemelde crash met het meegeleverde Nederlandse woordenboek is hiermee nog niet als root cause verklaard: deze devbuild maakt gericht vergelijken en reproduceren mogelijk.
+- de 1.4-overdrachtsnotitie legt zowel de providerkeuze als het suggestiebudget vast voor de reeds doorlopende 1.4-lijn.
 
 ## 1.3.0 — releasecandidate freeze voor de definitieve release
 
