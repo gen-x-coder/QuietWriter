@@ -1059,7 +1059,8 @@ class EditorPage(QWidget):
         if enabled:
             catalog = DictionaryCatalog(self.main.library.dict_dir)
             locale = str(self.main.settings.value('spell_language', 'nl_NL') or 'nl_NL')
-            entry = catalog.get(locale)
+            source = str(self.main.settings.value('spell_dictionary_source', '') or '')
+            entry = catalog.get(locale, source) if source else catalog.get(locale)
             path = entry.dic if entry else None
             legacy = str(self.main.settings.value('spell_dictionary','') or '').strip()
             if not path and legacy and Path(legacy).exists():
