@@ -16,34 +16,55 @@ def _write_dictionary(root: Path, locale: str = "nl_NL"):
 def test_catalog_keeps_alternative_providers_for_same_locale():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        workspace = root / "workspace"
+        bundled = root / "bundled"
         office = root / "onlyoffice"
+        bundled_dic, _ = _write_dictionary(bundled)
         office_dic, _ = _write_dictionary(office)
 
-        catalog = DictionaryCatalog(workspace, extra_roots=[(office, "ONLYOFFICE")])
+        catalog = DictionaryCatalog(
+            root / "workspace",
+            extra_roots=[
+                (bundled, "Meegeleverd"),
+                (office, "ONLYOFFICE"),
+            ],
+        )
         matches = catalog.entries("nl_NL")
         sources = {entry.source for entry in matches}
 
-        assert "Meegeleverd" in sources
-        assert "ONLYOFFICE" in sources
+        assert sources == {"Meegeleverd", "ONLYOFFICE"}
+        assert catalog.get("nl_NL", "Meegeleverd").dic == bundled_dic
         assert catalog.get("nl_NL", "ONLYOFFICE").dic == office_dic
 
 
 def test_explicit_source_falls_back_when_provider_is_unavailable():
     with tempfile.TemporaryDirectory() as td:
-        catalog = DictionaryCatalog(Path(td) / "workspace", extra_roots=[])
+        root = Path(td)
+        bundled = root / "bundled"
+        bundled_dic, _ = _write_dictionary(bundled)
+
+        catalog = DictionaryCatalog(
+            root / "workspace",
+            extra_roots=[(bundled, "Meegeleverd")],
+        )
         selected = catalog.get("nl_NL", "ONLYOFFICE")
+
         assert selected is not None
         assert selected.source == "Meegeleverd"
+        assert selected.dic == bundled_dic
 
 
 def test_custom_dictionary_remains_a_separate_provider_choice():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         source_dir = root / "source"
+        bundled = root / "bundled"
         source_dic, _ = _write_dictionary(source_dir)
+        _write_dictionary(bundled)
 
-        catalog = DictionaryCatalog(root / "workspace", extra_roots=[])
+        catalog = DictionaryCatalog(
+            root / "workspace",
+            extra_roots=[(bundled, "Meegeleverd")],
+        )
         added = catalog.add_custom(source_dic)
 
         assert added.source == "Werkmap"
