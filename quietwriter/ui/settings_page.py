@@ -814,7 +814,11 @@ class SettingsPage(QWidget):
         entries = self.dictionary_catalog.entries(str(locale or '')) if locale else []
         self.spell_dictionary_source.blockSignals(True)
         self.spell_dictionary_source.clear()
+        seen_sources = set()
         for entry in entries:
+            if entry.source in seen_sources:
+                continue
+            seen_sources.add(entry.source)
             self.spell_dictionary_source.addItem(self._dictionary_source_label(entry.source), entry.source)
         idx = self.spell_dictionary_source.findData(preserve_source)
         if idx >= 0:
