@@ -1,67 +1,26 @@
-QuietWriter release candidate snapshot
+QuietWriter 1.3.1 hotfix development snapshot
 
-Application version: 1.3.0
-Stable public release: 1.2.32
-- dev.29 Windows/small-screen hardening: visible book-loading feedback, word/pause-based undo grouping, responsive window constraints, theme-correct chapter selection, explicit Integrity checks and quieter AI-context pages
-- dev.28 core-editor finish: safe scene-break paste, update checker and final small polish bundle
-- dev.27 review hardening: opt-in safety, profile-aware themes, wheel guards and popup behaviour
+Application version: 1.3.1-dev.1
+Stable public release: 1.3.0
+Branch: release/1.3.1-dev1
 
-1.3.0 release-candidate scope:
-- Planning overlay is narrower and taller to cover less manuscript text
-- Planning button is hidden entirely when Planning help in editor is disabled
-- Search/Replace keeps a stable result area; no collapsing replacement controls on zero matches
-- zero-match search shows only the empty-state message, not a duplicate 0-results summary
-- internal copy/paste keeps formatting but collapses the pasted selection to a caret at the end
-- Planning popup blocks Qt mouse replay so closing it from the button cannot immediately reopen it
-- Planning button behaves as a reliable toggle; second click closes the overlay
-- Planning overlay scales with the editor and caps at roughly half the editor width
-- visible scene statuses are title-cased while stored status values remain unchanged
-- chapter scrollbar groove/track uses the page background consistently
-- Planning overlay in the editor next to Text width, available even while manuscript text is present
-- linked scenes show their saved status in both ghost guidance and the on-demand overlay
-- open scenes can be explicitly marked Written from the overlay; no automatic scene detection
-- scene Status is a closed dropdown, never free text
-- Planning > Characters selects the first saved character when opened
-- the chapter-tree scrollbar track uses the page/menu background
-- Planning workflow clarity: richer explanations for Planning, Characters and Outline
-- existing scene status is surfaced as a calm visual badge in Outline
-- the editor contents edge tab now uses the page background
-- Planning UI polish: Personages and Outline now explain their purpose; character selection shows names only
-- Planning and manuscript chapter context navigation use the page background for a calmer consistent hierarchy
-- Ctrl+C/Ctrl+V pasted-selection bug is recorded on the polish backlog, not changed in this build
-- Planning ghost polish: location and characters render on separate lines
-- when not all linked scenes fit, a reserved footer explicitly reports how many remain in Planning
-- unrelated Search/Replace panel layout collapse is recorded as a high-priority UI backlog item, not changed in this build
-- first phase of Planning closer to writing: linked scenes are painted as soft, presentation-only guidance in an empty chapter
-- Planning guidance never enters QTextDocument/Markdown and therefore never affects counting, search, spelling, export, AI context or Undo
-- Settings > Appearance can show/hide Planning guidance; it defaults to shown
-- returning from Planning refreshes the guidance immediately
-- all functionality from the accepted 1.3.0-dev.10 Boekenkast snapshot remains in place
-- optional per-book writing goal and optional target date live in book metadata
-- books with a goal show calm progress on the Bookshelf and in the editor word-count status
-- "written today" tracking is explicit opt-in and defaults off
-- the writing-progress opt-in lives only in Settings; Book Details never owns or rewrites that device setting
-- only positive growth between successful editor saves counts as written today
-- disabling tracking pauses collection without deleting existing local history and without later catch-up
-- daily progress data is stored outside the workspace in AppLocalDataLocation and retained for about 60 days
-- writing goal and deadline survive version restore because they describe current intent rather than historical manuscript content
-- library.json is unchanged by writing goals
+Purpose:
+- investigate a reported Windows hang/crash when opening spelling with the bundled Dutch Hunspell dictionary;
+- expose an explicit dictionary-source selector so the same machine can switch between discovered providers for one language;
+- keep the 1.3.1 patch isolated from ongoing 1.4 development.
 
-Deliberately not included:
-- daily goals
-- streaks, badges or celebrations
-- sprints/timers
-- progress dashboard or 30-day chart
-- red/ahead/behind judgement language
+1.3.1-dev.1 scope:
+- DictionaryCatalog retains multiple providers for the same locale.
+- Settings > Spelling has separate Language and Dictionary controls.
+- Supported selectable sources are Bundled, ONLYOFFICE, LibreOffice, OpenOffice and user-added compatible Hunspell dictionaries.
+- The selected source is persisted as spell_dictionary_source.
+- If that provider disappears, QuietWriter falls back to the legacy preferred provider for the same locale.
+- Existing users without the new setting keep the old provider-priority behaviour.
+- HOTFIX_1.3.1_SPELLING_TRANSFER.md records the semantic changes that must later be ported into the 1.4 line.
 
-Testing focus:
-- Windows: empty chapter with linked Planning scenes shows guidance; typing real text hides it; undo/clearing back to empty shows it again
-- Windows: toggle Planning guidance in Settings > Appearance and verify it never changes manuscript text
-- Windows: opt-in defaults off; enable from Book Details and from Settings
-- Windows: type/save/delete/save/type/save and verify today's counter follows positive-save deltas
-- Windows: disable tracking, write/save, re-enable, and confirm no retroactive catch-up
-- Windows: Book Details date picker matches other fields; missing cover shows a bordered placeholder and remove is disabled
-- Windows: goal/deadline display in Book Details, Bookshelf and editor at 100/125/150% DPI
-- Claude/PySide6: full regression, opt-in privacy contract, version restore, .qwbook roundtrip, merge behaviour and version-reference audit
+Important:
+- This dev build does not claim the root cause of the reported crash is fixed.
+- The selector is deliberately both a diagnostic tool and a practical fallback.
+- Microsoft Office is not advertised as a full Hunspell provider; QuietWriter only lists dictionary formats/sources it actually supports.
 
 README.md and README_EN.md are intentionally unchanged.
