@@ -349,9 +349,14 @@ class SettingsPage(QWidget):
         self._add_settings_field(spl, tr('settings.spelling.check', 'Spellingscontrole'), self.spell_enabled,
             tr('settings.spelling.check_help', 'Onderstreept onbekende woorden in de editor. Je manuscripttekst zelf wordt nooit automatisch aangepast.'))
         self.dictionary_catalog = DictionaryCatalog(Path(settings.value('workspace', str(Path.home() / 'QuietWriter'))) / 'dictionaries')
-        self.spell_language = QuietComboBox(); self.spell_language.currentIndexChanged.connect(self.update_dictionary_info)
+        self.spell_language = QuietComboBox()
+        self.spell_dictionary_source = QuietComboBox()
+        self.spell_language.currentIndexChanged.connect(self._dictionary_language_changed)
+        self.spell_dictionary_source.currentIndexChanged.connect(self.update_dictionary_info)
         self._add_settings_field(spl, tr('settings.spelling.language', 'Taal'), self.spell_language,
-            tr('settings.spelling.language_help', 'QuietWriter gebruikt een gevonden Hunspell-woordenboek voor deze taal.'))
+            tr('settings.spelling.language_help', 'Kies de taal voor de spellingscontrole.'))
+        self._add_settings_field(spl, tr('settings.spelling.dictionary_choice', 'Woordenboek'), self.spell_dictionary_source,
+            tr('settings.spelling.dictionary_choice_help', 'Kies welk gevonden woordenboek QuietWriter voor deze taal gebruikt. Zo kun je bijvoorbeeld wisselen tussen Meegeleverd, ONLYOFFICE, LibreOffice, OpenOffice of een zelf toegevoegd woordenboek.'))
 
         self._add_settings_section(spl, tr('settings.section.dictionaries', 'Woordenboeken'))
         self.dictionary_info = WrappedHeightLabel(''); self.dictionary_info.setObjectName('muted')
@@ -377,7 +382,10 @@ class SettingsPage(QWidget):
 
         self._populate_models()
         self.update_sync_warning()
-        self.refresh_dictionaries(preserve_locale=str(settings.value('spell_language', 'nl_NL') or 'nl_NL'))
+        self.refresh_dictionaries(
+            preserve_locale=str(settings.value('spell_language', 'nl_NL') or 'nl_NL'),
+            preserve_source=str(settings.value('spell_dictionary_source', '') or ''),
+        )
 
         # Eén vaste actie onderaan. De knop is alleen actief wanneer de formuliervelden
         # afwijken van de laatst opgeslagen instellingen.
@@ -616,6 +624,7 @@ class SettingsPage(QWidget):
             bool(self.ai_quick_actions_expanded.isChecked()),
             bool(self.spell_enabled.isChecked()),
             self.spell_language.currentData() or '',
+            self.spell_dictionary_source.currentData() or '',
         )
 
     def _wire_dirty_tracking(self):
@@ -626,7 +635,7 @@ class SettingsPage(QWidget):
             self.smart_quotes, self.planning_ghosts_enabled, self.advanced_options, self.guided_export, self.auto_update_check, self.writing_progress_enabled, self.root, self.cover_template,
             self.ai_enabled, self.ai_provider, self.ollama, self.openrouter_key, self.model, self.openrouter_free_only,
             self.ai_disable_thinking, self.ai_quick_actions_expanded,
-            self.spell_enabled, self.spell_language,
+            self.spell_enabled, self.spell_language, self.spell_dictionary_source,
         )
         for widget in widgets:
             if isinstance(widget, QLineEdit):
@@ -767,32 +776,67 @@ class SettingsPage(QWidget):
     def _dictionary_workspace(self) -> Path:
         return Path(self.root.text().strip() or str(Path.home() / 'QuietWriter')) / 'dictionaries'
 
-    def refresh_dictionaries(self, checked=False, preserve_locale=None):
-        current = preserve_locale or self.spell_language.currentData() or str(self.settings.value('spell_language', 'nl_NL') or 'nl_NL')
+    def _dictionary_source_label(self, source: str) -> str:
+        labels = {
+            'Werkmap': tr('settings.spelling.source_workspace', 'Zelf toegevoegd'),
+            'Meegeleverd': tr('settings.spelling.source_bundled', 'Meegeleverd'),
+        }
+        return labels.get(source, source)
+
+    def refresh_dictionaries(self, checked=False, preserve_locale=None, preserve_source=None):
+        current_locale = preserve_locale or self.spell_language.currentData() or str(self.settings.value('spell_language', 'nl_NL') or 'nl_NL')
+        current_source = preserve_source
+        if current_source is None:
+            current_source = self.spell_dictionary_source.currentData() or str(self.settings.value('spell_dictionary_source', '') or '')
         self.dictionary_catalog = DictionaryCatalog(self._dictionary_workspace())
         self.spell_language.blockSignals(True)
         self.spell_language.clear()
         entries = self.dictionary_catalog.entries()
+        seen_locales = set()
         for entry in entries:
+            if entry.locale in seen_locales:
+                continue
+            seen_locales.add(entry.locale)
             self.spell_language.addItem(entry.label, entry.locale)
-        idx = self.spell_language.findData(current)
+        idx = self.spell_language.findData(current_locale)
         if idx >= 0:
             self.spell_language.setCurrentIndex(idx)
-        elif entries:
+        elif self.spell_language.count():
             self.spell_language.setCurrentIndex(0)
         self.spell_language.blockSignals(False)
+        self._populate_dictionary_sources(str(current_source or ''))
+
+    def _dictionary_language_changed(self, *_):
+        self._populate_dictionary_sources('')
+
+    def _populate_dictionary_sources(self, preserve_source: str = ''):
+        locale = self.spell_language.currentData()
+        entries = self.dictionary_catalog.entries(str(locale or '')) if locale else []
+        self.spell_dictionary_source.blockSignals(True)
+        self.spell_dictionary_source.clear()
+        for entry in entries:
+            self.spell_dictionary_source.addItem(self._dictionary_source_label(entry.source), entry.source)
+        idx = self.spell_dictionary_source.findData(preserve_source)
+        if idx >= 0:
+            self.spell_dictionary_source.setCurrentIndex(idx)
+        elif entries:
+            self.spell_dictionary_source.setCurrentIndex(0)
+        self.spell_dictionary_source.blockSignals(False)
+        self.spell_dictionary_source.setEnabled(bool(entries))
         self.update_dictionary_info()
+        self._update_dirty_state()
 
     def update_dictionary_info(self):
         locale = self.spell_language.currentData()
-        entry = self.dictionary_catalog.get(locale) if locale else None
+        source = self.spell_dictionary_source.currentData()
+        entry = self.dictionary_catalog.get(locale, source) if locale else None
         if not entry:
             self.dictionary_info.setText(tr('settings.spelling.no_dictionaries', 'Geen woordenboeken gevonden. Installeer bijvoorbeeld ONLYOFFICE, LibreOffice of OpenOffice, of voeg zelf een Hunspell-woordenboek toe.'))
             self.dictionary_info.sync_height()
             self.remove_dict_btn.setEnabled(False)
             return
         aff = tr('settings.spelling.aff_rules', 'met .aff-regels') if entry.aff else tr('settings.spelling.dic_only', 'alleen .dic')
-        self.dictionary_info.setText(tr('settings.spelling.dictionary_info', 'Bron: {source} · {locale} · {kind}\n{path}', source=entry.source, locale=entry.locale, kind=aff, path=entry.dic))
+        self.dictionary_info.setText(tr('settings.spelling.dictionary_info', 'Bron: {source} · {locale} · {kind}\n{path}', source=self._dictionary_source_label(entry.source), locale=entry.locale, kind=aff, path=entry.dic))
         self.dictionary_info.sync_height()
         self.remove_dict_btn.setEnabled(entry.source == 'Werkmap')
 
@@ -802,11 +846,12 @@ class SettingsPage(QWidget):
             return
         self.dictionary_catalog = DictionaryCatalog(self._dictionary_workspace())
         entry = self.dictionary_catalog.add_custom(Path(p))
-        self.refresh_dictionaries(preserve_locale=entry.locale)
+        self.refresh_dictionaries(preserve_locale=entry.locale, preserve_source=entry.source)
 
     def remove_dictionary(self):
         locale = self.spell_language.currentData()
-        entry = self.dictionary_catalog.get(locale) if locale else None
+        source = self.spell_dictionary_source.currentData()
+        entry = self.dictionary_catalog.get(locale, source) if locale else None
         if not entry or entry.source != 'Werkmap':
             QMessageBox.information(self, tr('settings.spelling.remove_title', 'Woordenboek verwijderen'), tr('settings.spelling.remove_info', 'Alleen woordenboeken die je zelf aan QuietWriter hebt toegevoegd kunnen hier worden verwijderd. Woordenboeken van Office-programma’s blijven onaangeroerd.'))
             return
@@ -1096,6 +1141,7 @@ class SettingsPage(QWidget):
             'cover_header_template': self.cover_template.text().strip() or '/{slug}.jpg',
             'spell_enabled': self.spell_enabled.isChecked(),
             'spell_language': self.spell_language.currentData() or '',
+            'spell_dictionary_source': self.spell_dictionary_source.currentData() or '',
         }
         provider = values['ai_provider']
         # The combo may show a filtered fallback selected programmatically.
@@ -1187,7 +1233,10 @@ class SettingsPage(QWidget):
         self._populate_models(provider)
         self._update_ai_controls()
         self.spell_enabled.setChecked(self.settings.value('spell_enabled', True, bool))
-        self.refresh_dictionaries(preserve_locale=str(self.settings.value('spell_language', 'nl_NL') or 'nl_NL'))
+        self.refresh_dictionaries(
+            preserve_locale=str(self.settings.value('spell_language', 'nl_NL') or 'nl_NL'),
+            preserve_source=str(self.settings.value('spell_dictionary_source', '') or ''),
+        )
         self.update_sync_warning()
         self._saved_form_state = self._current_form_state()
         self._update_dirty_state()
