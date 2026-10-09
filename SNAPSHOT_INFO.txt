@@ -1,26 +1,20 @@
-QuietWriter 1.3.1 hotfix development snapshot
+QuietWriter 1.3.1 release snapshot
 
-Application version: 1.3.1-dev.1
-Stable public release: 1.3.0
-Branch: release/1.3.1-dev1
+Application version: 1.3.1
+Stable public release before promotion: 1.3.0
+Branch: release/1.3.1
 
-Purpose:
-- investigate a reported Windows hang/crash when opening spelling with the bundled Dutch Hunspell dictionary;
-- expose an explicit dictionary-source selector so the same machine can switch between discovered providers for one language;
-- keep the 1.3.1 patch isolated from ongoing 1.4 development.
+1.3.1 scope:
+- fixes the spelling-panel hang caused by unbounded spylls edit suggestions for pathological or very long unknown words;
+- applies a one-second budget to the expensive edit-candidate phase, then allows faster ngram/fallback suggestions to continue;
+- includes a regression test that would hang on the old implementation;
+- keeps the new dictionary-source selector for Bundled, ONLYOFFICE, LibreOffice, OpenOffice and user-added compatible Hunspell dictionaries;
+- persists spell_dictionary_source with safe fallback when a provider disappears;
+- records the semantic handoff required for the already-active 1.4 development line.
 
-1.3.1-dev.1 scope:
-- DictionaryCatalog retains multiple providers for the same locale.
-- Settings > Spelling has separate Language and Dictionary controls.
-- Supported selectable sources are Bundled, ONLYOFFICE, LibreOffice, OpenOffice and user-added compatible Hunspell dictionaries.
-- The selected source is persisted as spell_dictionary_source.
-- If that provider disappears, QuietWriter falls back to the legacy preferred provider for the same locale.
-- Existing users without the new setting keep the old provider-priority behaviour.
-- HOTFIX_1.3.1_SPELLING_TRANSFER.md records the semantic changes that must later be ported into the 1.4 line.
-
-Important:
-- This dev build does not claim the root cause of the reported crash is fixed.
-- The selector is deliberately both a diagnostic tool and a practical fallback.
-- Microsoft Office is not advertised as a full Hunspell provider; QuietWriter only lists dictionary formats/sources it actually supports.
+Release discipline:
+- build the Windows portable binary from this branch;
+- if tests and the Windows build are green, test that exact ZIP on Windows;
+- do not rebuild after acceptance unless code changes.
 
 README.md and README_EN.md are intentionally unchanged.
