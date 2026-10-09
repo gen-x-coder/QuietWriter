@@ -2,9 +2,16 @@ from __future__ import annotations
 import codecs
 import difflib
 import re
+import time
 from pathlib import Path
 
 from .storage import _safe_atomic_write_text
+
+# spylls is pure Python; with compound-heavy dictionaries (OpenTaal nl_NL) its
+# edit-candidate search (MAP permutations, compounds) can take minutes for one long misspelled word, which
+# freezes the GUI thread. After this budget we stop producing edit candidates
+# and let spylls continue with its fast ngram phase.
+SUGGEST_BUDGET_SECONDS = 1.0
 
 WORD_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿĀ-ž]+(?:['’-][A-Za-zÀ-ÖØ-öø-ÿĀ-ž]+)?")
 
@@ -26,6 +33,7 @@ class WordDictionary:
         self.hunspell = None
         self._known_cache: dict[str, bool] = {}
         self._suggest_cache: dict[str, tuple[str, ...]] = {}
+        self._suggest_deadline: float | None = None
 
     def _clear_caches(self):
         self._known_cache.clear(); self._suggest_cache.clear()
@@ -85,9 +93,31 @@ class WordDictionary:
         self.path = path; self.hunspell = None
         aff = path.with_suffix('.aff')
         if HunspellDictionary is not None and aff.exists():
-            try: self.hunspell = HunspellDictionary.from_files(str(path.with_suffix('')))
+            try:
+                self.hunspell = HunspellDictionary.from_files(str(path.with_suffix('')))
+                self._install_suggest_budget()
             except Exception: self.hunspell = None
         self._clear_caches()
+
+    def _install_suggest_budget(self):
+        """Stop spylls' edit-candidate search once the suggest budget is spent.
+
+        spylls has no time limit (Hunspell's C++ code does). The MAP table in
+        OpenTaal nl_NL makes mapchars() exponential in the number of vowels and
+        compound checks are slow, so one long typo could block the GUI for
+        minutes. After the deadline no more edit candidates are produced; spylls
+        then continues with its fast ngram suggestions.
+        """
+        suggester = self.hunspell.suggester
+        original = suggester.edits
+
+        def edits(word, *args, **kwargs):
+            for candidate in original(word, *args, **kwargs):
+                if self._suggest_deadline is not None and time.monotonic() > self._suggest_deadline:
+                    return
+                yield candidate
+
+        suggester.edits = edits
 
     @staticmethod
     def _read_word_list(path: Path) -> set[str]:
@@ -147,11 +177,13 @@ class WordDictionary:
         if key in self._suggest_cache: return list(self._suggest_cache[key])
         out = []
         if self.hunspell is not None:
+            self._suggest_deadline = time.monotonic() + SUGGEST_BUDGET_SECONDS
             try:
                 for value in self.hunspell.suggest(word):
                     if value not in out: out.append(value)
                     if len(out) >= 8: break
             except Exception: out = []
+            finally: self._suggest_deadline = None
         if not out:
             pool = self.words | self.personal_words
             if pool: out = difflib.get_close_matches(key, pool, n=8, cutoff=.72)
