@@ -1,3 +1,13 @@
+## 1.3.1-dev.1 — woordenboekbron kiezen voor spellingscontrole
+
+- start een aparte 1.3.1-hotfixlijn vanaf de stabiele 1.3.0-code, los van de doorlopende 1.4-ontwikkeling;
+- Instellingen > Spelling laat naast de taal nu ook de gevonden woordenboekbron kiezen;
+- meerdere woordenboeken voor hetzelfde locale blijven tegelijk beschikbaar in plaats van vooraf te worden weggefilterd;
+- ondersteunde bronnen: Meegeleverd, ONLYOFFICE, LibreOffice, OpenOffice en zelf toegevoegde compatibele Hunspell-bestanden;
+- de gekozen bron wordt lokaal bewaard in `spell_dictionary_source` en valt veilig terug wanneer die bron later ontbreekt;
+- regressietests en een expliciete 1.4-overdrachtsnotitie voorkomen dat de hotfix bij verdere ontwikkeling verloren gaat;
+- de gemelde crash met het meegeleverde Nederlandse woordenboek is hiermee nog niet als root cause verklaard: deze devbuild maakt gericht vergelijken en reproduceren mogelijk.
+
 ## 1.3.0 — releasecandidate freeze voor de definitieve release
 
 - bevriest de inhoud van 1.3.0 na de Windows-/laptopacceptatie van dev.29;
