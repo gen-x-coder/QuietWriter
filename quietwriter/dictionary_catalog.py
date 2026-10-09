@@ -93,7 +93,7 @@ class DictionaryCatalog:
         self.workspace_dir = Path(workspace_dir)
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         self.extra_roots = extra_roots
-        self._entries: dict[str, DictionaryEntry] = {}
+        self._entries: list[DictionaryEntry] = []
         self.scan()
 
     @staticmethod
@@ -121,11 +121,18 @@ class DictionaryCatalog:
         if not aff.exists():
             aff = None
         label = locale_label(locale)
-        current = self._entries.get(locale)
-        priority = {'Werkmap': 4, 'Meegeleverd': 3, 'ONLYOFFICE': 2, 'LibreOffice': 2, 'OpenOffice': 2, 'Extern': 1}
-        if current and priority.get(current.source, 0) >= priority.get(source, 0):
-            return
-        self._entries[locale] = DictionaryEntry(locale, label, dic, aff, source)
+        try:
+            resolved = dic.resolve()
+        except OSError:
+            resolved = dic
+        for current in self._entries:
+            try:
+                current_path = current.dic.resolve()
+            except OSError:
+                current_path = current.dic
+            if current_path == resolved:
+                return
+        self._entries.append(DictionaryEntry(locale, label, dic, aff, source))
 
     def _scan_root(self, root: Path, source: str):
         if not root.exists():
@@ -157,11 +164,34 @@ class DictionaryCatalog:
         for root, source in roots:
             self._scan_root(root, source)
 
-    def entries(self) -> list[DictionaryEntry]:
-        return sorted(self._entries.values(), key=lambda e: (e.label.casefold(), e.locale.casefold()))
+    def entries(self, locale: str | None = None) -> list[DictionaryEntry]:
+        """Return all discovered dictionaries, optionally for one locale.
 
-    def get(self, locale: str) -> DictionaryEntry | None:
-        return self._entries.get(normalize_locale(locale))
+        Multiple providers may expose the same locale. Keep them all so the
+        writer can choose the implementation that behaves best on their system.
+        """
+        wanted = normalize_locale(locale) if locale else ''
+        values = [entry for entry in self._entries if not wanted or entry.locale == wanted]
+        priority = {'Werkmap': 0, 'Meegeleverd': 1, 'ONLYOFFICE': 2, 'LibreOffice': 3, 'OpenOffice': 4, 'Extern': 5}
+        return sorted(
+            values,
+            key=lambda e: (e.label.casefold(), priority.get(e.source, 99), e.source.casefold(), str(e.dic).casefold()),
+        )
+
+    def get(self, locale: str, source: str | None = None) -> DictionaryEntry | None:
+        """Resolve one dictionary while retaining the legacy preferred fallback.
+
+        The source argument is an explicit user preference. When that provider
+        is no longer available we fall back to the historic priority order
+        rather than disabling spelling entirely.
+        """
+        locale = normalize_locale(locale)
+        matches = self.entries(locale)
+        if source:
+            for entry in matches:
+                if entry.source == source:
+                    return entry
+        return matches[0] if matches else None
 
     def add_custom(self, dic: Path) -> DictionaryEntry:
         dic = Path(dic)
@@ -181,7 +211,7 @@ class DictionaryCatalog:
 
         Office-suite dictionaries are discovered read-only and are never touched.
         """
-        entry = self.get(locale)
+        entry = self.get(locale, 'Werkmap')
         if not entry or entry.source != 'Werkmap':
             return False
         try:
