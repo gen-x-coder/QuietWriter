@@ -16,6 +16,3 @@ Download `QuietWriter-windows-portable.zip` uit deze release, pak het bestand ui
 
 De Windows-versie wordt zonder commerciële codeondertekening aangeboden. De gepubliceerde SHA-256-hash helpt om het gedownloade pakket te controleren.
 
-## Publicatiestatus
-
-De release wordt eerst als **pre-release** aangeboden voor extra praktijkcontrole. De applicatie en deze releasebeschrijving zijn al versie **1.4.0**. Dezelfde releasebestanden kunnen later ongewijzigd als stabiele release worden vrijgegeven.
