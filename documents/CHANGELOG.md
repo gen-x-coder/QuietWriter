@@ -1,3 +1,10 @@
+## 1.4.0 — Betrouwbaar schrijven, plannen en herstellen
+
+- Boekback-ups, automatische dagkopieën, herstel en versiegeschiedenis, met bescherming tegen externe wijzigingen en onvolledige synchronisatie.
+- Planning met overzichtelijke scènes, personages en notities, direct bereikbaar vanuit de editor.
+- Verbeterde spellingresponsiviteit, privacyveilige controles en doorlopende stabiliteits- en toegankelijkheidsverbeteringen.
+- Uitgebreide regressietests en Windows-buildcontrole vóór publicatie.
+
 ## 1.4.0-dev.39 — De laatste drie schroefjes
 
 - De prullenbak toont weer de werkelijke verwijderdatum, ook zonder volgnummer in de mapnaam.
