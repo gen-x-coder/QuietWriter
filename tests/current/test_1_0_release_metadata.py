@@ -4,12 +4,12 @@ import quietwriter
 
 
 def test_stable_1_0_release_metadata():
-    assert quietwriter.__version__ == "1.4.0-dev.39"
+    assert quietwriter.__version__ == "1.4.0"
 
     changelog = Path("documents/CHANGELOG.md").read_text(encoding="utf-8-sig")
-    assert changelog.startswith("## 1.4.0-dev.39 —")
+    assert changelog.startswith("## 1.4.0 —")
 
-    notes = Path("documents/RELEASE_NOTES_1.4.0-dev.39.md")
+    notes = Path("documents/RELEASE_NOTES_1.4.0.md")
     assert notes.exists()
     assert "back-ups" in notes.read_text(encoding="utf-8").lower()
 
