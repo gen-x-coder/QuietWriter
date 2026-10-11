@@ -7,7 +7,7 @@ Deze roadmap beschrijft alleen de actuele productrichting. Uitgebreide oude 1.0/
 
 ## 1. Waar we nu staan
 
-**QuietWriter 1.3.1** is de huidige publieke stabiele release. De actieve ontwikkellijn is **1.4.0-dev.39**. QuietWriter 1.3.0 is uitgebracht; nieuwe functies komen in 1.4.0.
+**QuietWriter 1.3.1** is de huidige publieke stabiele release. **QuietWriter 1.4.0** is gereed voor publicatie als pre-release. Nieuwe functies worden ontwikkeld op de afzonderlijke **1.5.0**-lijn; 1.4 blijft beperkt tot releasecorrecties.
 
 **dev.24–dev.28:** Planning, schrijfdoelen en kerneditor zijn afgerond en breed gereviewd. **dev.29:** Windows- en kleine-scherm-hardening op basis van echte laptoptests: boeklaadfeedback, undo bij menselijke typesnelheid, responsieve geometrie, expliciete Integriteit en rustigere technische UI.
 
@@ -269,7 +269,7 @@ Veilige diagnoseweergave zonder manuscriptinhoud, API-sleutels of gevoelige boek
 ## 8. Distributie en platforms
 
 ### Nu
-- 1.2.32 is de huidige publieke stabiele Windows-release;
+- 1.4.0 is de huidige releasekandidaat; totdat die wordt gepromoveerd blijft 1.3.1 de laatst gepubliceerde stabiele Windows-release;
 - exacte buildomgeving en SHA-256 van EXE/portable ZIP vastleggen;
 - exact dezelfde EXE controleren via Microsoft Security Intelligence en VirusTotal;
 - alleen bij daadwerkelijke false positives de betreffende AV-leveranciers benaderen;
