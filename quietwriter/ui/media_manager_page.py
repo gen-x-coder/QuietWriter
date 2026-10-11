@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QPushButton, QVBoxLayout, QWidget,
 )
 
+from .dialog_notices import notice_information, notice_warning
 from ..i18n import tr
 from ..media.manager import MediaCleanupError, MediaManager
 from ..revisions import ExternalModificationError
@@ -254,7 +255,7 @@ class MediaManagerPage(QWidget):
             )
             self.book = latest
             self.refresh()
-            QMessageBox.information(
+            notice_information(
                 self,
                 tr('media_manager.external_title', 'Boek extern gewijzigd'),
                 tr(
@@ -263,7 +264,7 @@ class MediaManagerPage(QWidget):
                 ),
             )
         except Exception as reload_error:
-            QMessageBox.warning(
+            notice_warning(
                 self,
                 tr('media_manager.external_title', 'Boek extern gewijzigd'),
                 tr(
@@ -296,7 +297,7 @@ class MediaManagerPage(QWidget):
             self._resolve_external_change(exc)
             return
         except Exception as exc:
-            QMessageBox.warning(
+            notice_warning(
                 self,
                 tr('media_manager.cleanup_title', 'Ongebruikte media opruimen'),
                 tr('media_manager.cleanup_error', 'Opruimen is niet uitgevoerd.\n\n{error}', error=exc),
@@ -305,7 +306,7 @@ class MediaManagerPage(QWidget):
             return
 
         if result.leftover_files:
-            QMessageBox.warning(
+            notice_warning(
                 self,
                 tr('media_manager.cleanup_title', 'Ongebruikte media opruimen'),
                 tr(

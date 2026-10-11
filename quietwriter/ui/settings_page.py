@@ -1,5 +1,6 @@
 
 from pathlib import Path
+from datetime import datetime
 from PySide6.QtCore import Qt, QSettings, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
@@ -21,6 +22,11 @@ from ..manuscript_markup import ManuscriptStyle
 from .dialogs import confirm
 from .form_controls import QuietComboBox, QuietSpinBox
 from .about_page import AboutPage
+from .backup_worker import BackupWorker
+from ..automatic_backups import BackupError, validate_backup_root
+
+
+from .dialog_notices import _notice as _translated_notice
 
 
 class WrappedHeightLabel(QLabel):
@@ -195,6 +201,75 @@ class SettingsPage(QWidget):
         gl.addStretch(1)
         self._add_settings_category(nav_lay, tr('settings.general', 'Algemeen'), general)
 
+        # Back-ups are opt-in. Manual exports run in a worker, not the GUI thread.
+        backups, bl = self._make_settings_page(
+            tr('settings.backup.page', 'Back-ups'),
+            tr('settings.backup.intro', 'Bewaar een extra kopie van je boeken buiten je werkmap. QuietWriter maakt voor elk boek een eigen map aan. Je kunt hier ook een eerdere kopie terugzetten; een bestaand boek wordt nooit zomaar vervangen.')
+        )
+        backup_location_row = QWidget()
+        backup_location_layout = QHBoxLayout(backup_location_row)
+        backup_location_layout.setContentsMargins(0, 0, 0, 0)
+        self.backup_path = QLineEdit(str(settings.value('backup/path', '') or ''))
+        self.backup_path.setPlaceholderText(tr('settings.backup.choose_path', 'Kies een map buiten je werkmap'))
+        self.backup_path.setReadOnly(True)
+        self.backup_path.setMinimumWidth(400)
+        self.backup_path.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        backup_location_layout.addWidget(self.backup_path, 1)
+        browse_backup = QPushButton(tr('common.browse', 'Bladeren…'))
+        browse_backup.setObjectName('secondaryButton')
+        browse_backup.clicked.connect(self._choose_backup_path)
+        backup_location_layout.addWidget(browse_backup)
+        self._add_settings_field(bl, tr('settings.backup.location', 'Back-upmap'), backup_location_row,
+            tr('settings.backup.location_help', 'Bewaar back-ups op een andere plek dan je boeken. Herstellen kan via Boek importeren.'))
+        self._add_settings_section(bl, tr('settings.backup.automatic_section', 'Automatische boekback-ups'))
+        self.backup_enabled = SettingsBooleanChoice(settings.value('backup/enabled', False, bool),
+            tr('settings.backup.off', 'Uit'), tr('settings.backup.on', 'Aan'))
+        
+        self._add_settings_field(bl, tr('settings.backup.enable', 'Automatisch back-uppen'), self.backup_enabled,
+            tr('settings.backup.enable_help', 'Optioneel: maximaal één back-up per gewijzigd boek per 24 uur, zolang QuietWriter openstaat.'))
+        self._add_settings_section(bl, tr('settings.backup.manual_section', 'Handmatige boekback-ups'))
+        self.backup_book = QuietComboBox()
+        self._add_settings_field(bl, tr('settings.backup.book', 'Boek voor back-up of herstel'), self.backup_book)
+        self.backup_now = QPushButton(tr('settings.backup.now', 'Nu een back-up maken'))
+        self.backup_now.setObjectName('secondaryButton')
+        self.backup_now.clicked.connect(self._start_manual_backup)
+        self._add_settings_field(bl, tr('settings.backup.manual', 'Handmatige back-up'), self.backup_now,
+            tr('settings.backup.manual_help', 'Kies een boek en maak meteen een veilige kopie. Schrijven kan tijdens het kopiëren doorgaan.'))
+        self.backup_status = WrappedHeightLabel('')
+        self.backup_status.setMinimumWidth(360)
+        self.backup_status.setMinimumHeight(42)
+        self.backup_status.setObjectName('muted')
+        self._add_settings_field(bl, tr('settings.backup.status', 'Laatste back-up'), self.backup_status)
+        restore_row = QWidget()
+        restore_layout = QHBoxLayout(restore_row)
+        restore_layout.setContentsMargins(0, 0, 0, 0)
+        self.backup_restore_choices = QuietComboBox()
+        self.backup_restore_choices.setMinimumWidth(330)
+        self.backup_restore_choices.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        restore_layout.addWidget(self.backup_restore_choices, 3)
+        self.backup_restore = QPushButton(tr('settings.backup.restore_selected', 'Terugzetten'))
+        self.backup_restore.setObjectName('secondaryButton')
+        self.backup_restore.clicked.connect(self._restore_selected_backup)
+        restore_layout.addWidget(self.backup_restore)
+        self.backup_restore_manual = QPushButton(tr('settings.backup.choose_file', 'Handmatig kiezen…'))
+        self.backup_restore_manual.setObjectName('secondaryButton')
+        self.backup_restore_manual.clicked.connect(self._restore_backup)
+        restore_layout.addWidget(self.backup_restore_manual)
+        self._add_settings_field(bl, tr('settings.backup.restore_label', 'Herstellen'), restore_row,
+            tr('settings.backup.restore_help', 'Kies een back-up op datum of selecteer zelf een bestand. Een bestaand boek wordt nooit ongemerkt vervangen.'))
+        self.backup_enabled.toggled.connect(self._update_backup_controls)
+        self.backup_path.textChanged.connect(self._update_backup_status)
+        self.backup_book.currentIndexChanged.connect(self._update_backup_status)
+        self.backup_book.currentIndexChanged.connect(self._update_backup_controls)
+        self._backup_worker = None
+        self._refresh_backup_books()
+        self._update_backup_status()
+
+        self._update_backup_controls()
+        bl.addStretch(1)
+        self._add_settings_category(nav_lay, tr('settings.backup.page', 'Back-ups'), backups)
+
+
         # Uiterlijk
         appearance, al = self._make_settings_page(
             tr('settings.appearance', 'Uiterlijk'),
@@ -356,7 +431,7 @@ class SettingsPage(QWidget):
         self._add_settings_field(spl, tr('settings.spelling.language', 'Taal'), self.spell_language,
             tr('settings.spelling.language_help', 'Kies de taal voor de spellingscontrole.'))
         self._add_settings_field(spl, tr('settings.spelling.dictionary_choice', 'Woordenboek'), self.spell_dictionary_source,
-            tr('settings.spelling.dictionary_choice_help', 'Kies welk gevonden woordenboek QuietWriter voor deze taal gebruikt. Zo kun je bijvoorbeeld wisselen tussen Meegeleverd, ONLYOFFICE, LibreOffice, OpenOffice of een zelf toegevoegd woordenboek.'))
+            tr('settings.spelling.dictionary_choice_help', 'Kies welk gevonden woordenboek QuietWriter voor deze taal gebruikt.'))
 
         self._add_settings_section(spl, tr('settings.section.dictionaries', 'Woordenboeken'))
         self.dictionary_info = WrappedHeightLabel(''); self.dictionary_info.setObjectName('muted')
@@ -382,10 +457,7 @@ class SettingsPage(QWidget):
 
         self._populate_models()
         self.update_sync_warning()
-        self.refresh_dictionaries(
-            preserve_locale=str(settings.value('spell_language', 'nl_NL') or 'nl_NL'),
-            preserve_source=str(settings.value('spell_dictionary_source', '') or ''),
-        )
+        self.refresh_dictionaries(preserve_locale=str(settings.value('spell_language', 'nl_NL') or 'nl_NL'), preserve_source=str(settings.value('spell_dictionary_source', '') or ''))
 
         # Eén vaste actie onderaan. De knop is alleen actief wanneer de formuliervelden
         # afwijken van de laatst opgeslagen instellingen.
@@ -612,6 +684,7 @@ class SettingsPage(QWidget):
             bool(self.guided_export.isChecked()),
             bool(self.auto_update_check.isChecked()),
             bool(self.writing_progress_enabled.isChecked()),
+            bool(self.backup_enabled.isChecked()), self.backup_path.text(),
             self.root.text(),
             self.cover_template.text(),
             bool(self.ai_enabled.isChecked()),
@@ -632,7 +705,7 @@ class SettingsPage(QWidget):
             self.language, self.theme, self.editor_font,
             self.editor_font_size, self.editor_text_width, self.manuscript_line_spacing,
             self.manuscript_indent, self.manuscript_paragraph_spacing,
-            self.smart_quotes, self.planning_ghosts_enabled, self.advanced_options, self.guided_export, self.auto_update_check, self.writing_progress_enabled, self.root, self.cover_template,
+            self.smart_quotes, self.planning_ghosts_enabled, self.advanced_options, self.guided_export, self.auto_update_check, self.writing_progress_enabled, self.backup_enabled, self.backup_path, self.root, self.cover_template,
             self.ai_enabled, self.ai_provider, self.ollama, self.openrouter_key, self.model, self.openrouter_free_only,
             self.ai_disable_thinking, self.ai_quick_actions_expanded,
             self.spell_enabled, self.spell_language, self.spell_dictionary_source,
@@ -757,12 +830,12 @@ class SettingsPage(QWidget):
             return
         request_first_run_reset(self.settings, Path(workspace))
         if self.settings.status() != QSettings.Status.NoError:
-            QMessageBox.warning(
+            _translated_notice(QMessageBox.Warning, 
                 self, tr('settings.reset.error_title', 'Opnieuw instellen mislukt'),
                 tr('settings.reset.error_text', 'De instellingen konden niet betrouwbaar worden teruggezet. Je werkmap is niet aangepast.')
             )
             return
-        QMessageBox.information(
+        _translated_notice(QMessageBox.Information, 
             self, tr('settings.reset.ready_title', 'Opnieuw instellen voorbereid'),
             tr('settings.reset.ready_text', 'QuietWriter wordt nu afgesloten. Bij de volgende start begint de setup opnieuw. Je werkmap met verhalen blijft op dezelfde plaats staan.')
         )
@@ -779,7 +852,7 @@ class SettingsPage(QWidget):
     def _dictionary_source_label(self, source: str) -> str:
         labels = {
             'Werkmap': tr('settings.spelling.source_workspace', 'Zelf toegevoegd'),
-            'Meegeleverd': tr('settings.spelling.source_bundled', 'Meegeleverd'),
+            'Meegeleverd': tr('settings.spelling.source_bundled', 'OpenTaal (meegeleverd)'),
         }
         return labels.get(source, source)
 
@@ -857,12 +930,12 @@ class SettingsPage(QWidget):
         source = self.spell_dictionary_source.currentData()
         entry = self.dictionary_catalog.get(locale, source) if locale else None
         if not entry or entry.source != 'Werkmap':
-            QMessageBox.information(self, tr('settings.spelling.remove_title', 'Woordenboek verwijderen'), tr('settings.spelling.remove_info', 'Alleen woordenboeken die je zelf aan QuietWriter hebt toegevoegd kunnen hier worden verwijderd. Woordenboeken van Office-programma’s blijven onaangeroerd.'))
+            _translated_notice(QMessageBox.Information, self, tr('settings.spelling.remove_title', 'Woordenboek verwijderen'), tr('settings.spelling.remove_info', 'Alleen woordenboeken die je zelf aan QuietWriter hebt toegevoegd kunnen hier worden verwijderd. Woordenboeken van Office-programma’s blijven onaangeroerd.'))
             return
         if not confirm(self, tr('settings.spelling.remove_title', 'Woordenboek verwijderen'), tr('settings.spelling.remove_confirm', 'Wil je “{label}” uit de QuietWriter-werkmap verwijderen?', label=entry.label)):
             return
         if not self.dictionary_catalog.remove_custom(locale):
-            QMessageBox.warning(self, tr('settings.spelling.remove_title', 'Woordenboek verwijderen'), tr('settings.spelling.remove_failed', 'Het woordenboek kon niet worden verwijderd.'))
+            _translated_notice(QMessageBox.Warning, self, tr('settings.spelling.remove_title', 'Woordenboek verwijderen'), tr('settings.spelling.remove_failed', 'Het woordenboek kon niet worden verwijderd.'))
         self.refresh_dictionaries()
 
     def open_dictionary_download(self):
@@ -1065,7 +1138,7 @@ class SettingsPage(QWidget):
         except Exception as exc:
             self.ai_model_status.setText(tr('settings.ai.fetch_failed_short', 'Modellen ophalen mislukt'))
             self.ai_model_status.show()
-            QMessageBox.warning(self, 'AI', tr('settings.ai.fetch_failed', 'Modellen ophalen mislukt:\n\n{error}', error=exc))
+            _translated_notice(QMessageBox.Warning, self, 'AI', tr('settings.ai.fetch_failed', 'Modellen ophalen mislukt:\n\n{error}', error=exc))
         finally:
             self.ai_refresh_button.setEnabled(bool(self.ai_enabled.isChecked()))
 
@@ -1093,7 +1166,271 @@ class SettingsPage(QWidget):
         self.save_feedback.raise_()
         self._save_feedback_timer.start()
 
+    def _update_backup_controls(self, *_):
+        # The toggle controls automatic scheduling only. Manual backups and
+        # recovery remain available regardless of this setting.
+        busy = self._backup_worker is not None and self._backup_worker.isRunning()
+        self.backup_now.setEnabled(not busy and self.backup_book.currentData() is not None)
+
+    def _visible_backup_books(self):
+        books = self.main.library.list_books()
+        if self.main.start.demo_mode_enabled():
+            # Fail closed if the canonical shelf configuration is unavailable.
+            ids = self.main.library.shelves.visible_book_ids(
+                [book.id for book in books], demo_mode=True
+            )
+            books = [book for book in books if book.id in ids]
+        return sorted(books, key=lambda b: b.title.casefold())
+
+    def _refresh_backup_books(self):
+        current = self.backup_book.currentData() if self.backup_book.count() else None
+        self.backup_book.blockSignals(True)
+        self.backup_book.clear()
+        for book in self._visible_backup_books():
+            self.backup_book.addItem(book.title, book.id)
+        index = self.backup_book.findData(current)
+        self.backup_book.setCurrentIndex(index if index >= 0 else -1)
+        self.backup_book.blockSignals(False)
+        self._update_backup_controls()
+        self._update_backup_status()
+
+    def _refresh_restore_choices(self):
+        # Only show backups belonging to the currently visible, selected book.
+        current = self.backup_restore_choices.currentData()
+        self.backup_restore_choices.blockSignals(True)
+        self.backup_restore_choices.clear()
+        root = self.backup_path.text().strip()
+        bid = self.backup_book.currentData()
+        if root and bid and any(b.id == bid for b in self._visible_backup_books()):
+            folder = Path(root).expanduser() / 'QuietWriter' / str(bid)
+            try:
+                entries = sorted(folder.glob('*.qwbook'), key=lambda p: p.stat().st_mtime, reverse=True) if folder.is_dir() else []
+                for path in entries:
+                    stamp = datetime.fromtimestamp(path.stat().st_mtime).strftime('%d-%m-%Y %H:%M:%S')
+                    kind = tr('settings.backup.kind_auto', 'Automatisch') if path.name.startswith('auto_') else tr('settings.backup.kind_manual', 'Handmatig')
+                    self.backup_restore_choices.addItem(f'{stamp} · {kind}', str(path))
+            except OSError:
+                self.backup_restore_choices.clear()
+        if not self.backup_restore_choices.count():
+            self.backup_restore_choices.addItem(
+                tr('settings.backup.choose_book_first', 'Kies eerst een boek')
+                if not bid else tr('settings.backup.no_choices', 'Geen back-ups voor dit boek'), None)
+        ix = self.backup_restore_choices.findData(current) if current else -1
+        self.backup_restore_choices.setCurrentIndex(ix if ix >= 0 else 0)
+        self.backup_restore_choices.blockSignals(False)
+        self.backup_restore.setEnabled(self.backup_restore_choices.currentData() is not None)
+
+    def _update_backup_status(self):
+        from ..backup_schedule import latest_backup
+        self._refresh_restore_choices()
+        root = self.backup_path.text().strip()
+        bid = self.backup_book.currentData()
+        if not root or not bid or not any(b.id == bid for b in self._visible_backup_books()):
+            self.backup_status.setText(tr('settings.backup.select_book', 'Kies een boek om de laatste back-up te bekijken.'))
+            self.backup_status.sync_height()
+            return
+        try:
+            latest = latest_backup(Path(root), str(bid))
+            if latest is None:
+                message = tr('settings.backup.none', 'Nog geen back-up gevonden.')
+            else:
+                from datetime import datetime
+                stamp = datetime.fromtimestamp(latest.stat().st_mtime).strftime('%d-%m-%Y %H:%M')
+                message = tr('settings.backup.last', 'Nieuwste back-upbestand: {date}', date=stamp)
+        except OSError:
+            message = tr('settings.backup.unavailable', 'Back-upmap niet bereikbaar.')
+        error = str(self.settings.value(f'backup/error/{bid}', '') or '').strip()
+        if error:
+            message += '\n' + tr('settings.backup.last_error', 'Laatste mislukte poging: {error}', error=error)
+        self.backup_status.setText(message)
+        self.backup_status.sync_height()
+        self.backup_status.setMinimumHeight(max(48, self.backup_status.minimumHeight()))
+
+    def _restore_selected_backup(self):
+        path = self.backup_restore_choices.currentData()
+        bid = self.backup_book.currentData()
+        if not path or not bid or not any(b.id == bid for b in self._visible_backup_books()):
+            return
+        # Check the selected file still belongs to this book's backup folder.
+        folder = Path(self.backup_path.text().strip()).expanduser() / 'QuietWriter' / str(bid)
+        candidate = Path(path)
+        try:
+            if candidate.parent.resolve() != folder.resolve() or not candidate.is_file():
+                self._update_backup_status()
+                return
+        except OSError:
+            self._update_backup_status()
+            return
+        self._import_or_replace_backup(candidate, expected_id=str(bid))
+        self._refresh_backup_books()
+        self._update_backup_status()
+
+    def _restore_backup(self):
+        root = self.backup_path.text().strip()
+        book_id = self.backup_book.currentData()
+        if book_id not in {book.id for book in self._visible_backup_books()}:
+            book_id = None
+        # Without a selected book, begin at the configured backup root,
+        # not at the user's home folder.
+        initial = Path(root).expanduser() if root else Path.home()
+        if root and book_id:
+            folder = Path(root).expanduser() / 'QuietWriter' / str(book_id)
+            if folder.is_dir():
+                initial = folder
+        if not initial.is_dir():
+            initial = next((p for p in (initial, *initial.parents) if p.is_dir()), Path.home())
+        path, _ = QFileDialog.getOpenFileName(self,
+            tr('settings.backup.restore', 'Een back-up terugzetten…'), str(initial),
+            tr('settings.backup.restore_filter', 'QuietWriter-back-up (*.qwbook)'))
+        if not path:
+            return
+        self._import_or_replace_backup(Path(path))
+        self._refresh_backup_books()
+        self._update_backup_status()
+
+    def _import_or_replace_backup(self, source, *, expected_id=None):
+        """Use ordinary import for new identities, deliberate replacement for existing books."""
+        from ..backup_restore import backup_identity, replace_existing_book, RestoreError
+        from ..qwbook_io import QwBookError
+        source = Path(source)
+        try:
+            book_id, title = backup_identity(source)
+            if expected_id is not None and book_id != expected_id:
+                raise RestoreError(tr('settings.backup.wrong_book', 'Deze back-up hoort bij een ander boek.'))
+            matches = [book for book in self.main.library.list_books() if book.id == book_id]
+            if not matches:
+                self.main.import_book(str(source))
+                return
+            book = matches[0]
+            # A manually chosen archive must not reveal or modify a private book in Demo mode.
+            if book_id not in {b.id for b in self._visible_backup_books()}:
+                raise RestoreError(tr('settings.backup.hidden_book', 'Dit boek is in Presentatiemodus niet beschikbaar.'))
+            active = self.main.active_book()
+            if active is not None and active.id == book_id:
+                raise RestoreError(tr('settings.backup.close_book', 'Sluit dit boek eerst voordat je het terugzet.'))
+            if self._backup_worker is not None and self._backup_worker.isRunning():
+                raise RestoreError(tr('settings.backup.busy', 'Wacht tot de huidige back-up is afgerond.'))
+            other = getattr(self.main, '_automatic_backup_worker', None)
+            if other is not None and other.isRunning():
+                raise RestoreError(tr('settings.backup.busy', 'Wacht tot de huidige back-up is afgerond.'))
+            first = QMessageBox(self)
+            first.setIcon(QMessageBox.Warning)
+            first.setWindowTitle(tr('settings.backup.replace_title', 'Dit boek bestaat al'))
+            first.setText(tr('settings.backup.replace_intro', 'Het boek “{title}” staat al in de Boekenkast. Wil je het bestaande boek vervangen door deze back-up?', title=book.title))
+            first.addButton(tr('settings.backup.cancel', 'Annuleren'), QMessageBox.RejectRole)
+            forward = first.addButton(tr('settings.backup.continue', 'Verder'), QMessageBox.AcceptRole)
+            first.exec()
+            if first.clickedButton() is not forward:
+                return
+            stamp = datetime.fromtimestamp(source.stat().st_mtime).strftime('%d-%m-%Y %H:%M')
+            final = QMessageBox(self)
+            final.setIcon(QMessageBox.Warning)
+            final.setWindowTitle(tr('settings.backup.confirm_title', 'Weet je het zeker?'))
+            final.setText(tr('settings.backup.confirm_body', 'Je gaat “{title}” vervangen door de back-up van {date}. Nieuwe wijzigingen verdwijnen uit je actieve boek. QuietWriter maakt eerst een veiligheidskopie van je huidige boek.', title=book.title, date=stamp))
+            final.addButton(tr('settings.backup.cancel', 'Annuleren'), QMessageBox.RejectRole)
+            agree = final.addButton(tr('settings.backup.confirm_replace', 'Ja, boek vervangen'), QMessageBox.DestructiveRole)
+            final.exec()
+            if final.clickedButton() is not agree:
+                return
+            root = self.backup_path.text().strip()
+            if not root:
+                raise RestoreError(tr('settings.backup.need_folder', 'Kies eerst een back-upmap voor de veiligheidskopie.'))
+            restored, safety = replace_existing_book(self.main.library, source, Path(root), expected_id=book_id)
+            self.main.start.refresh()
+            done = QMessageBox(self)
+            done.setIcon(QMessageBox.Information)
+            done.setWindowTitle(tr('settings.backup.done_title', 'Boek teruggezet'))
+            done.setText(tr('settings.backup.done_body', '“{title}” is teruggezet. De eerdere versie is veilig bewaard in je back-upmap.', title=restored.title))
+            done.addButton(tr('common.close', 'Sluiten'), QMessageBox.AcceptRole)
+            done.exec()
+        except (RestoreError, QwBookError, OSError) as exc:
+            dialog = QMessageBox(self)
+            dialog.setIcon(QMessageBox.Warning)
+            dialog.setWindowTitle(tr('settings.backup.restore_error_title', 'Terugzetten niet gelukt'))
+            dialog.setText(str(exc))
+            dialog.addButton(tr('common.close', 'Sluiten'), QMessageBox.AcceptRole)
+            dialog.exec()
+
+    def _choose_backup_path(self):
+        selected = QFileDialog.getExistingDirectory(self, tr('settings.backup.location', 'Back-upmap'),
+            self.backup_path.text() or str(Path.home()))
+        if selected:
+            self.backup_path.setText(selected)
+            self.backup_path.setCursorPosition(0)
+            self._update_backup_status()
+
+    def _start_manual_backup(self):
+        if self._backup_worker is not None and self._backup_worker.isRunning():
+            return
+        automatic = getattr(self.main, '_automatic_backup_worker', None)
+        if automatic is not None and automatic.isRunning():
+            _translated_notice(QMessageBox.Information, self, tr('settings.backup.section', 'Boekback-ups'),
+                tr('settings.backup.busy_automatic', 'QuietWriter maakt al een back-up. Probeer het daarna opnieuw.'))
+            return
+        destination = self.backup_path.text().strip()
+        book_id = self.backup_book.currentData()
+        if not destination or not book_id:
+            _translated_notice(QMessageBox.Information, self, tr('settings.backup.section', 'Boekback-ups'),
+                tr('settings.backup.missing', 'Kies eerst een boek en een back-upmap.'))
+            return
+        try:
+            validate_backup_root(self.main.library.root, Path(destination))
+        except BackupError as exc:
+            _translated_notice(QMessageBox.Warning, self, tr('settings.backup.section', 'Boekback-ups'), str(exc))
+            return
+        # The editor may still have unsaved characters; commit them on the GUI thread.
+        active = getattr(self.main.editor_page, 'book', None)
+        if active is not None and active.id == book_id:
+            try:
+                if self.main.editor_page.save() is False:
+                    raise BackupError('Sla je boek eerst op en probeer het opnieuw.')
+            except Exception:
+                _translated_notice(QMessageBox.Warning, self, tr('settings.backup.section', 'Boekback-ups'),
+                    tr('settings.backup.save_first', 'Het boek kon niet worden opgeslagen. De back-up is niet gestart.'))
+                return
+        book = next((b for b in self._visible_backup_books() if b.id == book_id), None)
+        if book is None:
+            _translated_notice(QMessageBox.Warning, self, tr('settings.backup.section', 'Boekback-ups'),
+                tr('settings.backup.book_missing', 'Dit boek is niet meer beschikbaar.'))
+            return
+        # A backup must never accept external edits as the editor's new baseline.
+        self.backup_now.setEnabled(False)
+        self.backup_now.setText(tr('settings.backup.button_busy', 'Back-up maken…'))
+        worker = BackupWorker(self.main.library, book, destination, self.main)
+        self._backup_worker = worker
+        worker.succeeded.connect(lambda path, bid=str(book_id): self._backup_succeeded(bid))
+        worker.succeeded.connect(lambda path: _translated_notice(QMessageBox.Information, self,
+            tr('settings.backup.section', 'Boekback-ups'),
+            tr('settings.backup.complete_simple', 'De back-up is opgeslagen in je back-upmap.')))
+        worker.failed.connect(lambda error, bid=str(book_id): self._backup_failed(bid, error))
+        worker.failed.connect(lambda error: _translated_notice(QMessageBox.Warning, self,
+            tr('settings.backup.section', 'Boekback-ups'), error))
+        worker.finished.connect(self._backup_finished)
+        worker.start()
+
+    def _backup_succeeded(self, book_id):
+        self.settings.setValue(f'backup/error/{book_id}', '')
+        self._update_backup_status()
+
+    def _backup_failed(self, book_id, error):
+        self.settings.setValue(f'backup/error/{book_id}', str(error))
+        self._update_backup_status()
+
+    def _backup_finished(self):
+        self.backup_now.setEnabled(self.backup_book.currentData() is not None)
+        self.backup_now.setText(tr('settings.backup.now', 'Nu een back-up maken'))
+        worker = self._backup_worker
+        self._backup_worker = None
+        if worker is not None:
+            worker.deleteLater()
+
     def save_settings(self):
+        if self.backup_path.text().strip():
+            try:
+                validate_backup_root(self.main.library.root, Path(self.backup_path.text().strip()))
+            except BackupError as exc:
+                _translated_notice(QMessageBox.Warning, self, tr('settings.backup.section', 'Boekback-ups'), str(exc))
+                return
         default_workspace = Path.home() / APP_NAME
         old_root = str(normalize_workspace_path(
             self.settings.value('workspace', str(default_workspace)), default_workspace
@@ -1133,6 +1470,8 @@ class SettingsPage(QWidget):
             'export/guided': self.guided_export.isChecked(),
             'auto_update_check': self.auto_update_check.isChecked(),
             'writing_progress_enabled': self.writing_progress_enabled.isChecked(),
+            'backup/enabled': self.backup_enabled.isChecked(),
+            'backup/path': self.backup_path.text().strip(),
             'autosave': True,
             'workspace': normalized_workspace,
             'ai_enabled': self.ai_enabled.isChecked(),
@@ -1171,7 +1510,7 @@ class SettingsPage(QWidget):
             # is that the running QSettings map is no longer half-new.
             self.settings.sync()
             self.restore_preview()
-            QMessageBox.warning(self, tr('settings.save_error_title', 'Instellingen opslaan'), tr('settings.save_error', 'De instellingen konden niet betrouwbaar naar schijf worden geschreven. Controleer de toegangsrechten en probeer het opnieuw.'))
+            _translated_notice(QMessageBox.Warning, self, tr('settings.save_error_title', 'Instellingen opslaan'), tr('settings.save_error', 'De instellingen konden niet betrouwbaar naar schijf worden geschreven. Controleer de toegangsrechten en probeer het opnieuw.'))
             self._update_dirty_state()
             return
 
@@ -1190,6 +1529,7 @@ class SettingsPage(QWidget):
         self._show_saved_feedback(language_restart=(new_language != old_language))
 
     def begin_session(self):
+        self._refresh_backup_books()
         self.original_theme = self.settings.value('theme', 'Helder')
         self.original_typography = WritingTypography.from_settings(self.settings)
         self.original_editor_font = self.original_typography.family
@@ -1212,6 +1552,10 @@ class SettingsPage(QWidget):
         self.guided_export.setChecked(self.settings.value('export/guided', True, bool))
         self.auto_update_check.setChecked(self.settings.value('auto_update_check', False, bool))
         self.writing_progress_enabled.setChecked(self.settings.value('writing_progress_enabled', False, bool))
+        self.backup_enabled.setChecked(self.settings.value('backup/enabled', False, bool))
+        self.backup_path.setText(str(self.settings.value('backup/path', '') or ''))
+        self.backup_path.setCursorPosition(0)
+        self._refresh_backup_books()
         language_value = str(self.settings.value('language', 'nl') or 'nl')
         language_index = self.language.findData(language_value)
         self.language.setCurrentIndex(language_index if language_index >= 0 else 0)
@@ -1237,10 +1581,7 @@ class SettingsPage(QWidget):
         self._populate_models(provider)
         self._update_ai_controls()
         self.spell_enabled.setChecked(self.settings.value('spell_enabled', True, bool))
-        self.refresh_dictionaries(
-            preserve_locale=str(self.settings.value('spell_language', 'nl_NL') or 'nl_NL'),
-            preserve_source=str(self.settings.value('spell_dictionary_source', '') or ''),
-        )
+        self.refresh_dictionaries(preserve_locale=str(self.settings.value('spell_language', 'nl_NL') or 'nl_NL'), preserve_source=str(self.settings.value('spell_dictionary_source', '') or ''))
         self.update_sync_warning()
         self._saved_form_state = self._current_form_state()
         self._update_dirty_state()

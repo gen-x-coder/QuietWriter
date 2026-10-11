@@ -165,11 +165,7 @@ class DictionaryCatalog:
             self._scan_root(root, source)
 
     def entries(self, locale: str | None = None) -> list[DictionaryEntry]:
-        """Return all discovered dictionaries, optionally for one locale.
-
-        Multiple providers may expose the same locale. Keep them all so the
-        writer can choose the implementation that behaves best on their system.
-        """
+        """Return all discovered dictionaries, optionally for one locale."""
         wanted = normalize_locale(locale) if locale else ''
         values = [entry for entry in self._entries if not wanted or entry.locale == wanted]
         priority = {'Werkmap': 0, 'Meegeleverd': 1, 'ONLYOFFICE': 2, 'LibreOffice': 3, 'OpenOffice': 4, 'Extern': 5}
@@ -179,12 +175,7 @@ class DictionaryCatalog:
         )
 
     def get(self, locale: str, source: str | None = None) -> DictionaryEntry | None:
-        """Resolve one dictionary while retaining the legacy preferred fallback.
-
-        The source argument is an explicit user preference. When that provider
-        is no longer available we fall back to the historic priority order
-        rather than disabling spelling entirely.
-        """
+        """Resolve one dictionary and fall back safely if a saved provider is absent."""
         locale = normalize_locale(locale)
         matches = self.entries(locale)
         if source:

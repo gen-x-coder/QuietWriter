@@ -8,11 +8,12 @@ from PySide6 import __version__ as pyside_version
 from PySide6.QtCore import Qt, QUrl, qVersion
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QScrollArea,
+    QApplication, QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QScrollArea,
     QVBoxLayout, QWidget,
 )
 
 from .. import APP_NAME, __version__
+from ..diagnostics import diagnostic_summary
 from ..font_catalog import bundled_fonts
 from ..i18n import tr
 from ..icon_theme import themed_svg_pixmap
@@ -153,6 +154,29 @@ class AboutPage(QWidget):
         runtime.setObjectName('aboutRuntime')
         layout.addWidget(runtime)
 
+        # An explicit allowlist of harmless runtime facts, never logs, paths or book data.
+        diagnostics_title = QLabel(tr('about.diagnostics.title', 'Problemen melden'))
+        diagnostics_title.setObjectName('settingsFieldLabel')
+        layout.addWidget(diagnostics_title)
+        diagnostics_help = QLabel(tr('about.diagnostics.help',
+            'Kopieer de technische informatie als je hulp nodig hebt. Je boeken, mappen en AI-sleutels worden niet meegenomen.'))
+        diagnostics_help.setObjectName('muted')
+        diagnostics_help.setWordWrap(True)
+        diagnostics_help.setMaximumWidth(790)
+        layout.addWidget(diagnostics_help)
+        self.diagnostics_text = QPlainTextEdit()
+        self.diagnostics_text.setObjectName('diagnosticsSummary')
+        self.diagnostics_text.setReadOnly(True)
+        self.diagnostics_text.setMaximumWidth(790)
+        self.diagnostics_text.setMinimumHeight(112)
+        self.diagnostics_text.setMaximumHeight(142)
+        self.diagnostics_text.setPlainText(diagnostic_summary(qt_version=qVersion(), pyside_version=pyside_version))
+        layout.addWidget(self.diagnostics_text)
+        copy_button = QPushButton(tr('about.diagnostics.copy', 'Informatie kopiëren'))
+        copy_button.setObjectName('secondaryButton')
+        copy_button.clicked.connect(self._copy_diagnostics)
+        layout.addWidget(copy_button, 0, Qt.AlignLeft)
+
         layout.addSpacing(10)
         product_license_heading = QLabel(tr('about.product_licenses', 'Licenties'))
         product_license_heading.setObjectName('settingsFieldLabel')
@@ -207,6 +231,9 @@ class AboutPage(QWidget):
             layout.addWidget(card)
 
         layout.addStretch(1)
+
+    def _copy_diagnostics(self):
+        QApplication.clipboard().setText(self.diagnostics_text.toPlainText())
 
     def refresh_branding(self, theme_name: str | None = None):
         self.wordmark.setPixmap(themed_svg_pixmap('quietwriter-wordmark', 360, theme_name=theme_name, colour_key='hero_text'))

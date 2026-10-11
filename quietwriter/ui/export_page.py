@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QRadioButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 )
 
+from .dialog_notices import notice_information, notice_warning, notice_critical
 from ..exporting import (
     ExportSettingsStore, TEMPLATES, build_export_document, run_preflight,
 )
@@ -373,13 +374,13 @@ class ExportPage(QWidget):
             )
             self.book = latest
             self.refresh()
-            QMessageBox.information(
+            notice_information(
                 self,
                 tr('export.external_title', 'Boek extern gewijzigd'),
                 tr('export.external_reloaded', 'Het boek is op een andere computer gewijzigd. De nieuwste versie is geladen. Kies je exportinstelling opnieuw.'),
             )
         except Exception as reload_error:
-            QMessageBox.warning(
+            notice_warning(
                 self,
                 tr('export.external_title', 'Boek extern gewijzigd'),
                 tr('export.external_reload_failed', 'De exportinstelling is niet opgeslagen en de nieuwste versie kon niet veilig worden geladen. Er is niets overschreven.\n\n{error}', error=reload_error),
@@ -397,7 +398,7 @@ class ExportPage(QWidget):
             self._resolve_external_change(exc)
             return False
         except (CorruptSourceError, BookBlockedError, StorageWriteError) as exc:
-            QMessageBox.warning(
+            notice_warning(
                 self,
                 tr('export.settings_save_title', 'Exportinstellingen niet opgeslagen'),
                 str(exc),
@@ -508,7 +509,7 @@ class ExportPage(QWidget):
             self._resolve_external_change(exc)
             return False
         except (CorruptSourceError, BookBlockedError, StorageWriteError) as exc:
-            QMessageBox.warning(self, tr('export.settings_save_title', 'Exportinstellingen niet opgeslagen'), str(exc))
+            notice_warning(self, tr('export.settings_save_title', 'Exportinstellingen niet opgeslagen'), str(exc))
             return False
 
     def run_export_flow(self, format_name: str, settings: dict, *, persist_before=None):
@@ -524,7 +525,7 @@ class ExportPage(QWidget):
         try:
             self.document = build_export_document(self.main.library, self.book)
         except Exception as exc:
-            QMessageBox.critical(self, tr('export.error.title', 'Exporteren'), tr('export.error.snapshot', 'De boeksnapshot kon niet veilig worden gemaakt.\n\n{error}', error=exc)); return None
+            notice_critical(self, tr('export.error.title', 'Exporteren'), tr('export.error.snapshot', 'De boeksnapshot kon niet veilig worden gemaakt.\n\n{error}', error=exc)); return None
         if persist_before is not None and not persist_before(): return None
         report = run_preflight(self.document, format_name, settings, self._package_summary(format_name))
         if not report.can_export: return None
@@ -534,7 +535,7 @@ class ExportPage(QWidget):
         try:
             result = run_export(self.main.library, self.book, self.document, format_name, settings, destination)
         except Exception as exc:
-            QMessageBox.critical(self, tr('export.error.title', 'Exporteren'), tr('export.error.failed', 'Exporteren is mislukt.\n\n{error}', error=exc)); return None
+            notice_critical(self, tr('export.error.title', 'Exporteren'), tr('export.error.failed', 'Exporteren is mislukt.\n\n{error}', error=exc)); return None
         self.last_output = result.path
         return result
 

@@ -1,11 +1,39 @@
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ..i18n import tr
 from ..document_view import text_for_language_tools
 from .panel_help import PanelHelp
+
+class _SuggestionSignals(QObject):
+    ready = Signal(int, object, str, object)
+
+
+class _SuggestionJob(QRunnable):
+    """Calculate proposals without holding up Qt's interface thread."""
+
+    def __init__(self, signals, request_id, dictionary, word):
+        super().__init__()
+        self.signals = signals
+        self.request_id = request_id
+        self.dictionary = dictionary
+        self.word = word
+        self.generation = getattr(dictionary, '_generation', 0)
+
+    def run(self):
+        try:
+            proposals = self.dictionary.suggest(self.word)
+        except Exception:
+            proposals = []
+        try:
+            self.signals.ready.emit(self.request_id, self.dictionary, self.word,
+                                    (self.generation, proposals))
+        except RuntimeError:
+            # The panel may have been destroyed while a suggestion was running.
+            pass
+
 
 class SuggestionButtons(QWidget):
     """Compact suggestion list: one real row per word, no scroll area."""
@@ -55,6 +83,11 @@ class SpellPanel(QWidget):
         self.rows = []
         self.index = 0
         self._rows_rev = -1
+        self._suggest_request = 0
+        self._suggest_pool = QThreadPool(self)
+        self._suggest_pool.setMaxThreadCount(1)
+        self._suggest_signals = _SuggestionSignals()
+        self._suggest_signals.ready.connect(self._suggestions_ready)
         lay = QVBoxLayout(self); lay.setContentsMargins(18,18,18,18); lay.setSpacing(10)
         self.panel_help = PanelHelp(editor_page.main.settings, 'spell', tr('spell.title','Spellingscontrole'), tr('panel_help.spell', 'Loop de onbekende woorden in dit hoofdstuk één voor één langs. Negeren slaat alleen deze plek over; Alles negeren geldt tot je QuietWriter sluit. Altijd negeren en Toevoegen aan woordenboek onthouden het woord blijvend.'))
         self.status = QLabel(''); self.status.setObjectName('muted'); self.status.setWordWrap(True)
@@ -72,7 +105,13 @@ class SpellPanel(QWidget):
         lay.addSpacing(8); lay.addStretch(1); lay.addLayout(buttons)
         self.refresh()
 
+    def closeEvent(self, event):
+        self._suggest_request += 1
+        self._suggest_pool.clear()
+        super().closeEvent(event)
+
     def refresh(self, *, select_in_editor: bool = True):
+        self._suggest_request += 1
         self._rows_rev = self.editor_page.editor.document().revision()
         d = self.editor_page.dictionary
         if not d.words:
@@ -106,7 +145,13 @@ class SpellPanel(QWidget):
         where = tr('spell.chapter_title', 'Hoofdstuktitel') if source == 'title' else tr('spell.chapter_text', 'Hoofdstuktekst')
         self.status.setText(tr('spell.position', '{index} van {total} · {where}', index=self.index+1, total=len(self.rows), where=where))
         self.word.setText(word)
-        self.suggestions.set_suggestions(self.editor_page.dictionary.suggest(word))
+        self._suggest_request += 1
+        self.suggestions.clear()
+        self.change_btn.setEnabled(False)
+        dictionary = self.editor_page.dictionary
+        job = _SuggestionJob(self._suggest_signals, self._suggest_request, dictionary, word)
+        self._suggest_pool.clear()  # Discard requests that have not started yet.
+        self._suggest_pool.start(job)
         self._configure_tab_order()
         if not select_in_editor:
             return
@@ -116,6 +161,25 @@ class SpellPanel(QWidget):
         else:
             cur=self.editor_page.editor.textCursor(); cur.setPosition(start); cur.setPosition(end,QTextCursor.KeepAnchor); self.editor_page.editor.setTextCursor(cur); self.editor_page.editor.ensureCursorVisible()
 
+
+    def _suggestions_ready(self, request_id, dictionary, word, payload):
+        # An older job may finish after the user moved to a different word,
+        # changed books or selected a different dictionary.
+        if request_id != self._suggest_request or dictionary is not self.editor_page.dictionary:
+            return
+        # The dictionary object is reused across source changes; object identity
+        # alone is not enough to reject an older worker result.
+        if isinstance(payload, tuple) and len(payload) == 2 and isinstance(payload[0], int):
+            generation, proposals = payload
+            if generation != getattr(dictionary, '_generation', 0):
+                return
+        else:
+            proposals = payload  # Compatibility with existing direct Qt tests.
+        if not self.rows or self.rows[self.index][1] != word:
+            return
+        self.suggestions.set_suggestions(proposals)
+        self.change_btn.setEnabled(bool(proposals))
+        self._configure_tab_order()
 
     def follow_editor_cursor(self):
         """Focus the misspelling under the caret without moving/selecting editor text."""

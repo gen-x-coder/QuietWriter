@@ -1,6 +1,8 @@
-name: tests
+﻿name: tests
 
 on:
+  push:
+    branches: [release/1.4.0]
   workflow_dispatch:
 
 permissions:
@@ -31,6 +33,7 @@ jobs:
       - name: Static undefined-name check
         run: python tools/check_undefined_names.py
       - name: Active suite
-        run: python tools/run_pytest_ci.py
+        run: python -m pytest
       - name: Qt runtime subset
-        run: python tools/run_pytest_ci.py -m qt
+        run: python -m pytest -m qt
+

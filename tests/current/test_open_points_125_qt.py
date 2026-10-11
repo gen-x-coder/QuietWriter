@@ -42,7 +42,7 @@ def test_ctrl_x_crossing_marker_is_blocked_on_real_qt_path(app, monkeypatch):
         opening = marker_ranges(source)[0]
         _select(ed, max(0, opening[0] - 2), opening[1] + 3)
         seen = []
-        monkeypatch.setattr(QMessageBox, 'information', lambda *a, **k: seen.append(True))
+        monkeypatch.setattr('quietwriter.ui.manuscript_editor.notice_information', lambda *a, **k: seen.append(True))
         QTest.keyClick(ed, Qt.Key_X, Qt.ControlModifier)
         app.processEvents()
         assert ed.source_text() == source
@@ -59,7 +59,7 @@ def test_ctrl_v_over_marker_is_blocked_on_real_qt_path(app, monkeypatch):
         _select(ed, max(0, opening[0] - 2), opening[1] + 3)
         QApplication.clipboard().setText('PLAK')
         seen = []
-        monkeypatch.setattr(QMessageBox, 'information', lambda *a, **k: seen.append(True))
+        monkeypatch.setattr('quietwriter.ui.manuscript_editor.notice_information', lambda *a, **k: seen.append(True))
         QTest.keyClick(ed, Qt.Key_V, Qt.ControlModifier)
         app.processEvents()
         assert ed.source_text() == source

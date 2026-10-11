@@ -106,6 +106,21 @@ class BookSearchIndex:
                 )
         self.conn.commit()
 
+    def update_chapter(self, book, chapter):
+        """Update only a saved chapter in the disposable FTS cache."""
+        try:
+            path = book.path / chapter.file
+            raw = path.read_text(encoding='utf-8', errors='replace') if path.exists() else ''
+            body = text_for_search(raw)
+            self.conn.execute('DELETE FROM chapters WHERE book_id=? AND chapter_id=?', (book.id, chapter.id))
+            self.conn.execute('INSERT INTO chapters(book_id,chapter_id,title,body) VALUES(?,?,?,?)',
+                              (book.id, chapter.id, chapter.title, body))
+            self.conn.commit()
+            return True
+        except (sqlite3.Error, OSError):
+            self._open_with_recovery()
+            return self.rebuild_book(book)
+
     def rebuild_book(self, book):
         try:
             self._rebuild_once(book)

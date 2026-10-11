@@ -2,6 +2,7 @@ from __future__ import annotations
 import codecs
 import difflib
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -33,9 +34,12 @@ class WordDictionary:
         self.hunspell = None
         self._known_cache: dict[str, bool] = {}
         self._suggest_cache: dict[str, tuple[str, ...]] = {}
-        self._suggest_deadline: float | None = None
+        self._suggest_local = threading.local()
+        self._generation = 0
+        self._suggest_deadline: float | None = None  # Compatibility for older tests.
 
     def _clear_caches(self):
+        self._generation += 1
         self._known_cache.clear(); self._suggest_cache.clear()
 
     def clear(self):
@@ -89,7 +93,7 @@ class WordDictionary:
         path = Path(path)
         lines = self._read_dic_lines(path)
         source = lines[1:] if lines and lines[0].strip().isdigit() else lines
-        self.words = {line.split('/', 1)[0].strip().lower() for line in source if line.split('/', 1)[0].strip()}
+        self.words = {line.split('/', 1)[0].strip().lower().replace('ĳ', 'ij').replace('Ĳ', 'ij') for line in source if line.split('/', 1)[0].strip()}
         self.path = path; self.hunspell = None
         aff = path.with_suffix('.aff')
         if HunspellDictionary is not None and aff.exists():
@@ -113,7 +117,7 @@ class WordDictionary:
 
         def edits(word, *args, **kwargs):
             for candidate in original(word, *args, **kwargs):
-                if self._suggest_deadline is not None and time.monotonic() > self._suggest_deadline:
+                if time.monotonic() > getattr(self._suggest_local, "deadline", float("inf")):
                     return
                 yield candidate
 
@@ -174,20 +178,35 @@ class WordDictionary:
 
     def suggest(self, word: str):
         key = word.lower()
-        if key in self._suggest_cache: return list(self._suggest_cache[key])
+        generation = self._generation
+        cached = self._suggest_cache.get(key)
+        if cached is not None:
+            return list(cached)
         out = []
-        if self.hunspell is not None:
-            self._suggest_deadline = time.monotonic() + SUGGEST_BUDGET_SECONDS
+        hunspell = self.hunspell
+        if hunspell is not None:
+            deadline = time.monotonic() + SUGGEST_BUDGET_SECONDS
+            # A separate deadline for each worker: a quick subsequent request
+            # must not accidentally remove another worker's timeout.
+            self._suggest_local.deadline = deadline
             try:
-                for value in self.hunspell.suggest(word):
+                for value in hunspell.suggest(word):
+                    if time.monotonic() > deadline + SUGGEST_BUDGET_SECONDS:
+                        break
+                    value = value.replace('ĳ', 'ij').replace('Ĳ', 'IJ')
                     if value not in out: out.append(value)
                     if len(out) >= 8: break
-            except Exception: out = []
-            finally: self._suggest_deadline = None
+            except Exception:
+                out = []
+            finally:
+                self._suggest_local.deadline = float("inf")
         if not out:
             pool = self.words | self.personal_words
             if pool: out = difflib.get_close_matches(key, pool, n=8, cutoff=.72)
-        self._suggest_cache[key] = tuple(out)
+        out = list(dict.fromkeys(value.replace('ĳ', 'ij').replace('Ĳ', 'IJ') for value in out))
+        # A dictionary switch invalidates work that started under the old data.
+        if generation == self._generation:
+            self._suggest_cache[key] = tuple(out)
         return list(out)
 
     def misspellings(self, text: str):

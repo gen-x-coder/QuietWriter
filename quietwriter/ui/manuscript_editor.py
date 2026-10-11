@@ -7,6 +7,7 @@ from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QFontMetricsF, 
                            QTextBlockFormat, QTextCharFormat, QTextCursor)
 from PySide6.QtWidgets import QApplication, QMenu, QTextEdit, QToolButton
 
+from .dialog_notices import notice_information
 from ..manuscript_markup import (ManuscriptStyle, apply_block_style, escape_literal_block_structure,
                                  escape_literal_space_prefix, escape_literal_text, escape_literal_typed_char,
                                  escape_ranges, prepare_markdown_insertion, selection_format_states, source_selection_as_markdown,
@@ -312,7 +313,7 @@ class ManuscriptEditor(QTextEdit):
 
     def _protected_image_message(self):
         from PySide6.QtWidgets import QMessageBox
-        QMessageBox.information(
+        notice_information(
             self,
             tr('image_block.protected_title', 'Beschermd afbeeldingsblok'),
             tr(
@@ -1224,7 +1225,7 @@ class ManuscriptEditor(QTextEdit):
 
     def _protected_open_point_message(self):
         from PySide6.QtWidgets import QMessageBox
-        QMessageBox.information(
+        notice_information(
             self,
             tr('open_points.protected_title', 'Open punt beschermd'),
             tr('open_points.protected_text', 'De technische markering van een open punt wordt door QuietWriter beheerd. Gebruik rechtsklik → Open punt afronden om de markering veilig te verwijderen.'),

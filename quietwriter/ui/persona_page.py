@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QMessageBox, QPushButton, QTextEdit, QVBoxLayout, QWidget
 )
 
+from .dialog_notices import notice_warning, notice_critical
 from ..i18n import tr
 from ..persona_profile import EXAMPLE_PERSONAS, SECTIONS, default_persona_markdown, empty_profile, parse_persona, render_persona
 from ..storage import CorruptSourceError, PersonaExternalModificationError
@@ -274,7 +275,7 @@ class PersonaPage(QWidget):
         except CorruptSourceError as exc:
             return self._preserve_local_after_source_problem(local_text, exc)
         except OSError as exc:
-            QMessageBox.critical(
+            notice_critical(
                 self,
                 tr('persona.save_error_title', 'Schrijverspersona'),
                 tr('persona.save_error', 'Opslaan mislukt:\n{error}').format(error=exc)
@@ -320,14 +321,14 @@ class PersonaPage(QWidget):
             self.reload(force=True)
             return True
         except PersonaExternalModificationError:
-            QMessageBox.warning(
+            notice_warning(
                 self,
                 tr('persona.conflict_changed_again_title', 'Schrijverspersona opnieuw gewijzigd'),
                 tr('persona.conflict_changed_again', 'Het bestand veranderde opnieuw terwijl het conflict werd opgelost. Er is niets overschreven. Probeer opnieuw.')
             )
             return False
         except Exception as exc:
-            QMessageBox.critical(
+            notice_critical(
                 self,
                 tr('persona.conflict_failed_title', 'Conflict niet opgelost'),
                 tr('persona.conflict_failed', 'Er is niets bewust overschreven.\n\n{error}').format(error=exc)
@@ -340,7 +341,7 @@ class PersonaPage(QWidget):
         try:
             recovery = self.library.create_persona_recovery(local_text, kind='conflict_local')
         except Exception as recovery_exc:
-            QMessageBox.critical(
+            notice_critical(
                 self,
                 tr('persona.recovery_failed_title', 'Schrijverspersona niet veiliggesteld'),
                 tr(
@@ -356,7 +357,7 @@ class PersonaPage(QWidget):
             'persona.recovery_saved_status',
             'Niet opgeslagen in schrijver.md; herstelkopie gemaakt.'
         ))
-        QMessageBox.warning(
+        notice_warning(
             self,
             tr('persona.recovery_saved_title', 'Schrijverspersona veiliggesteld'),
             tr(

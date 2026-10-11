@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from .dialog_notices import notice_information, notice_warning
 from .dialogs import confirm
 from ..i18n import tr
 
@@ -134,7 +135,7 @@ class TrashPage(QWidget):
     def restore_selected(self):
         entries = self.selected_entries()
         if not entries:
-            QMessageBox.information(
+            notice_information(
                 self, tr('trash.title', 'Prullenbak'),
                 tr('trash.select_first', 'Selecteer eerst één of meer boeken, hoofdstukken of fragmenten.'),
             )
@@ -163,7 +164,7 @@ class TrashPage(QWidget):
         self.main.start.refresh()
         self.refresh()
         if errors:
-            QMessageBox.warning(
+            notice_warning(
                 self,
                 tr('trash.restore_error_title', 'Herstellen'),
                 tr('trash.partial_restore_error', 'Niet alles kon worden hersteld:\n{errors}', errors='\n'.join(errors)),
@@ -172,7 +173,7 @@ class TrashPage(QWidget):
     def delete_selected(self):
         entries = self.selected_entries()
         if not entries:
-            QMessageBox.information(
+            notice_information(
                 self, tr('trash.title', 'Prullenbak'),
                 tr('trash.select_first', 'Selecteer eerst één of meer boeken, hoofdstukken of fragmenten.'),
             )
@@ -198,7 +199,7 @@ class TrashPage(QWidget):
                 errors.append(f"{entry.get('title') or path.name}: {exc}")
         self.refresh()
         if errors:
-            QMessageBox.warning(
+            notice_warning(
                 self,
                 tr('trash.delete_error_title', 'Definitief verwijderen'),
                 tr('trash.partial_delete_error', 'Niet alles kon definitief worden verwijderd:\n{errors}', errors='\n'.join(errors)),
@@ -216,7 +217,7 @@ class TrashPage(QWidget):
             for path, _fragment in self.main.darlings_page.store.list_trashed():
                 self.main.darlings_page.store.permanently_delete(path)
         except Exception as exc:
-            QMessageBox.warning(
+            notice_warning(
                 self,
                 tr('trash.empty_error_title', 'Prullenbak legen'),
                 tr('trash.empty_error', 'Niet alles kon definitief worden verwijderd.\n\n{error}', error=exc),

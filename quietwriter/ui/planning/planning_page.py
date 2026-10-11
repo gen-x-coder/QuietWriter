@@ -4,6 +4,7 @@ import json
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from ..current_page_stack import CurrentPageStack
+from ..dialog_notices import notice_information, notice_warning, notice_critical
 from ...planning_storage import PlanningStore
 from ...revisions import ExternalModificationError, RevisionVerificationError
 from ...migrations import FutureBookFormatError
@@ -187,12 +188,12 @@ class PlanningPage(QWidget):
             writer(self.book, value)
             return 'mine'
         except RevisionVerificationError:
-            QMessageBox.warning(self,tr('planning.save_unavailable.title', 'Opslaan tijdelijk niet mogelijk'),tr('planning.save_unavailable.text', 'QuietWriter kan de actuele bestanden tijdelijk niet betrouwbaar controleren. Er is niets overschreven. Probeer het zo opnieuw.'))
+            notice_warning(self,tr('planning.save_unavailable.title', 'Opslaan tijdelijk niet mogelijk'),tr('planning.save_unavailable.text', 'QuietWriter kan de actuele bestanden tijdelijk niet betrouwbaar controleren. Er is niets overschreven. Probeer het zo opnieuw.'))
             return 'failed'
         except ExternalModificationError as exc:
             return self._resolve_external_change(kind,value,writer,exc)
         except Exception as exc:
-            QMessageBox.critical(self,tr('planning.save_error.title', 'Planning opslaan'),tr('planning.save_error.text', 'Opslaan is mislukt.\n\n{error}', error=exc))
+            notice_critical(self,tr('planning.save_error.title', 'Planning opslaan'),tr('planning.save_error.text', 'Opslaan is mislukt.\n\n{error}', error=exc))
             return 'failed'
 
     def _resolve_external_change(self,kind,value,writer,exc):
@@ -215,7 +216,7 @@ class PlanningPage(QWidget):
                     )
                     return 'disk'
                 except Exception as error:
-                    QMessageBox.critical(
+                    notice_critical(
                         self, tr('planning.conflict.failed_title', 'Conflict niet opgelost'),
                         tr('planning.conflict.failed_text', 'Er is niets bewust overschreven.\n\n{error}', error=error)
                     )
@@ -276,7 +277,7 @@ class PlanningPage(QWidget):
                     labels.append(tr('planning.nav.notes', 'Notities'))
                 if 'planning/characters.json' in conflicting_pending:
                     labels.append(tr('planning.nav.characters', 'Personages'))
-                QMessageBox.information(
+                notice_information(
                     self,
                     tr('planning.pending_conflict.title', 'Lokale planning veilig bewaard'),
                     tr(
@@ -298,7 +299,7 @@ class PlanningPage(QWidget):
         except Exception as error:
             if paused_notes and self.notes_page.dirty:
                 self.notes_page.timer.start()
-            QMessageBox.critical(self,tr('planning.conflict.failed_title', 'Conflict niet opgelost'),tr('planning.conflict.failed_text', 'Er is niets bewust overschreven.\n\n{error}', error=error))
+            notice_critical(self,tr('planning.conflict.failed_title', 'Conflict niet opgelost'),tr('planning.conflict.failed_text', 'Er is niets bewust overschreven.\n\n{error}', error=error))
             return 'failed'
 
     def persist_characters(self,characters): return self._persist('characters',characters,self.store.save_characters)

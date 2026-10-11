@@ -89,7 +89,8 @@ class HistoryPanel(QWidget):
             kind = tr(kind_key, 'Versie')
             chapters = number_locale.toString(int(row.get('chapters', 0)))
             words = number_locale.toString(int(row.get('words', 0)))
-            stats = tr('history.stats', '{chapters} hoofdstukken · {words} woorden', chapters=chapters, words=words)
+            stats = (tr('history.incomplete', 'Nog niet compleet') if row.get('incomplete') else
+                     tr('history.stats', '{chapters} hoofdstukken · {words} woorden', chapters=chapters, words=words))
             text = f'{star}  {time_label}  ·  {kind}\n{stats}'
             item = QListWidgetItem(text)
             item.setData(Qt.UserRole, row['id'])

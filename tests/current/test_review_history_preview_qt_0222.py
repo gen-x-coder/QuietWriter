@@ -105,7 +105,7 @@ def test_restore_conflict_exits_preview_and_adopts_newest_live_disk(app, monkeyp
 
         monkeypatch.setattr(editor_page_module, 'confirm', lambda *args, **kwargs: True)
         warnings = []
-        monkeypatch.setattr(QMessageBox, 'warning', lambda *args, **kwargs: warnings.append(args[2] if len(args) > 2 else ''))
+        monkeypatch.setattr(editor_page_module, 'notice_warning', lambda *args, **kwargs: warnings.append(args[2] if len(args) > 2 else ''))
 
         window.editor_page.restore_preview_version()
 

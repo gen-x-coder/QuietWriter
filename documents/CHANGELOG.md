@@ -1,20 +1,276 @@
-## 1.3.1 — spellingsuggesties begrensd en woordenboekbron kiesbaar
+## 1.4.0-dev.39 — De laatste drie schroefjes
 
-- voorkomt dat het spellingspaneel minutenlang kan vastlopen op lange of vreemde onbekende woorden;
-- begrenst de dure edit-candidatefase van spylls tot ongeveer één seconde per getoond woord en laat daarna de snellere ngram-/fallbacksuggesties doorgaan;
-- voegt een regressietest toe voor pathologische MAP-combinaties en behoudt normale correcties zoals `bannaan` → `banaan`;
-- Instellingen > Spelling laat naast de taal ook de gevonden woordenboekbron kiezen;
-- meerdere woordenboeken voor hetzelfde locale blijven beschikbaar: Meegeleverd, ONLYOFFICE, LibreOffice, OpenOffice en zelf toegevoegde compatibele Hunspell-bestanden;
-- de gekozen bron wordt lokaal bewaard in `spell_dictionary_source` en valt veilig terug wanneer die bron later ontbreekt;
-- de 1.4-overdrachtsnotitie legt zowel de providerkeuze als het suggestiebudget vast voor de reeds doorlopende 1.4-lijn.
+- De prullenbak toont weer de werkelijke verwijderdatum, ook zonder volgnummer in de mapnaam.
+- Achtergebleven gedeeltelijke versiekopieën worden alleen verwijderd als hun eigen startmarkering oud is; gekopieerde oude bestandsdatums zijn niet langer beslissend.
+- Bij afsluiten van het hoofdvenster worden wachtende spellingsuggesties geschrapt nadat alle opslagcontroles geslaagd zijn.
+- Versiegegevens en releasevoorbereiding bijgewerkt; Windows-controles blijven verplicht vóór rc1.
 
-## 1.3.0 — releasecandidate freeze voor de definitieve release
+## 1.4.0-dev.38 — De laatste rafelrandjes
 
-- bevriest de inhoud van 1.3.0 na de Windows-/laptopacceptatie van dev.29;
-- bevat Boekenkast met planken, Presentatiemodus, schrijfdoelen, Planninghulp en de Planning-overlay;
-- bevat de afgeronde editorfixes voor undo en veilig intern plakken met scènebreuken;
-- bevat de kleine-scherm-, laadfeedback-, thema- en Integriteitspolish uit dev.29;
-- bedoeld voor de Windows portable releasecandidate; bij groen wordt exact dezelfde binary gepromoveerd naar 1.3.0.
+- Versiegeschiedenis geeft tijdelijk onvolledige gesynchroniseerde versies een herkenbaar label in plaats van misleidende aantallen.
+- Verlaten gedeeltelijke versiemappen ouder dan 24 uur worden voorzichtig en alleen lokaal opgeruimd.
+- De verwijderdatum van boeken in de prullenbak is gebaseerd op het verwijdermoment, niet op een oude mapwijziging.
+- De spellingswachtrij wordt geleegd wanneer het paneel sluit.
+- Een automatische test vangt ontbrekende Python-namen vóór een release op.
+- Applicatieversie, snapshot, release notes en actuele projectdocumentatie zijn naar dev.38 bijgewerkt. De publieke stabiele release is 1.3.1.
+
+## 1.4.0-dev.37 — Ook een halve versie mag het overzicht niet laten verdwijnen
+
+- Versiegeschiedenis blijft bruikbaar tijdens onvolledige synchronisatie van oudere geregistreerde versies; ontbrekende tellingen krijgen veilige standaardwaarden.
+- Herstel zonder AI-chat behoudt alleen het lokale chatbestand. Boekprofiel en boekgeheugen blijven afkomstig uit het back-uppakket.
+- Verborgen gedeeltelijke versiemappen worden nooit als oude versies in back-ups opgenomen.
+- Late spellingsuggesties na het sluiten van het paneel geven geen ongecontroleerde Qt-signaalfout meer.
+- Een geblokkeerd boek veroorzaakt geen misleidende melding dat de back-upmap defect is.
+- Eigen regressietests en Claude's N1/N2-harnassen toegevoegd aan het ontwikkelproces.
+
+## 1.4.0-dev.36 — Een back-up mag niet vergeten wie er schreef
+
+- De externe-wijzigingscontrole van een geopend boek blijft intact bij handmatige en automatische back-ups; geen impliciete `track_book` meer.
+- Herstel vanuit een pakket zonder history bewaart de bestaande versiegeschiedenis, en een pakket zonder AI-chat behoudt lokale AI-context.
+- Bij definitief verwijderen verdwijnt ook de bijbehorende archive van het boek.
+- Spelling normaliseert de Nederlandse `ij` al bij het inlezen van woorden; ook difflib-suggesties zijn schoon.
+- Dag- en handmatige versiekopieën worden via verborgen `.partial`-mappen gepubliceerd; onvolledige hoofdstuksnapshots worden geweigerd bij herstel.
+- Een mislukte dagkopie blokkeert het opslaan van de manuscripttekst niet.
+- Autosave werkt alleen het gewijzigde hoofdstuk bij in de wegwerpbare zoekindex.
+- Zes regressietests bewaken het gegevensbehoud. De Qt-harnassen vereisen nog onafhankelijke uitvoering.
+
+## 1.4.0-dev.35 — De veiligheidsronde na Claude
+
+- Spellingsuggesties gebruiken onafhankelijke tijdsbudgetten en bewaren geen resultaten meer na een woordenboekwissel.
+- Herstel probeert bij rollback alle terugzetstappen en bewaart de herstelwerkmap als ook een rollback wordt geblokkeerd.
+- Versiegeschiedenis slaat woord- en hoofdstukaantallen per onveranderlijke versie op om herhaald volledig inlezen te vermijden.
+- Een boek dat tijdens een automatische back-up verandert wordt stil na vijf minuten opnieuw geprobeerd; backups worden pas na de due-check voorbereid.
+- Legacy-dagmappen met jonge of incomplete kopieën worden niet meegenomen.
+- Vier Qt-tests bijgewerkt voor de bestaande meldingsvensters; echte Qt-uitvoering blijft vereist voor bevestiging.
+
+## 1.4.0-dev.34 — De review krijgt gelijk
+
+- Planning importeert `QMessageBox` weer correct; afsluiten met een concept-personage en conflictdialogen zijn daarmee niet langer geblokkeerd door een `NameError`.
+- Nederlandse spellingsuggesties normaliseren de `ĳ`/`Ĳ`-ligaturen naar `ij`/`IJ` voordat ze in tekst kunnen worden ingevoegd.
+- Regressietests toegevoegd voor de ontbrekende UI-imports en spellingnormalisatie.
+- Snapshot-versienummer en onafhankelijke reviewnotities bijgewerkt.
+- Back-upherstel, suggestieconcurrency en automatische back-ups worden in de volgende hardening-iteraties aangepakt.
+
+## 1.4.0-dev.33 — Een woordenboek heeft ook een naam
+
+- De meegeleverde Nederlandse woordenlijst krijgt in Instellingen de naam OpenTaal; de oorspronkelijke herkomst wordt zichtbaar.
+- Spellingscontrole gericht doorgelicht op suggesties, achtergrondwerk, eerste-run-detectie en ontbrekende woordenboeken.
+- Automatisch vinden, downloaden, installeren en bijwerken van woordenboeken is als vervolgwerk uitgewerkt; de bestaande installatiewijze is ongewijzigd.
+- Back-ups en manuscriptopslag blijven ongewijzigd.
+
+## 1.4.0-dev.32 — Eén notitie, één wijziging
+
+- Notitiekaarten vervangen alleen het exact geselecteerde segment; verouderde of ongeldige posities worden geweigerd.
+- Een kopje met uitsluitend spaties wordt niet langer als afzonderlijke notitie gezien.
+- Extra regressietests toetsen het behoud van alle omliggende notitietekst en de bescherming tegen ongeldige posities.
+- Back-ups, manuscriptopslag en de goedgekeurde Planning-vormgeving blijven ongewijzigd.
+
+## 1.4.0-dev.31 — Notities zonder verrassingen
+
+- Een Markdown-kopje binnen een afgeschermd codeblok wordt niet langer voor een afzonderlijke notitie aangezien.
+- De notitieweergave behoudt de originele tekst en regeleinden, ook bij oudere notities.
+- Het kaartraster ruimt achtergebleven tussenruimte op wanneer notities of kolommen verdwijnen.
+- Extra regressietests controleren codeblokken, oude notities en bronbehoud zonder PySide6.
+- Back-ups, manuscriptopslag en de goedgekeurde Planning-interface blijven ongewijzigd.
+
+## 1.4.0-dev.30 — Eerst zeker weten dat hij start
+
+- Een nieuwe Qt-opstartcontrole probeert alle UI-modules te laden en start de bestaande smoke-test in een apart proces.
+- De controle is expliciet overgeslagen als PySide6 ontbreekt; pas met Qt geïnstalleerd is er een echt opstartresultaat.
+- Een integrale reviewlijst bundelt de openstaande risico's rond back-ups, herstel, spelling en Planning voor Claude.
+- Bestaande boekopslag, instellingen, back-upgedrag en README-bestanden blijven ongewijzigd.
+
+## 1.4.0-dev.29 — Ook op een kleiner scherm ruimte om te schrijven
+
+- De vensters voor het bewerken van notities en scènes passen hun openingsgrootte aan de beschikbare schermruimte aan.
+- De velden blijven scrollbaar en Opslaan en Annuleren blijven buiten het scrolgedeelte.
+- De technische informatie bij Problemen melden heeft een flexibelere hoogte, zonder meer gegevens te verzamelen.
+- Back-ups en de opslag van Planning zijn ongewijzigd.
+
+## 1.4.0-dev.28 — Hulp zonder je verhaal prijs te geven
+
+- Instellingen → Over toont nu een klein, kopieerbaar technisch overzicht voor ondersteuning.
+- Het overzicht bevat uitsluitend programmaversies en platformnaam, geen manuscripten, titels, paden of AI-gegevens.
+- De nieuwe bediening is vertaald in de vijf bestaande interfacetalen.
+
+## 1.4.0-dev.27 — Ook de belangrijke vragen spreken je taal
+
+- Integriteit toont voortaan vertaalde Ja/Nee-knoppen bij herstel en boekmigratie, met Nee als veilige standaard.
+- De resterende gewone meldingen in Planning, Notities en de AI Meelezer gebruiken de bestaande vertaalde Sluiten-knop.
+- Een regressietest bewaakt beide dialoogsoorten; de taallijsten blijven ongewijzigd.
+
+## 1.4.0-dev.26 — Kleine kaarten, grote rust
+
+- Notitiekaarten reageren nu ook op veranderingen van de beschikbare scrolruimte en verdelen zich opnieuw over drie, twee of één kolom.
+- Lange notitietitels breken netjes af, zonder dat de bewerkknop verdwijnt.
+- Een notitie zonder titel kan niet langer stilzwijgend met Opslaan worden afgesloten.
+- Een niet-wijzigende controle voor standaard Qt-dialoogknoppen is toegevoegd voor een latere vertaalronde.
+
+## 1.4.0-dev.25 — Notities gaan op kaart
+
+- Maakt de notitieweergave compacter met kaartjes in een raster, maximaal drie per rij op brede schermen.
+- Gebruikt voor Notities dezelfde maximale inhoudsbreedte als de Outline, zodat de pagina rustiger oogt.
+- Behoudt de bestaande opslag in `notes.md`; het is alleen een andere, duidelijkere weergave.
+
+## 1.4.0-dev.24 — Notities krijgen een eigen plek
+
+- Losse notitiekaarten met afzonderlijk bewerkingsvenster, binnen het bestaande notes.md.
+- Personages begrensd op 1320 px en links uitgelijnd.
+- Hoofdstukgroepen met een vaste omlijning rond hoofdstuk en scènes.
+- Bestaande boekopslag en README-bestanden ongewijzigd.
+
+## 1.4.0-dev.24 — Notities starten weer gewoon
+
+- Een verkeerde Qt-import hield QuietWriter bij het starten tegen. Gecorrigeerd; de notities en andere Planning-verbeteringen blijven behouden.
+
+## 1.4.0-dev.22 — Planning krijgt meer structuur
+
+- Duidelijkere hoofdstukbalken in de Outline.
+- Meer schrijfruimte voor Doel, Conflict, Uitkomst en scènenotities.
+- Personagegegevens overzichtelijker gegroepeerd.
+- Meerdere notities via Markdown-kopjes in dezelfde vertrouwde notitieopslag, zonder migratie.
+
+## 1.4.0-dev.21 — Planning houdt het overzicht
+
+- Scènegegevens en verdieping zijn weer direct zichtbaar, zonder uitklapwerk.
+- De Outline staat weer links uitgelijnd en blijft prettig leesbaar op brede schermen.
+- De nieuwe hoofdstukgroepen en scènevolgorde blijven behouden.
+
+## 1.4.0-dev.20 — Scènes krijgen ademruimte
+
+- Outline: een rustige, gecentreerde breedte op grote schermen en gewoon de beschikbare ruimte op kleine schermen.
+- Scène bewerken: de belangrijkste velden staan direct klaar; uitgebreide details kunnen open en dicht. Ingevulde details blijven bij bewerken zichtbaar.
+- De back-ups, manuscriptgegevens en README-bestanden zijn niet aangepast.
+
+## 1.4.0-dev.19 — De Outline krijgt wat bewegingsvrijheid
+
+- Hoofdstukgroepen zijn inklapbaar, met het aantal scènes in de kop.
+- Scènes kunnen binnen hun eigen groep omhoog en omlaag worden verplaatst.
+- Het manuscript blijft onaangeroerd.
+
+## 1.4.0-dev.18 — Spelling denkt even buiten beeld na
+
+- Spellingsvoorstellen worden op de achtergrond gezocht, zodat het hoofdstuk bewerkbaar blijft.
+- Een oud voorstel wordt genegeerd zodra je een ander woord of woordenboek kiest.
+- De knop Wijzigen wordt pas actief wanneer suggesties beschikbaar zijn.
+
+## 1.4.0-dev.17 — De spellingscontrole mag niet eindeloos nadenken
+
+- Lange onbekende woorden laten het zoeken naar spellingvoorstellen niet meer minutenlang doorgaan.
+- Bij Spelling kun je nu ook kiezen welk gevonden woordenboek wordt gebruikt, bijvoorbeeld het meegeleverde woordenboek of ONLYOFFICE.
+- De keuze wordt onthouden. Verdwijnt het gekozen woordenboek, dan gebruikt QuietWriter een beschikbare vervanger.
+- De nieuwe controles letten erop dat gewone spellingvoorstellen blijven werken en dat boeken en back-ups ongemoeid blijven.
+
+## 1.4.0-dev.16 — Geen Engelse OK meer op bezoek
+
+- Gewone informatie-, waarschuwing- en foutmeldingen in de interface gebruiken dezelfde vertaalde knop **Sluiten**.
+- De bestaande vertaling wordt hergebruikt in alle vijf talen; er komen geen nieuwe vertaalwoorden bij.
+- Een regressietest houdt nieuwe standaard-OK-knoppen buiten de deur.
+- Dialoogvensters waarin je een keuze maakt (zoals Ja/Nee) blijven ongewijzigd; die verdienen een eigen controle.
+- De back-upfunctie blijft klaar voor een integrale veiligheidsreview voordat 1.4.0 wordt uitgebracht.
+
+## 1.4.0-dev.15 — De laatste OK mag ook naar huis
+
+- Ook na een geslaagde handmatige back-up verschijnt nu de vertaalde knop **Sluiten**.
+- Overige meldingen in Instellingen krijgen dezelfde bestaande vertaalde knop; er zijn geen extra vertaalwoorden toegevoegd.
+- Een gerichte regressietest bewaakt dat de gewone Qt-meldingen hier niet stil terugkomen.
+
+## 1.4.0-dev.14 — Eerst een boek, dan de tijdmachine
+
+- De herstellijst vraagt eerst een boek te kiezen in plaats van te melden dat het boek geen back-ups heeft.
+- De boekselector is duidelijker gelabeld voor zowel back-ups als herstel.
+- Hersteldialogen gebruiken de bestaande vertaling voor Sluiten, zonder een extra vertaalwoord.
+- Vertalingen opgeschoond en een apart vervolgonderzoek naar taalconsistentie op de roadmap gezet.
+
+## 1.4.0-dev.13 — Een herstel mag geen schrik achteraf geven
+
+- Een geslaagd herstel wordt niet meer als mislukt gemeld wanneer Windows een tijdelijke map nog even vasthoudt.
+- Achtergebleven tijdelijke herstelmappen worden op een later veilig moment opgeruimd.
+- Na een handmatige back-up toont QuietWriter geen technische bestandsnamen meer.
+- Het venster voor een nieuw boek heeft knoppen in de gekozen taal.
+
+## 1.4.0-dev.12 — Terug naar een eerdere bladzijde
+
+- Een bestaand boek kan na twee duidelijke bevestigingen worden hersteld.
+- QuietWriter bewaart eerst een aparte veiligheidskopie van de huidige versie.
+- Bij een fout probeert QuietWriter het oorspronkelijke boek terug te zetten; de plank blijft dezelfde.
+- De back-upkeuzelijst heeft meer ruimte voor datum, tijd en type.
+- Herstelmeldingen gebruiken duidelijke knoppen in de gekozen taal.
+
+## 1.4.0-dev.11 — Back-ups terugvinden zonder speurwerk
+
+- Back-ups per boek kiezen op datum en tijd, met aparte knop om handmatig een bestand te kiezen.
+- Herstelvenster begint in de ingestelde back-upmap, ook zonder geselecteerd boek.
+- Back-upmap wordt breder getoond en is alleen via Bladeren aanpasbaar.
+- Presentatiemodus blijft de lijst met beschikbare back-ups afschermen.
+
+## 1.4.0-dev.10 — Een back-up zonder verrassingen
+
+- Automatische en handmatige back-ups overzichtelijk gescheiden.
+- Handmatig kopiëren en herstellen blijven beschikbaar als automatische back-ups uitstaan.
+- Verborgen boeken blijven verborgen in Presentatiemodus.
+- Back-upstatus volgt uitsluitend de geselecteerde zichtbare boektitel.
+
+## 1.4.0-dev.9 — Een eigen plek voor het vangnet
+
+- Back-ups hebben een eigen tabblad in Instellingen, met meer uitleg over waar kopieën terechtkomen.
+- Zet je back-ups uit, dan worden de bijbehorende knoppen en instellingen ook uitgeschakeld.
+- De status van je laatste back-up krijgt weer de ruimte om normaal te worden gelezen.
+- Handmatige en automatische back-ups blijven dezelfde veilige opslagroute gebruiken.
+
+## 1.4.0-dev.8 — Een vangnet met een deur erin
+
+- Terugzetten van een boekback-up kan nu rechtstreeks vanuit Instellingen, via de bestaande veilige import.
+- Een mislukte back-up blijft bij het boek zichtbaar tot er weer een geslaagde is.
+- De map van het geselecteerde boek wordt bij herstellen voorgesteld.
+- Automatische en handmatige back-ups gebruiken dezelfde statusmelding, zonder extra technische schermen.
+
+## 1.4.0-dev.7 — Dagelijkse back-ups zonder drukte
+
+- Optionele dagelijkse kopieën van gewijzigde boeken, terwijl QuietWriter openstaat.
+- Back-ups lopen buiten de interface, één tegelijk.
+- Handmatige kopieën blijven altijd behouden. Automatische kopieën houden dagelijkse en wekelijkse herstelpunten over.
+- Instellingen toont het nieuwste back-upbestand en kan meldingen geven bij problemen.
+- Bestaande README-bestanden blijven onaangeroerd.
+
+## 1.4.0-dev.6 — Boekback-ups in Instellingen
+
+- Kies een aparte back-upmap en een boek; maak met één knop een gecontroleerde kopie.
+- De kopie wordt buiten het scherm gemaakt, zodat de interface bruikbaar blijft.
+- Dagelijkse back-ups zijn als opt-in instelbaar; de automatische planning wordt pas in een volgende iteratie aangesloten.
+- Sluiten tijdens een lopende back-up wordt voorkomen.
+
+## 1.4.0-dev.5 — Het vangnet krijgt Windows-schoenen
+
+- Back-ups kunnen nu ook op Windows veilig hun gegevens naar de schijf schrijven.
+- Oudere, complete versies blijven behouden; een versie die nog niet klaar is, wordt niet stil meegenomen.
+- Als een boek tussendoor is veranderd of geblokkeerd, verschijnt een begrijpelijke melding.
+- Automatische back-ups en bediening volgen pas na een nieuwe Windows-controle.
+
+## 1.4.0-dev.4 — Een vangnet moet zelf niet scheuren
+
+- Back-ups worden voortaan eerst volledig gecontroleerd voordat ze als klaar verschijnen.
+- Alleen afgeronde versies van het boek gaan mee.
+- Grote afbeeldingen worden stukje voor stukje verwerkt, zodat het geheugen niet volloopt.
+- Tijdelijke bestandsblokkades krijgen een nieuwe poging; oude onafgemaakte bestanden worden opgeruimd.
+- Nog geen automatische planning of nieuwe knoppen: eerst zekerheid, dan gemak.
+
+## 1.4.0-dev.3 — Eerst het vangnet, dan de trapeze
+
+- De basis voor automatische boekback-ups kan volledige boekkopieën maken en controleren.
+- Veiligheidscontroles voorkomen dat een back-up in of over de werkmap terechtkomt.
+- Automatisch back-uppen staat nog niet aan; instellingen en bediening volgen na de onafhankelijke test.
+
+## 1.4.0-dev.2 — De Boekenkast hoeft niet steeds opnieuw te poseren
+
+- De boekomslagen worden tijdens het open- en dichtklappen van Menu niet telkens opnieuw ingelezen en verkleind. Dat moet de navigatie soepeler maken, vooral bij meerdere boeken.
+- Omslagen blijven bij het opnieuw opbouwen van de Boekenkast verversen. Geen wijzigingen aan boeken of hun bestanden.
+- Het ontwerp voor automatische back-ups blijft klaarstaan; de back-upfunctie is nog niet gebouwd.
+
+## 1.4.0-dev.1 — Back-ups op de tekentafel
+
+- Het ontwerp voor automatische boekback-ups ligt klaar. De volgende stap is de bouw; QuietWriter maakt ze in deze versie nog niet automatisch.
+- De bestaande 1.3-functies blijven ongemoeid. De README-bestanden en publieke prerelease zijn niet gewijzigd.
 
 ## 1.3.0-dev.29 — Windows- en kleine-scherm-hardening
 

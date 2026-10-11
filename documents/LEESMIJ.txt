@@ -1,13 +1,11 @@
 ﻿QuietWriter - korte handleiding
 ===============================
 
-QuietWriter 1.3.1
+Release candidate
 -----------------
-Dit is QuietWriter 1.3.1, een stabiele onderhoudsrelease voor de 1.3-lijn.
-Deze versie verhelpt onder meer het vastlopen van spellingssuggesties bij sommige
-lange of vreemde onbekende woorden en voegt keuze tussen gevonden woordenboekbronnen toe.
-Maak zoals altijd regelmatig een kopie van je volledige werkmap en meld onverwacht
-gedrag met het crashlog.
+Dit is een release candidate van QuietWriter 1.0: een testversie op weg naar
+de eerste stabiele 1.0-release. Maak tijdens de testperiode regelmatig een kopie van je volledige
+werkmap en meld onverwacht gedrag met het crashlog.
 
 Eerst uitpakken
 ---------------
@@ -64,10 +62,9 @@ QuietWriter - quick guide (English)
 
 Release candidate
 -----------------
-This is the release candidate for QuietWriter 1.3.0. This build is intended for
-the final Windows and reputation checks before the exact same application files
-are published as stable 1.3.0. As always, regularly copy your complete workspace
-and report unexpected behaviour with the crash log.
+This is a QuietWriter 1.0 release candidate: a test build on the way to the
+first stable 1.0 release. During the test period, regularly copy your complete workspace and
+report unexpected behaviour with the crash log.
 
 Extract first
 -------------

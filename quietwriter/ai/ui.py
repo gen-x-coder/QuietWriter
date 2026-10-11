@@ -6,7 +6,7 @@ from PySide6.QtCore import QThread, Signal, Qt, QTimer
 from PySide6.QtGui import QTextCursor, QTextDocument, QIcon, QPalette, QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox, QPushButton,
-    QTextEdit, QTextBrowser, QMessageBox, QFrame, QDialog, QDialogButtonBox, QCheckBox
+    QTextEdit, QTextBrowser, QFrame, QDialog, QDialogButtonBox, QCheckBox
 )
 from .providers import ProviderFactory
 from .context import ContextBuilder, ContextBundle, read_optional_source
@@ -20,6 +20,7 @@ from ..i18n import tr
 from ..themes import THEMES
 from ..ui.planning_context_dialog import PlanningContextDialog
 from ..ui.panel_help import PanelHelp, WrappedLabel
+from ..ui.dialog_notices import notice_information
 
 
 class ProviderChatWorker(QThread):
@@ -486,6 +487,7 @@ class AIPanel(QWidget):
         lay = QVBoxLayout(dialog)
         view = QTextEdit(); view.setReadOnly(True); view.setPlainText('\n'.join(lines))
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.button(QDialogButtonBox.Close).setText(tr('common.close', 'Sluiten'))
         buttons.rejected.connect(dialog.reject)
         lay.addWidget(view, 1); lay.addWidget(buttons)
         dialog.exec()
@@ -645,7 +647,7 @@ class AIPanel(QWidget):
         if not prompt or self.is_busy(): return
         provider, model = self._provider_model()
         if not model:
-            QMessageBox.information(self, 'AI', tr('ai.model_required', 'Kies eerst een AI-model in Instellingen.')); return
+            notice_information(self, 'AI', tr('ai.model_required', 'Kies eerst een AI-model in Instellingen.')); return
         builder = ContextBuilder(self.main)
         manuscript_context = builder.build(str(self.context.currentData() or 'chapter'))
         planning = self._planning_context_result()

@@ -685,7 +685,9 @@ def stylesheet(name: str) -> str:
     QLabel#planningMicroLabel {{ color: {t['muted']}; font-size: 11px; font-weight: 600; letter-spacing: 0.8px; }}
     QFrame#sceneCard {{ background: {t['panel']}; border: 1px solid {t['border_subtle']}; border-radius: 10px; }}
     QLabel#sceneStatusBadge {{ color: {t['muted']}; background: {t['panel2']}; border: 1px solid {t['border_subtle']}; border-radius: 8px; padding: 3px 8px; font-size: 11px; }}
-    QLabel#outlineChapterTitle {{ background: {t['panel2']}; border-radius: 8px; padding: 8px 10px; font-weight: 600; }}
+    QFrame#outlineChapterGroup {{ background: {t['panel2']}; border: 1px solid {t['border']}; border-left: 3px solid {t['accent']}; border-radius: 10px; }}
+    QFrame#planningNoteCard {{ background: {t['panel']}; border: 1px solid {t['border_subtle']}; border-left: 3px solid {t['accent']}; border-radius: 10px; }}
+    QLabel#outlineChapterTitle {{ background: {t['select']}; color: {t['text']}; border: 1px solid {t['border']}; border-left: 3px solid {t['accent']}; border-radius: 8px; padding: 10px 12px; font-weight: 600; }}
     QPushButton#relationChip {{ background: {t['accent_soft']}; color: {t['text']}; border: 1px solid transparent; border-radius: 12px; padding: 5px 10px; text-align: left; }}
     QPushButton#relationChip:hover {{ color: {t['accent']}; }}
     QPushButton#relationChip:focus {{ border-color: {t['focus']}; color: {t['accent']}; }}

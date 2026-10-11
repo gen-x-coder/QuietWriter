@@ -300,7 +300,7 @@ def test_cut_fragment_write_failure_leaves_manuscript_untouched(app, tmp_path, m
         cursor = editor.textCursor(); cursor.setPosition(start); cursor.setPosition(start + 8, QTextCursor.KeepAnchor)
         editor.setTextCursor(cursor)
         monkeypatch.setattr(window.darlings_page.store, 'create', lambda *a, **k: (_ for _ in ()).throw(OSError('disk vol')))
-        monkeypatch.setattr(QMessageBox, 'critical', lambda *a, **k: QMessageBox.Ok)
+        monkeypatch.setattr('quietwriter.ui.editor_page.notice_critical', lambda *a, **k: None)
         assert window.editor_page.cut_selection_to_darlings() is False
         assert editor.source_text() == source
     finally:

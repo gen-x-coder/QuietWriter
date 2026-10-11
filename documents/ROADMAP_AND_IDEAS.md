@@ -7,7 +7,7 @@ Deze roadmap beschrijft alleen de actuele productrichting. Uitgebreide oude 1.0/
 
 ## 1. Waar we nu staan
 
-**QuietWriter 1.2.32** is de huidige publieke stabiele release. De 1.3-lijn is bevroren op **1.3.0-rc1**. Deze releasecandidate wordt als Windows portable build getest; bij groen wordt exact dezelfde binary de definitieve 1.3.0. Nieuwe features gaan daarna naar 1.4.0-dev.1.
+**QuietWriter 1.3.1** is de huidige publieke stabiele release. De actieve ontwikkellijn is **1.4.0-dev.39**. QuietWriter 1.3.0 is uitgebracht; nieuwe functies komen in 1.4.0.
 
 **dev.24–dev.28:** Planning, schrijfdoelen en kerneditor zijn afgerond en breed gereviewd. **dev.29:** Windows- en kleine-scherm-hardening op basis van echte laptoptests: boeklaadfeedback, undo bij menselijke typesnelheid, responsieve geometrie, expliciete Integriteit en rustigere technische UI.
 
@@ -298,3 +298,32 @@ Veilige diagnoseweergave zonder manuscriptinhoud, API-sleutels of gevoelige boek
 Voor substantiële wijzigingen eerst vastleggen welk probleem wordt opgelost, welke persistente data verandert, hoe conflict/recovery/history werken, wat zoeken/spelling/export/AI zien en welke tests het contract bewaken.
 
 De roadmap is een beslisdocument, geen verzamelbak voor iedere mogelijke feature.
+
+## Talen en vertalingen — polish
+
+**Dev.16:** gewone informatie-, waarschuwing- en foutmeldingen in de UI zijn centraal gelokaliseerd. De vijf bestaande taallijsten blijven intact. Vervolg: vraagdialogen (Ja/Nee/Annuleren), dubbelingen en langlopende UI-teksten analyseren vóór sleutels verwijderd worden.
+
+- Controleer alle dialoogknoppen op standaardteksten uit Qt (OK/Cancel/Yes/No) in de vijf talen.
+- Inventariseer dubbele, ongebruikte en verouderde vertaalsleutels; hergebruik bestaande woorden waar de betekenis gelijk is.
+- Controleer langere vertalingen bij kleine vensters en hoge DPI, zonder tekst stil af te kappen.
+- Houd de gebruikersgerichte teksten begrijpelijk, kort en zonder technische termen.
+
+### Spelling: suggesties zonder wachten (1.4 vervolg)
+
+- Suggesties vanuit het spellingpaneel in een achtergrondwerker zoeken zodat het venster direct reageert.
+- Alleen het resultaat van het nieuwste woord tonen; oudere resultaten negeren.
+- Het suggestiebudget behouden, ook als het zoekwerk naar een worker verhuist.
+- Voor vrijgave Windows- en Qt-test met lange woorden en meerdere woordenboekbronnen.
+
+### Spelling: woordenboeken zonder handwerk (backlog na Claude-review)
+
+**Doel:** de gebruiker hoeft Hunspell-bestanden nooit zelf te zoeken, te downloaden of te kopiëren. Dit is nog niet geïmplementeerd.
+
+1. Tijdens eerste gebruik alle werkelijk beschikbare woordenboeken scannen: OpenTaal in de distributie, bestaande Office-installaties en woordenboeken in de gekozen werkmap. Geen niet-bestaand `nl_NL` als gevonden presenteren.
+2. Per taal tonen: officiële woordenboeknaam, herkomst, versie (indien beschikbaar), licentie en beschikbaarheidsstatus. Noem het Nederlandse bundelwoordenboek **OpenTaal (meegeleverd)**, niet een eigen QuietWriter-woordenboek.
+3. Geen woordenboek? Bied indien beschikbaar het meegeleverde OpenTaal aan; ontbreekt ook dat, geef een heldere keuze: later instellen of een beschikbaar woordenboek via een vertrouwde catalogus installeren. Verberg de ontbrekende afhankelijkheid niet.
+4. In Instellingen een ingebouwde catalogus met installeren, voortgang, annuleren, verwijderen en optionele updates. Alleen geverifieerde bronnen; `.dic` én `.aff` en licentie/attributie controleren.
+5. Download in tijdelijke stagingmap met limiet, checksum/integriteitscontrole en veilige atomische publicatie; nooit bestaande woordenlijsten beschadigen bij netwerkfout. Geen willekeurige archiefpaden uitpakken.
+6. Wijzig geen Office-installaties. Eigen downloads in de QuietWriter-werkmap, met duidelijke keuze van taal, bron en persoonlijke woordenlijst. Geen stille download of verbinding zonder toestemming.
+7. Bij wisselen van woordenboek tijdens achtergrond-suggesties oude resultaten veilig negeren. Test op Windows met grote woordenboeken, snelle wisselingen en ontbrekende `.aff`-bestanden.
+8. Voeg expliciete herstel-/foutmeldingen toe voor ontbrekend woordenboek, onbereikbare catalogus en onvoldoende schijfruimte, in vijf talen.

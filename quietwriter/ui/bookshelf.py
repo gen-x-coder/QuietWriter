@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from .dialog_notices import notice_warning
+from .dialogs import prompt_text
 from ..i18n import tr
 from ..manuscript_text import count_words
 from ..themes import THEMES
@@ -156,20 +158,32 @@ class BookCover(QWidget):
         self.book = book
         self.settings = settings or QSettings('QuietWriter', 'QuietWriter')
         self.setFixedSize(COVER_WIDTH, COVER_HEIGHT)
+        # One thumbnail per widget: opening the navigation rail repaints covers
+        # repeatedly, but a refresh creates new cover widgets when art changes.
+        self._cached_cover_path = None
+        self._cached_cover_pixmap = None
+
+    def _cover_pixmap(self, path):
+        key = str(path) if path else None
+        if key != self._cached_cover_path:
+            self._cached_cover_path = key
+            self._cached_cover_pixmap = None
+            if path and Path(path).is_file():
+                pix = QPixmap(key)
+                if not pix.isNull():
+                    self._cached_cover_pixmap = pix.scaled(
+                        self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation
+                    )
+        return self._cached_cover_pixmap
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
         target = self.rect()
         path = self.library.cover_path(self.book) or self.library.default_cover_path()
-        if path and Path(path).exists():
-            pix = QPixmap(str(path))
-            if not pix.isNull():
-                scaled = pix.scaled(target.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                painter.drawPixmap((target.width() - scaled.width()) // 2, (target.height() - scaled.height()) // 2, scaled)
-            else:
-                theme = THEMES.get(str(self.settings.value('theme', 'Helder')), THEMES['Helder'])
-                painter.fillRect(target, QColor(theme['cover1']))
+        pix = self._cover_pixmap(path)
+        if pix is not None:
+            painter.drawPixmap((target.width() - pix.width()) // 2, (target.height() - pix.height()) // 2, pix)
         else:
             theme = THEMES.get(str(self.settings.value('theme', 'Helder')), THEMES['Helder'])
             painter.fillRect(target, QColor(theme['cover1']))
@@ -573,11 +587,10 @@ class StartPage(QWidget):
         return words
 
     def _show_error(self, message: str):
-        QMessageBox.warning(self, tr('bookshelf.error.title', 'Boekenkast'), str(message))
+        notice_warning(self, tr('bookshelf.error.title', 'Boekenkast'), str(message))
 
     def _create_shelf(self):
-        from PySide6.QtWidgets import QInputDialog
-        name, ok = QInputDialog.getText(self, tr('bookshelf.shelf.add', 'Nieuwe plank'), tr('bookshelf.shelf.name', 'Naam van de plank'))
+        name, ok = prompt_text(self, tr('bookshelf.shelf.add', 'Nieuwe plank'), tr('bookshelf.shelf.name', 'Naam van de plank'))
         if not ok or not name.strip():
             return
         try:
@@ -676,7 +689,7 @@ class StartPage(QWidget):
         warnings = self.library.pop_shelf_metadata_warnings()
         if not warnings:
             return
-        QMessageBox.warning(
+        notice_warning(
             self,
             tr('bookshelf.warning.title', 'Boek opgeslagen'),
             '\n'.join(warnings),

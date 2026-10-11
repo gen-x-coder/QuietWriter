@@ -4,10 +4,12 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
+    QApplication, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
     QPushButton, QVBoxLayout, QWidget,
 )
 
+from .dialog_notices import notice_information, notice_warning, notice_critical
+from .dialogs import confirm
 from ..i18n import tr
 from ..integrity import BookIntegrityChecker
 from ..migrations import FutureBookFormatError, MigrationError
@@ -248,26 +250,26 @@ class IntegrityPage(QWidget):
         if source is None:
             source = self.checker.latest_recovery_file(self.library, self.book, issue.path)
         if source is None:
-            QMessageBox.information(self, tr('integrity.no_recovery_title', 'Geen herstelkopie'), tr('integrity.no_recovery', 'Voor dit bestand is geen geldige herstelkopie beschikbaar.'))
+            notice_information(self, tr('integrity.no_recovery_title', 'Geen herstelkopie'), tr('integrity.no_recovery', 'Voor dit bestand is geen geldige herstelkopie beschikbaar.'))
             self.refresh()
             return
-        answer = QMessageBox.question(
+        approved = confirm(
             self,
             tr('integrity.confirm_title', 'Bestand herstellen'),
             tr('integrity.confirm', 'Herstel {path} vanuit de nieuwste geldige kopie in Versiegeschiedenis?\n\nQuietWriter maakt eerst een extra herstelpunt van de huidige toestand.', path=issue.path),
         )
-        if answer != QMessageBox.Yes:
+        if not approved:
             return
         try:
             self.checker.restore_file_from_history(self.library, self.book, issue.path)
         except BookBlockedError as exc:
-            QMessageBox.warning(self, tr('integrity.blocked_title', 'Boek is geblokkeerd'), str(exc))
+            notice_warning(self, tr('integrity.blocked_title', 'Boek is geblokkeerd'), str(exc))
             return
         except ExternalModificationError:
-            QMessageBox.warning(self, tr('integrity.external_title', 'Boek extern gewijzigd'), tr('integrity.external', 'Het boek is sinds de controle extern gewijzigd. Er is niets hersteld. Open of laad het boek opnieuw en controleer daarna opnieuw.'))
+            notice_warning(self, tr('integrity.external_title', 'Boek extern gewijzigd'), tr('integrity.external', 'Het boek is sinds de controle extern gewijzigd. Er is niets hersteld. Open of laad het boek opnieuw en controleer daarna opnieuw.'))
             return
         except (StorageWriteError, OSError, ValueError) as exc:
-            QMessageBox.critical(self, tr('integrity.repair_failed_title', 'Herstel mislukt'), tr('integrity.repair_failed', 'Het bestand kon niet veilig worden hersteld.\n\n{error}', error=exc))
+            notice_critical(self, tr('integrity.repair_failed_title', 'Herstel mislukt'), tr('integrity.repair_failed', 'Het bestand kon niet veilig worden hersteld.\n\n{error}', error=exc))
             return
         # The repair changed disk state behind every page. Reload centrally
         # before the editor can become active again, otherwise stale editor text
@@ -279,17 +281,17 @@ class IntegrityPage(QWidget):
     def migrate_book(self):
         if not self.book:
             return
-        answer = QMessageBox.question(
+        approved = confirm(
             self,
             tr('integrity.migrate_title', 'Boekformaat bijwerken'),
             tr('integrity.migrate_confirm', 'Werk dit oudere boekformaat bij naar de huidige QuietWriter-versie?\n\nVooraf wordt een volledige herstelversie gemaakt.'),
         )
-        if answer != QMessageBox.Yes:
+        if not approved:
             return
         try:
             migrated, result, _checkpoint = self.library.migrate_book_format(self.book)
         except (BookBlockedError, ExternalModificationError, StorageWriteError, MigrationError, OSError) as exc:
-            QMessageBox.critical(self, tr('integrity.migrate_failed_title', 'Migratie mislukt'), tr('integrity.migrate_failed', 'Het boekformaat kon niet veilig worden bijgewerkt.\n\n{error}', error=exc))
+            notice_critical(self, tr('integrity.migrate_failed_title', 'Migratie mislukt'), tr('integrity.migrate_failed', 'Het boekformaat kon niet veilig worden bijgewerkt.\n\n{error}', error=exc))
             return
         self.main.adopt_active_book(migrated)
         self.book = migrated

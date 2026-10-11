@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QMenu, QMessageBox, QPushButton, QTextEdit, QVBoxLayout, QWidget,
 )
 
+from .dialog_notices import notice_warning, notice_critical
 from ..fragment_store import FragmentExternalModificationError, FragmentStore
 from ..document_view import visible_text
 from ..i18n import tr
@@ -233,7 +234,7 @@ class DarlingsPage(QWidget):
         try:
             self.store.move_to_trash(fragment.id)
         except Exception as exc:
-            QMessageBox.critical(
+            notice_critical(
                 self,
                 tr('darlings.trash_failed_title', 'Fragment niet verplaatst'),
                 tr('darlings.trash_failed_text', 'Het fragment kon niet veilig naar de prullenbak worden verplaatst.\n\n{error}', error=exc),
@@ -410,7 +411,7 @@ class DarlingsPage(QWidget):
         except FragmentExternalModificationError:
             return self._resolve_external_conflict(fragment, tags)
         except Exception as exc:
-            QMessageBox.critical(
+            notice_critical(
                 self,
                 tr('darlings.save_failed_title', 'Fragment niet opgeslagen'),
                 tr('darlings.save_failed_text', 'De fragmentgegevens konden niet veilig worden opgeslagen.\n\n{error}', error=exc),
@@ -465,7 +466,7 @@ class DarlingsPage(QWidget):
         try:
             current = self.store.load(previous.id)
         except Exception as exc:
-            QMessageBox.critical(
+            notice_critical(
                 self,
                 tr('darlings.save_failed_title', 'Fragment niet opgeslagen'),
                 tr('darlings.save_failed_text', 'De fragmentgegevens konden niet veilig worden opgeslagen.\n\n{error}', error=exc),
@@ -494,7 +495,7 @@ class DarlingsPage(QWidget):
                 self.dirty = True
                 self.status.setText(tr('darlings.external_pending', 'Opnieuw extern gewijzigd'))
                 self.save_button.setEnabled(True)
-                QMessageBox.warning(
+                notice_warning(
                     self,
                     tr('darlings.external_title', 'Fragment extern gewijzigd'),
                     tr('darlings.external_again', 'Het fragment is opnieuw elders gewijzigd. Er is niets overschreven; probeer Opslaan opnieuw.'),

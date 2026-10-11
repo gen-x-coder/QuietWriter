@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPushButton, QScrollArea, QSizePolicy, QTextEdit, QVBoxLayout, QWidget
 )
+from .dialog_notices import notice_information, notice_warning, notice_critical
 from ..storage import slugify
 from ..migrations import FutureBookFormatError
 from ..i18n import tr
@@ -324,7 +325,7 @@ class BookDetailsPage(QWidget):
         self._update_header_path()
 
         if conflicts and show_message:
-            QMessageBox.information(
+            notice_information(
                 self,
                 tr('book_details.merge_conflict_title', 'Lokale invoer veilig bewaard'),
                 tr(
@@ -337,7 +338,7 @@ class BookDetailsPage(QWidget):
 
     def show_adoption_message(self, prepared):
         if prepared and prepared.get('conflicts'):
-            QMessageBox.information(
+            notice_information(
                 self,
                 tr('book_details.merge_conflict_title', 'Lokale invoer veilig bewaard'),
                 tr(
@@ -411,13 +412,13 @@ class BookDetailsPage(QWidget):
         reader = QImageReader(path)
         size = reader.size()
         if not size.isValid():
-            QMessageBox.warning(self, tr('book_details.cover.title', 'Boekomslag'), tr('book_details.cover.unreadable', 'Deze afbeelding kon niet worden gelezen.')); return
+            notice_warning(self, tr('book_details.cover.title', 'Boekomslag'), tr('book_details.cover.unreadable', 'Deze afbeelding kon niet worden gelezen.')); return
         w, h = size.width(), size.height()
         ratio = w / h if h else 0
         if h < 1024:
-            QMessageBox.warning(self, tr('book_details.cover.title', 'Boekomslag'), tr('book_details.cover.too_small', 'De lange zijde is {height}px. Gebruik minimaal 1024px.', height=h)); return
+            notice_warning(self, tr('book_details.cover.title', 'Boekomslag'), tr('book_details.cover.too_small', 'De lange zijde is {height}px. Gebruik minimaal 1024px.', height=h)); return
         if abs(ratio - (1/1.6)) > 0.035:
-            QMessageBox.warning(self, tr('book_details.cover.title', 'Boekomslag'), tr('book_details.cover.bad_ratio', 'De verhouding is {width}:{height}. Gebruik ongeveer 1:1,6 (bijvoorbeeld 1024×1638).', width=w, height=h)); return
+            notice_warning(self, tr('book_details.cover.title', 'Boekomslag'), tr('book_details.cover.bad_ratio', 'De verhouding is {width}:{height}. Gebruik ongeveer 1:1,6 (bijvoorbeeld 1024×1638).', width=w, height=h)); return
         self.pending_cover = Path(path)
         self._refresh_cover_preview(); self._update_header_path()
 
@@ -431,7 +432,7 @@ class BookDetailsPage(QWidget):
         title = self.title_edit.text().strip()
         slug = self.slug_edit.text().strip()
         if not title:
-            QMessageBox.warning(self, tr('book_details.title', 'Boekdetails'), tr('book_details.title_required', 'Geef het boek een titel.')); return False
+            notice_warning(self, tr('book_details.title', 'Boekdetails'), tr('book_details.title_required', 'Geef het boek een titel.')); return False
         if not slug:
             slug = slugify(title)
         # slug normaliseren zodat bestandsnamen en metadata voorspelbaar blijven.
@@ -480,7 +481,7 @@ class BookDetailsPage(QWidget):
                     self.book, state_book=recovery, context='book_details'
                 ) if self.main else False
             except Exception as e:
-                QMessageBox.warning(
+                notice_warning(
                     self, tr('book_details.title', 'Boekdetails'),
                     tr('book_details.reload_failed', 'Het boek is extern gewijzigd, maar de nieuwste versie kon niet veilig worden geladen. Je invoer blijft staan.\n\n{error}', error=e)
                 )
@@ -488,18 +489,18 @@ class BookDetailsPage(QWidget):
             try:
                 self.main.adopt_active_book(latest)
             except Exception as e:
-                QMessageBox.warning(
+                notice_warning(
                     self, tr('book_details.title', 'Boekdetails'),
                     tr('book_details.merge_failed', 'Het boek is extern gewijzigd. Je invoer blijft staan, maar samenvoegen is mislukt.\n\n{error}', error=e)
                 )
                 return False
-            QMessageBox.information(
+            notice_information(
                 self, tr('book_details.external_title', 'Boek extern gewijzigd'),
                 tr('book_details.external_retry', 'De nieuwste versie is geladen en je lokale boekgegevens zijn behouden. Controleer de gegevens en sla daarna opnieuw op.')
             )
             return False
         except Exception as e:
-            QMessageBox.warning(self, tr('book_details.title', 'Boekdetails'), tr('book_details.save_failed', 'Opslaan mislukt:\n{error}', error=e)); return False
+            notice_warning(self, tr('book_details.title', 'Boekdetails'), tr('book_details.save_failed', 'Opslaan mislukt:\n{error}', error=e)); return False
 
         # Commit to the shared in-memory identity only after the guarded disk
         # transaction has succeeded. Sections/chapters are intentionally kept on
@@ -525,5 +526,5 @@ class BookDetailsPage(QWidget):
         try:
             self.library.delete_book(self.book)
         except Exception as e:
-            QMessageBox.critical(self, tr('book_details.delete_title', 'Boek verwijderen'), str(e)); return
+            notice_critical(self, tr('book_details.delete_title', 'Boek verwijderen'), str(e)); return
         self.deleted.emit(self.book)

@@ -763,7 +763,11 @@ class Library:
         # The manuscript file is authoritative; updating ``last_used`` in the
         # manifest is bookkeeping and may fail transiently under sync/file locks.
         self.verify_book_unchanged(book)
-        self.ensure_daily_archive(book)
+        try:
+            self.ensure_daily_archive(book)
+        except (OSError, shutil.Error):
+            # A failed history copy must not prevent saving the manuscript.
+            pass
         path = book.path / chapter.file
         _guard_existing_utf8(path)
         _safe_atomic_write_text(path, text)
@@ -793,7 +797,17 @@ class Library:
         if target.exists():
             return
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(book.path, target)
+        partial = target.parent / ('.' + target.name + '.partial')
+        try:
+            partial.mkdir(parents=True, exist_ok=False)
+            (partial / '.started').touch()
+            shutil.copytree(book.path, partial, dirs_exist_ok=True)
+            (partial / '.started').unlink()
+            # Published versions never include the staging marker.
+            os.replace(partial, target)
+        except Exception:
+            shutil.rmtree(partial, ignore_errors=True)
+            raise
         self._register_version(book, target.name, target, kind='daily', created_at=datetime.fromtimestamp(newest).isoformat(timespec='seconds'))
 
     def _history_root(self, book: Book) -> Path:
@@ -827,8 +841,30 @@ class Library:
         row['kind'] = kind
         row['created_at'] = created_at or datetime.now().isoformat(timespec='seconds')
         row['folder'] = Path(path).name
+        # Snapshot metadata is immutable; calculate it once, not on every history listing.
+        try:
+            snapshot = self.load_book(path)
+            from .manuscript_text import count_words
+            row['words'] = sum(count_words(self.read_chapter(snapshot, c)) for sec in snapshot.sections for c in sec.chapters)
+            row['chapters'] = sum(len(sec.chapters) for sec in snapshot.sections)
+            row['title'] = snapshot.title
+        except Exception:
+            pass
         data['versions'][version_id] = row
         self._save_history_index(book, data)
+
+    @staticmethod
+    def _copy_snapshot_atomic(source: Path, target: Path):
+        partial = target.parent / ('.' + target.name + '.partial')
+        try:
+            partial.mkdir(parents=True, exist_ok=False)
+            (partial / '.started').touch()
+            shutil.copytree(source, partial, dirs_exist_ok=True)
+            (partial / '.started').unlink()
+            os.replace(partial, target)
+        except Exception:
+            shutil.rmtree(partial, ignore_errors=True)
+            raise
 
     def create_version(self, book: Book, kind: str = 'manual') -> dict:
         """Create a complete immutable manuscript snapshot."""
@@ -840,9 +876,9 @@ class Library:
         while target.exists():
             target = root / f'{version_id}-{counter}'
             counter += 1
-        shutil.copytree(book.path, target)
+        self._copy_snapshot_atomic(book.path, target)
         self._register_version(book, target.name, target, kind=kind, created_at=now.isoformat(timespec='seconds'))
-        return next(v for v in self.list_versions(book) if v['id'] == target.name)
+        return self._version_row(book, target)
 
     def create_version_from_state(self, book: Book, chapter_overrides: dict[str, str] | None = None, kind: str = 'conflict_local') -> dict:
         """Snapshot the in-memory book structure, optionally overriding chapter text.
@@ -861,6 +897,8 @@ class Library:
         while target.exists():
             target = root / f'{version_id}-{counter}'
             counter += 1
+        final_target = target
+        target = target.parent / ('.' + target.name + '.partial')
         (target / 'chapters').mkdir(parents=True, exist_ok=True)
         snapshot = Book(
             id=book.id, title=book.title, path=target,
@@ -886,8 +924,10 @@ class Library:
             if source_aux.exists():
                 shutil.copytree(source_aux, target_aux)
         self._write_manifest_unchecked(snapshot)
+        os.replace(target, final_target)
+        target = final_target
         self._register_version(book, target.name, target, kind=kind, created_at=now.isoformat(timespec='seconds'))
-        return next(version for version in self.list_versions(book) if version['id'] == target.name)
+        return self._version_row(book, target)
 
     def create_version_with_file_overrides(self, book: Book, file_overrides: dict[str, str], kind: str = 'conflict_local') -> dict:
         """Snapshot the current on-disk book and replace selected files in the snapshot.
@@ -904,44 +944,103 @@ class Library:
         while target.exists():
             target = root / f'{version_id}-{counter}'
             counter += 1
+        final_target = target
+        target = target.parent / ('.' + target.name + '.partial')
         shutil.copytree(book.path, target)
         for relative, text in (file_overrides or {}).items():
             destination = target / Path(relative)
             _safe_atomic_write_text(destination, text)
+        os.replace(target, final_target)
+        target = final_target
         self._register_version(book, target.name, target, kind=kind, created_at=now.isoformat(timespec='seconds'))
-        return next(v for v in self.list_versions(book) if v['id'] == target.name)
+        return self._version_row(book, target)
 
-    def list_versions(self, book: Book) -> list[dict]:
-        root = self._history_root(book)
+    def _complete_snapshot(self, folder: Path) -> bool:
+        try:
+            snapshot = self.load_book(folder)
+            return all((folder / chapter.file).is_file()
+                       for section in snapshot.sections for chapter in section.chapters)
+        except (OSError, ValueError, KeyError):
+            return False
+
+    def _version_row(self, book: Book, folder: Path) -> dict:
+        version_id = folder.name
         index = self._load_history_index(book)
-        rows = []
-        for folder in root.iterdir():
-            if not folder.is_dir() or not (folder / 'book.json').exists():
-                continue
-            version_id = folder.name
-            meta = dict(index.get('versions', {}).get(version_id) or {})
-            if not meta:
-                # Backward compatibility with 0.6.x day folders.
-                try:
-                    newest = max([p.stat().st_mtime for p in folder.rglob('*') if p.is_file()] or [folder.stat().st_mtime])
-                except OSError:
-                    newest = folder.stat().st_mtime
-                created_at = datetime.fromtimestamp(newest).isoformat(timespec='seconds')
-                kind = 'daily' if re.fullmatch(r'\d{4}-\d{2}-\d{2}', version_id) else 'manual'
-                meta = {'created_at': created_at, 'kind': kind, 'starred': False, 'folder': folder.name}
+        meta = dict(index.get('versions', {}).get(version_id) or {})
+        if not meta:
+            try:
+                newest = max([p.stat().st_mtime for p in folder.rglob('*') if p.is_file()] or [folder.stat().st_mtime])
+            except OSError:
+                newest = folder.stat().st_mtime
+            meta = {'created_at': datetime.fromtimestamp(newest).isoformat(timespec='seconds'),
+                    'kind': 'daily' if re.fullmatch(r'\d{4}-\d{2}-\d{2}', version_id) else 'manual',
+                    'starred': False, 'folder': version_id}
+        if not all(key in meta for key in ('words', 'chapters', 'title')) and self._complete_snapshot(folder):
             try:
                 snap = self.load_book(folder)
                 from .manuscript_text import count_words
-                words = sum(count_words(self.read_chapter(snap, c)) for sec in snap.sections for c in sec.chapters)
-                chapter_count = sum(len(sec.chapters) for sec in snap.sections)
-                title = snap.title
+                meta['words'] = sum(count_words(self.read_chapter(snap, c)) for sec in snap.sections for c in sec.chapters)
+                meta['chapters'] = sum(len(sec.chapters) for sec in snap.sections)
+                meta['title'] = snap.title
+                # Legacy versions are immutable: persist their metadata once.
+                index.setdefault('versions', {})[version_id] = meta
+                self._save_history_index(book, index)
             except Exception:
-                words = 0; chapter_count = 0; title = book.title
-            rows.append({
-                'id': version_id, 'path': folder, 'created_at': meta.get('created_at') or datetime.fromtimestamp(folder.stat().st_mtime).isoformat(timespec='seconds'),
+                meta.setdefault('words', 0); meta.setdefault('chapters', 0); meta.setdefault('title', book.title)
+        # A registered snapshot may arrive before its files during cloud sync.
+        # Never let missing legacy metadata hide every healthy history entry.
+        meta.setdefault('words', 0)
+        meta.setdefault('chapters', 0)
+        meta.setdefault('title', book.title)
+        return {'id': version_id, 'path': folder,
+                'created_at': meta.get('created_at') or datetime.fromtimestamp(folder.stat().st_mtime).isoformat(timespec='seconds'),
                 'kind': meta.get('kind', 'manual'), 'starred': bool(meta.get('starred', False)),
-                'title': title, 'words': words, 'chapters': chapter_count,
-            })
+                'title': meta['title'], 'words': meta['words'], 'chapters': meta['chapters'],
+                'incomplete': not self._complete_snapshot(folder)}
+
+    def _cleanup_partial_versions(self, book: Book) -> None:
+        """Remove abandoned unpublished snapshots after a full day, best-effort.
+
+        Live sync/copy jobs remain untouched; never follow a symlink or junction.
+        """
+        root = self._history_root(book)
+        cutoff = time.time() - 86400
+        try:
+            entries = list(root.iterdir())
+        except OSError:
+            return
+        for folder in entries:
+            if not (folder.name.startswith('.') and folder.name.endswith('.partial')):
+                continue
+            try:
+                if not folder.is_dir() or folder.is_symlink() or (hasattr(folder, 'is_junction') and folder.is_junction()):
+                    continue
+                # Only locally marked partials may be pruned. copy2 preserves old
+                # source timestamps; an unmarked partial may be an active sync.
+                marker = folder / '.started'
+                if not marker.is_file() or marker.is_symlink():
+                    continue
+                if marker.stat().st_mtime < cutoff:
+                    shutil.rmtree(folder)
+            except OSError:
+                continue
+
+    def list_versions(self, book: Book) -> list[dict]:
+        root = self._history_root(book)
+        self._cleanup_partial_versions(book)
+        registered = set(self._load_history_index(book).get('versions', {}))
+        rows = []
+        for folder in root.iterdir():
+            if not folder.is_dir() or folder.name.startswith('.'):
+                continue
+            if folder.name not in registered and not self._complete_snapshot(folder):
+                continue
+            try:
+                rows.append(self._version_row(book, folder))
+            except (OSError, ValueError, KeyError):
+                # A single transiently incomplete folder must not suppress
+                # unrelated good versions, especially during Dropbox sync.
+                continue
         rows.sort(key=lambda r: (r['created_at'], r['id']), reverse=True)
         return rows
 
@@ -960,6 +1059,8 @@ class Library:
         folder = self._history_root(book) / version_id
         if not folder.is_dir() or not (folder / 'book.json').exists():
             raise FileNotFoundError(f'Versie {version_id} bestaat niet meer.')
+        if not self._complete_snapshot(folder):
+            raise ValueError('Deze boekversie is onvolledig en kan niet worden hersteld.')
         return self.load_book(folder)
 
     def _sync_snapshot_auxiliary_dir(self, live_book: Book, snapshot: Book, name: str, *, remove_extras: bool = True):
@@ -1009,7 +1110,9 @@ class Library:
                 source = snapshot.path / ch.file
                 target = live_book.path / ch.file
                 wanted.add(target.resolve())
-                _safe_atomic_write_text(target, source.read_text(encoding='utf-8') if source.exists() else '')
+                if not source.is_file():
+                    raise ValueError('Een hoofdstuk ontbreekt in de gekozen boekversie.')
+                _safe_atomic_write_text(target, source.read_text(encoding='utf-8'))
 
         live_goal_words = (live_book.metadata or {}).get('writing_goal_words', 0)
         live_goal_date = (live_book.metadata or {}).get('writing_goal_date', '')
@@ -1256,6 +1359,16 @@ class Library:
         # never leave an open live book silently untracked.
         self.untrack_book(book)
 
+    @staticmethod
+    def _trash_deleted_time(folder: Path) -> float:
+        # Names are minted at deletion; shutil.move preserves source mtimes.
+        stamp = folder.name.split('__', 1)[0]
+        stamp = re.sub(r'^(\d{8}-\d{6})-\d+$', r'\1', stamp)
+        try:
+            return datetime.strptime(stamp, '%Y%m%d-%H%M%S').timestamp()
+        except ValueError:
+            return folder.stat().st_mtime
+
     def list_trashed_books(self) -> list[dict]:
         root = self.trash_dir / 'books'
         root.mkdir(parents=True, exist_ok=True)
@@ -1265,7 +1378,7 @@ class Library:
                 continue
             try:
                 book = self.load_book(folder)
-                rows.append({'kind': 'book', 'path': folder, 'title': book.title, 'deleted': folder.stat().st_mtime, 'book': book, 'book_id': book.id})
+                rows.append({'kind': 'book', 'path': folder, 'title': book.title, 'deleted': self._trash_deleted_time(folder), 'book': book, 'book_id': book.id})
             except Exception:
                 continue
         return sorted(rows, key=lambda r: r['deleted'], reverse=True)
@@ -1301,6 +1414,10 @@ class Library:
         if trash_path.exists() and self.trash_dir in trash_path.parents:
             shutil.rmtree(trash_path)
             self._purge_chapter_trash_for_book(book_id)
+            if book_id and re.fullmatch(r'[a-fA-F0-9-]{16,64}', book_id):
+                history = self.archive_dir / book_id
+                if history.is_dir() and not history.is_symlink():
+                    shutil.rmtree(history)
             if book_id:
                 self._best_effort_shelf_update('Boek verwijderd; plankindeling kon niet worden bijgewerkt', lambda: self.shelves.forget(book_id))
 
@@ -1320,6 +1437,11 @@ class Library:
                     errors.append(f'{p.name}: {exc}')
         if errors:
             raise OSError('Niet alle onderdelen van de prullenbak konden worden verwijderd:\n' + '\n'.join(errors))
+        for book_id in trashed_book_ids:
+            if re.fullmatch(r'[a-fA-F0-9-]{16,64}', str(book_id)):
+                history = self.archive_dir / book_id
+                if history.is_dir() and not history.is_symlink():
+                    shutil.rmtree(history)
         if trashed_book_ids:
             self._best_effort_shelf_update('Prullenbak geleegd; plankindeling kon niet worden bijgewerkt', lambda: self.shelves.forget_many(trashed_book_ids))
 

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 
 from ..current_page_stack import CurrentPageStack
 from ..dialogs import confirm
+from ..dialog_notices import notice_warning
 from .combo_value import editable_combo_value
 from ...planning_models import Character, Relation
 from ...storage import CorruptSourceError
@@ -61,7 +62,7 @@ class CharacterDetail(QWidget):
         host = QWidget(); self.form = QVBoxLayout(host); self.form.setContentsMargins(0, 0, 12, 20); self.form.setSpacing(12)
         self.name = self._line(tr('planning.characters.name', 'Naam'))
         self.role = self._line(tr('planning.characters.role', 'Rol in het verhaal'))
-        self.description = self._text(tr('planning.characters.description', 'Korte beschrijving'), 72)
+        self.description = self._text(tr('planning.characters.description', 'Korte beschrijving'), 100)
         self.form.addSpacing(8)
         details = QLabel(tr('planning.characters.character_section', 'Karakter')); details.setObjectName('sectionTitle'); self.form.addWidget(details)
         self.personality = self._text(tr('planning.characters.personality', 'Persoonlijkheid'))
@@ -72,6 +73,8 @@ class CharacterDetail(QWidget):
         self.conflicts = self._text(tr('planning.characters.conflicts', 'Innerlijke / uiterlijke conflicten'))
         self.voice = self._text(tr('planning.characters.voice', 'Manier van spreken'))
         self.under_pressure = self._text(tr('planning.characters.under_pressure', 'Gedrag onder druk'))
+        self.form.addSpacing(8)
+        extra_title = QLabel(tr('planning.characters.section.extra', 'Achtergrond en notities')); extra_title.setObjectName('sectionTitle'); self.form.addWidget(extra_title)
         self.background = self._text(tr('planning.characters.background', 'Achtergrond'))
         self.notes = self._text(tr('planning.characters.notes', 'Notities'))
 
@@ -96,7 +99,7 @@ class CharacterDetail(QWidget):
         lab = QLabel(label); lab.setObjectName('settingsFieldLabel'); self.form.addWidget(lab)
         edit = QLineEdit(); self.form.addWidget(edit); return edit
 
-    def _text(self, label, height=88):
+    def _text(self, label, height=106):
         lab = QLabel(label); lab.setObjectName('settingsFieldLabel'); self.form.addWidget(lab)
         edit = QTextEdit(); edit.setAcceptRichText(False); edit.setFixedHeight(height); self.form.addWidget(edit); return edit
 
@@ -196,7 +199,11 @@ class CharactersPage(QWidget):
         self.blank = QWidget(); self.blank.setObjectName('planningBlankCanvas')
         self.canvas.addWidget(self.blank); self.canvas.addWidget(self.detail)
         body.addWidget(side); body.addWidget(self.canvas,1)
-        root.addLayout(body,1)
+        body_host=QWidget(); body_host.setMaximumWidth(1320)
+        body_host.setLayout(body)
+        body_row=QHBoxLayout(); body_row.setContentsMargins(0,0,0,0)
+        body_row.addWidget(body_host,1); body_row.addStretch(0)
+        root.addLayout(body_row,1)
         self.canvas.setCurrentWidget(self.blank)
 
     def load(self):
@@ -399,7 +406,7 @@ class CharactersPage(QWidget):
         self.characters = candidate
         self.refresh_list(); self.close_detail(); self.changed.emit()
         if not self.owner.remove_character_from_scenes(cid):
-            QMessageBox.warning(
+            notice_warning(
                 self,
                 tr('planning.characters.scene_cleanup_title', 'Personage verwijderd'),
                 tr('planning.characters.scene_cleanup_failed', 'Het personage is verwijderd, maar verwijzingen in scènes konden niet allemaal worden bijgewerkt. Probeer de planning opnieuw op te slaan.'),

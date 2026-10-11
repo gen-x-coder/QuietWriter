@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel, QMessageBox, QPushButton, QProgressDialog, QScrollArea, QStatusBar, QVBoxLayout, QWidget, QLayout
 )
 
+from .dialog_notices import notice_information, notice_warning, notice_critical
 from .current_page_stack import CurrentPageStack
 from .darlings_page import DarlingsPage
 from .. import APP_NAME
@@ -37,6 +38,9 @@ from .integrity_page import IntegrityPage
 from .persona_page import PersonaPage
 from .planning import PlanningPage
 from .settings_page import SettingsPage
+from .backup_worker import BackupWorker
+from ..automatic_backups import validate_backup_root, BackupError
+from ..backup_schedule import needs_daily_backup, prune_automatic_backups
 from .trash_page import TrashPage
 from .rail_model import RAIL_GROUPS, RailState, build_rail_view, fallback_destination
 
@@ -93,6 +97,14 @@ class MainWindow(QMainWindow):
         self.book_memory_page = BookMemoryPage(self)
         self.planning_page = PlanningPage(self)
         self.settings_page = SettingsPage(settings, self, models)
+        self._automatic_backup_worker = None
+        self._automatic_backup_book_id = None
+        self._automatic_backup_retry_after = {}
+        self._automatic_backup_timer = QTimer(self)
+        self._automatic_backup_timer.setInterval(60 * 1000)
+        self._automatic_backup_timer.timeout.connect(self._check_daily_backups)
+        self._automatic_backup_timer.start()
+        QTimer.singleShot(30 * 1000, self._check_daily_backups)
         self.trash = TrashPage(self)
         self.book_details_page = None
         self.export_page = ExportPage(self)
@@ -202,6 +214,8 @@ class MainWindow(QMainWindow):
         )
 
     def _demo_mode_changed(self, enabled: bool):
+        if hasattr(self.settings_page, '_refresh_backup_books'):
+            self.settings_page._refresh_backup_books()
         self.darlings_page.refresh()
         self.trash.refresh()
         if not enabled:
@@ -369,12 +383,12 @@ class MainWindow(QMainWindow):
             else:
                 self.library.create_version_from_state(book, kind='conflict_local')
         except Exception as exc:
-            QMessageBox.critical(
+            notice_critical(
                 self, tr('main.future.local_not_preserved_title', 'Lokale invoer niet veiliggesteld'),
                 tr('main.future.local_not_preserved_text', 'Je lokale {context} konden niet in Versiegeschiedenis worden bewaard. Het boek blijft open. Kopieer je invoer desnoods handmatig en probeer het opnieuw.\n\n{error}', context=context_label, error=exc)
             )
             return False
-        QMessageBox.warning(
+        notice_warning(
             self, tr('main.future.title', 'Nieuwere QuietWriter nodig'),
             tr('main.future.text', 'Dit boek gebruikt inmiddels een nieuwere QuietWriter-versie. Je lokale {context} zijn bewaard in Versiegeschiedenis. Het boek wordt gesloten; werk QuietWriter bij voordat je verdergaat.', context=context_label)
         )
@@ -782,15 +796,19 @@ class MainWindow(QMainWindow):
         self._sync_nav_selection()
 
     def new_book(self):
-        title, ok = QInputDialog.getText(self, tr('book.new.title', 'Nieuw boek'), tr('book.new.prompt', 'Titel van het boek:'))
+        from .dialogs import prompt_text
+        title, ok = prompt_text(self, tr('book.new.title', 'Nieuw boek'), tr('book.new.prompt', 'Titel van het boek:'))
         if ok:
             book = self.library.create_book(title or tr('book.untitled', 'Naamloos boek')); self.start.refresh(); self.open_book(book)
 
-    def import_book(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, tr('book.import.title', 'Boek importeren'), str(Path.home()),
-            tr('book.import.filter', 'QuietWriter-boek (*.qwbook);;Word-document (*.docx);;Markdown (*.md);;Alle bestanden (*)')
-        )
+    def import_book(self, source_path=None):
+        if isinstance(source_path, (str, Path)) and source_path:
+            path = str(source_path)
+        else:
+            path, _ = QFileDialog.getOpenFileName(
+                self, tr('book.import.title', 'Boek importeren'), str(Path.home()),
+                tr('book.import.filter', 'QuietWriter-boek (*.qwbook);;Word-document (*.docx);;Markdown (*.md);;Alle bestanden (*)')
+            )
         if not path:
             return
         warnings = ()
@@ -804,12 +822,12 @@ class MainWindow(QMainWindow):
             else:
                 book = self.library.import_markdown_book(source)
         except Exception as e:
-            QMessageBox.critical(self, tr('book.import.title', 'Boek importeren'), tr('book.import.failed', 'Importeren mislukt:\n{error}', error=e))
+            notice_critical(self, tr('book.import.title', 'Boek importeren'), tr('book.import.failed', 'Importeren mislukt:\n{error}', error=e))
             return
         self.start.refresh()
         self.open_book(book)
         if warnings:
-            QMessageBox.information(
+            notice_information(
                 self, tr('book.import.warnings_title', 'Import voltooid met aandachtspunten'),
                 tr('book.import.warnings', 'Het boek is geïmporteerd. Niet alles uit Word kon worden overgenomen:\n\n{warnings}', warnings='\n'.join(f'• {item}' for item in warnings)),
             )
@@ -850,7 +868,7 @@ class MainWindow(QMainWindow):
             live = self.library.touch_book(book)
         except Exception as exc:
             self._close_book_loading(loading)
-            QMessageBox.warning(self, tr('book.open_failed.title', 'Boek openen'), tr('book.open_failed.text', 'Het boek kon niet veilig worden geopend.\n\n{error}', error=exc))
+            notice_warning(self, tr('book.open_failed.title', 'Boek openen'), tr('book.open_failed.text', 'Het boek kon niet veilig worden geopend.\n\n{error}', error=exc))
             return
 
         syntax = profile_from_manifest(live.extra_manifest or {})
@@ -883,7 +901,7 @@ class MainWindow(QMainWindow):
             try:
                 migration_state = self.library.manuscript_syntax_migration_state(live)
             except Exception as exc:
-                QMessageBox.warning(
+                notice_warning(
                     self,
                     tr('book.syntax_migration.failed_title', 'Bijwerken mislukt'),
                     tr('book.syntax_migration.failed_text', 'Het boek is niet bijgewerkt. De oorspronkelijke versie is behouden.\n\n{error}', error=exc),
@@ -924,7 +942,7 @@ class MainWindow(QMainWindow):
                     live, assume_escape_era=assume_escape_era
                 )
             except Exception as exc:
-                QMessageBox.warning(
+                notice_warning(
                     self,
                     tr('book.syntax_migration.failed_title', 'Bijwerken mislukt'),
                     tr('book.syntax_migration.failed_text', 'Het boek is niet bijgewerkt. De oorspronkelijke versie is behouden.\n\n{error}', error=exc),
@@ -1002,14 +1020,14 @@ class MainWindow(QMainWindow):
         if self.book_memory_page.dirty and self.book_memory_page.save() is False:
             return False
         if self.planning_page.save_pending() is False:
-            QMessageBox.warning(
+            notice_warning(
                 self,
                 tr('book_details.delete_blocked_title', 'Boek niet verwijderd'),
                 tr('book_details.delete_blocked_planning', 'Niet alle planningswijzigingen konden worden opgeslagen. Het boek is niet verwijderd.'),
             )
             return False
         if self.editor_page.save() is False:
-            QMessageBox.warning(
+            notice_warning(
                 self,
                 tr('book_details.delete_blocked_title', 'Boek niet verwijderd'),
                 tr('book_details.delete_blocked_manuscript', 'De actuele hoofdstuktekst kon niet worden opgeslagen. Het boek is niet verwijderd.'),
@@ -1161,7 +1179,7 @@ class MainWindow(QMainWindow):
                 QDesktopServices.openUrl(QUrl(result.release_url))
         elif not silent:
             if is_newer_version(result.current_version, result.latest_version):
-                QMessageBox.warning(
+                notice_warning(
                     self, tr('updates.ahead_title', 'Je gebruikt een nieuwere versie'),
                     tr(
                         'updates.ahead_text',
@@ -1170,7 +1188,7 @@ class MainWindow(QMainWindow):
                     ),
                 )
             else:
-                QMessageBox.information(
+                notice_information(
                     self, tr('updates.current_title', 'QuietWriter is bijgewerkt'),
                     tr('updates.current_text', 'Je gebruikt de nieuwste stabiele versie ({version}).', version=result.current_version),
                 )
@@ -1178,7 +1196,7 @@ class MainWindow(QMainWindow):
     def _update_check_failed(self, message: str):
         if self._update_check_silent:
             return
-        QMessageBox.warning(
+        notice_warning(
             self, tr('updates.error_title', 'Controleren op updates'),
             tr('updates.error_text', 'De updatecontrole kon GitHub nu niet bereiken. Probeer het later opnieuw.\n\n{error}', error=message),
         )
@@ -1399,7 +1417,7 @@ class MainWindow(QMainWindow):
             self.editor_page.update_counts()
             self.editor_page.refresh_chapter_context()
         if self.settings.value('workspace') != old_root:
-            QMessageBox.information(self, tr('settings.workspace_changed_title', 'Werkmap gewijzigd'), tr('settings.workspace_changed_text', 'De nieuwe werkmap wordt gebruikt nadat de applicatie opnieuw is gestart.'))
+            notice_information(self, tr('settings.workspace_changed_title', 'Werkmap gewijzigd'), tr('settings.workspace_changed_text', 'De nieuwe werkmap wordt gebruikt nadat de applicatie opnieuw is gestart.'))
         self.status.showMessage(tr('settings.saved', 'Instellingen opgeslagen'), 2500)
 
     def sync_tool_buttons(self):
@@ -1432,7 +1450,96 @@ class MainWindow(QMainWindow):
             total = sum(len(sec.chapters) for sec in self.editor_page.book.sections) if self.editor_page.book else 0
             self.delete_chapter_button.setEnabled(bool(in_editor and self.editor_page.chapter and not self.editor_page.preview_live_book and total > 1))
 
+    def _check_daily_backups(self):
+        # One worker at a time. Never read unfinished editor changes in another thread.
+        if not self.settings.value('backup/enabled', False, bool):
+            return
+        if self._automatic_backup_worker is not None:
+            return
+        manual = getattr(self.settings_page, '_backup_worker', None)
+        if manual is not None and manual.isRunning():
+            return
+        root_text = str(self.settings.value('backup/path', '') or '').strip()
+        if not root_text:
+            return
+        try:
+            root = validate_backup_root(self.library.root, Path(root_text))
+            books = self.library.list_books()
+        except (BackupError, OSError):
+            return
+        from time import time
+        now = time()
+        active = self.active_book()
+        for book in books:
+            if now < self._automatic_backup_retry_after.get(book.id, 0):
+                continue
+            try:
+                if not needs_daily_backup(book, root):
+                    continue
+            except (OSError, BackupError):
+                self._automatic_backup_retry_after[book.id] = now + 3600
+                continue
+            if active is not None and active.id == book.id:
+                # Flush current editor text only when a backup is actually due.
+                try:
+                    if self.editor_page.save() is False:
+                        self._automatic_backup_retry_after[book.id] = now + 300
+                        continue
+                except Exception:
+                    self._automatic_backup_retry_after[book.id] = now + 300
+                    continue
+            # Keep the editor's existing revision baseline and block state.
+            worker = BackupWorker(self.library, book, root, self, automatic=True)
+            self._automatic_backup_worker = worker
+            self._automatic_backup_book_id = book.id
+            worker.succeeded.connect(lambda path, bid=book.id, dest=root: self._automatic_backup_succeeded(path, bid, dest))
+            worker.failed.connect(lambda error, bid=book.id: self._automatic_backup_failed(error, bid))
+            worker.finished.connect(self._automatic_backup_finished)
+            worker.start()
+            break
+
+    def _automatic_backup_succeeded(self, path, book_id, root):
+        try:
+            prune_automatic_backups(root, book_id, newest_success=Path(path))
+        except (OSError, BackupError) as exc:
+            log_exception(type(exc), exc, exc.__traceback__, label='Back-up bewaartermijn', notify=False)
+        self.settings.setValue(f'backup/error/{book_id}', '')
+        if hasattr(self.settings_page, '_update_backup_status'):
+            self.settings_page._update_backup_status()
+
+    def _automatic_backup_failed(self, error, book_id):
+        from time import time
+        message = str(error)
+        # Typing / cloud synchronisation while copying is an expected race,
+        # not an inaccessible backup location. Retry quietly after a short pause.
+        is_change = ('veranderde tijdens de back-up' in message or
+                     'buiten QuietWriter gewijzigd' in message or
+                     'Dit boek is geblokkeerd' in message)
+        self._automatic_backup_retry_after[book_id] = time() + (300 if is_change else 3600)
+        if is_change:
+            self.settings.setValue(f'backup/error/{book_id}', '')
+            return
+        self.settings.setValue(f'backup/error/{book_id}', message)
+        if hasattr(self.settings_page, '_update_backup_status'):
+            self.settings_page._update_backup_status()
+        self.status.showMessage(tr('settings.backup.failed', 'Een automatische back-up is niet gelukt. Controleer je back-upmap.'), 15000)
+
+    def _automatic_backup_finished(self):
+        worker = self._automatic_backup_worker
+        self._automatic_backup_worker = None
+        self._automatic_backup_book_id = None
+        if worker is not None:
+            worker.deleteLater()
+
     def closeEvent(self, event):
+        backup_worker = getattr(self.settings_page, '_backup_worker', None)
+        automatic_worker = getattr(self, '_automatic_backup_worker', None)
+        if ((backup_worker is not None and backup_worker.isRunning())
+                or (automatic_worker is not None and automatic_worker.isRunning())):
+            notice_information(self, tr('settings.backup.section', 'Boekback-ups'),
+                tr('settings.backup.close_busy', 'Er wordt nog een back-up gemaakt. Sluit QuietWriter nadat die klaar is.'))
+            event.ignore()
+            return
         try:
             if not self._save_book_details_if_pending():
                 event.ignore(); return
@@ -1448,12 +1555,12 @@ class MainWindow(QMainWindow):
                 event.ignore(); return
         except Exception as exc:
             event.ignore()
-            QMessageBox.critical(self, tr('app.close_blocked_title', 'Afsluiten gestopt'), tr('app.close_blocked_all', 'QuietWriter kon niet alle wijzigingen veilig opslaan. Het venster blijft open.\n\n{error}', error=exc))
+            notice_critical(self, tr('app.close_blocked_title', 'Afsluiten gestopt'), tr('app.close_blocked_all', 'QuietWriter kon niet alle wijzigingen veilig opslaan. Het venster blijft open.\n\n{error}', error=exc))
             return
         # AI-workers moeten echt gestopt zijn voordat Qt widgets/QThreads vernietigt.
         # Anders kan Qt afsluiten met: QThread: Destroyed while thread is still running.
         if hasattr(self.editor_page, 'ai') and not self.editor_page.ai.shutdown(4500):
-            QMessageBox.warning(self, tr('app.ai_still_running_title', 'AI is nog bezig'), tr('app.ai_still_running_text', 'QuietWriter kon het lopende AI-verzoek nog niet veilig stoppen. Klik op “Stop AI” en probeer daarna opnieuw af te sluiten.'))
+            notice_warning(self, tr('app.ai_still_running_title', 'AI is nog bezig'), tr('app.ai_still_running_text', 'QuietWriter kon het lopende AI-verzoek nog niet veilig stoppen. Klik op “Stop AI” en probeer daarna opnieuw af te sluiten.'))
             event.ignore()
             return
         try:
@@ -1462,8 +1569,12 @@ class MainWindow(QMainWindow):
                 return
         except Exception as exc:
             event.ignore()
-            QMessageBox.critical(self, tr('app.close_blocked_title', 'Afsluiten gestopt'), tr('app.close_blocked_last', 'QuietWriter kon je laatste wijzigingen niet veilig opslaan. Het venster blijft open.\n\n{error}', error=exc))
+            notice_critical(self, tr('app.close_blocked_title', 'Afsluiten gestopt'), tr('app.close_blocked_last', 'QuietWriter kon je laatste wijzigingen niet veilig opslaan. Het venster blijft open.\n\n{error}', error=exc))
             return
+        # Closing the main window does not send closeEvent to child panels.
+        # Discard queued spelling work only after all save guards passed.
+        self.editor_page.spell._suggest_request += 1
+        self.editor_page.spell._suggest_pool.clear()
         # Window geometry/state blijft volledig bij Qt. De layout zelf houdt
         # minimum-size hints nu binnen de beschikbare viewport; er is dus geen
         # Windows-specifieke clamp of handmatige setGeometry-workaround nodig.

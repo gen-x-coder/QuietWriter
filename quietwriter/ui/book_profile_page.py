@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QPushButton, QTextEdit, QVBoxLayout, QWidget
 )
 
+from .dialog_notices import notice_information, notice_warning, notice_critical
 from ..book_profile import SECTIONS, empty_book_profile, parse_book_profile, render_book_profile
 from ..i18n import tr
 from ..field_merge import merge_scalar_fields
@@ -199,7 +200,7 @@ class BookProfilePage(QWidget):
                 self._loading = False
             self._set_dirty(self.profile != disk_profile)
             if plan.get('conflicts') and show_message:
-                QMessageBox.information(
+                notice_information(
                     self,
                     tr('book_profile.merge_conflict_title', 'Lokale invoer veilig bewaard'),
                     tr(
@@ -213,7 +214,7 @@ class BookProfilePage(QWidget):
 
     def show_adoption_message(self, prepared):
         if prepared and prepared.get('mode') == 'corrupt' and prepared.get('local_preserved'):
-            QMessageBox.information(
+            notice_information(
                 self,
                 tr('book_profile.corrupt_preserved_title', 'Lokale invoer veilig bewaard'),
                 tr(
@@ -223,7 +224,7 @@ class BookProfilePage(QWidget):
                 ),
             )
         elif prepared and prepared.get('conflicts'):
-            QMessageBox.information(
+            notice_information(
                 self,
                 tr('book_profile.merge_conflict_title', 'Lokale invoer veilig bewaard'),
                 tr(
@@ -283,7 +284,7 @@ class BookProfilePage(QWidget):
         try:
             self.main.library.save_book_profile(self.book, text)
         except RevisionVerificationError:
-            QMessageBox.warning(
+            notice_warning(
                 self,
                 tr('book_profile.save_unavailable_title', 'Boekprofiel tijdelijk niet opgeslagen'),
                 tr('book_profile.save_unavailable', 'QuietWriter kan de actuele bestanden tijdelijk niet betrouwbaar controleren. Er is niets overschreven. Probeer het zo opnieuw.')
@@ -292,7 +293,7 @@ class BookProfilePage(QWidget):
         except ExternalModificationError as exc:
             return self._resolve_external_change(text, exc)
         except Exception as exc:
-            QMessageBox.critical(
+            notice_critical(
                 self,
                 tr('book_profile.save_error_title', 'Boekprofiel'),
                 tr('book_profile.save_error', 'Opslaan mislukt:\n{error}').format(error=exc)
@@ -313,7 +314,7 @@ class BookProfilePage(QWidget):
                 self.main.adopt_active_book(latest, preferred_chapter_id)
                 return True
             except Exception as error:
-                QMessageBox.critical(
+                notice_critical(
                     self,
                     tr('book_profile.conflict_failed_title', 'Conflict niet opgelost'),
                     tr('book_profile.conflict_failed', 'Er is niets bewust overschreven.\n\n{error}').format(error=error)
@@ -361,7 +362,7 @@ class BookProfilePage(QWidget):
             ok = self.main.preserve_local_and_close_future_book(old_book, file_overrides={'ai/boekprofiel.md': local_text}, context='book_profile')
             return False if ok else False
         except Exception as error:
-            QMessageBox.critical(
+            notice_critical(
                 self,
                 tr('book_profile.conflict_failed_title', 'Conflict niet opgelost'),
                 tr('book_profile.conflict_failed', 'Er is niets bewust overschreven.\n\n{error}').format(error=error)
