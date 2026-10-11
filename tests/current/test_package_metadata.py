@@ -8,7 +8,7 @@ class PackageMetadataTests(unittest.TestCase):
         self.assertEqual(quietwriter.APP_NAME, 'QuietWriter')
 
     def test_version_is_current(self):
-        self.assertEqual(quietwriter.__version__, '1.4.0-dev.39')
+        self.assertEqual(quietwriter.__version__, '1.4.0')
 
 
 if __name__ == '__main__':
