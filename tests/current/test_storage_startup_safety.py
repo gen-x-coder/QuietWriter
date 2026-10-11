@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from contextlib import closing
 import json
 import sqlite3
 import tempfile
@@ -27,7 +28,7 @@ def test_corrupt_search_cache_is_rebuilt_instead_of_blocking_startup():
         index = BookSearchIndex(db)
         try:
             assert index.search('missing', 'iets') == []
-            with sqlite3.connect(db) as conn:
+            with closing(sqlite3.connect(db)) as conn:
                 row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chapters'").fetchone()
                 assert row == ('chapters',)
         finally:
