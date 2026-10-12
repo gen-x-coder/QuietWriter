@@ -14,5 +14,5 @@ QuietWriter 1.4.0 richt zich op rustig schrijven, beter plannen en veilig herste
 
 Download `QuietWriter-windows-portable.zip` uit deze release, pak het bestand uit in een eigen map en start `QuietWriter.exe`. Bestaande boeken en instellingen blijven behouden; maak zoals altijd een back-up van belangrijke manuscripten voordat je een nieuwe versie uitprobeert.
 
-De Windows-versie wordt zonder commerciële codeondertekening aangeboden. De gepubliceerde SHA-256-hash helpt om het gedownloade pakket te controleren.
+De Windows-versie wordt zonder commerciële codeondertekening aangeboden. Verifieer de SHA-256-controlesom van het gedownloade pakket wanneer die bij de release is gepubliceerd. Zonder een afzonderlijk gepubliceerde checksum mag geen integriteitsvergelijking worden verondersteld.
 

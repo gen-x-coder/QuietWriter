@@ -1,11 +1,10 @@
 ﻿QuietWriter - korte handleiding
 ===============================
 
-Release candidate
+QuietWriter 1.4.0
 -----------------
-Dit is een release candidate van QuietWriter 1.0: een testversie op weg naar
-de eerste stabiele 1.0-release. Maak tijdens de testperiode regelmatig een kopie van je volledige
-werkmap en meld onverwacht gedrag met het crashlog.
+Dit is de stabiele portable Windows-versie van QuietWriter 1.4.0.
+Maak regelmatig een back-up van belangrijke boeken en meld onverwacht gedrag met het crashlog.
 
 Eerst uitpakken
 ---------------
@@ -60,11 +59,10 @@ normaal ook hier:
 QuietWriter - quick guide (English)
 ===================================
 
-Release candidate
+QuietWriter 1.4.0
 -----------------
-This is a QuietWriter 1.0 release candidate: a test build on the way to the
-first stable 1.0 release. During the test period, regularly copy your complete workspace and
-report unexpected behaviour with the crash log.
+This is the stable portable Windows release of QuietWriter 1.4.0.
+Back up important books regularly and report unexpected behaviour with the crash log.
 
 Extract first
 -------------
