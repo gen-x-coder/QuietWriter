@@ -12,6 +12,7 @@ def test_no_undefined_names():
 
 def test_release_version_agrees():
     import quietwriter
-    assert quietwriter.__version__ == '1.4.0-dev.39'
-    assert '1.4.0-dev.39' in Path('SNAPSHOT_INFO.txt').read_text()
-    assert '1.3.1' in Path('SNAPSHOT_INFO.txt').read_text()
+    snapshot = Path('SNAPSHOT_INFO.txt').read_text(encoding='utf-8')
+    assert quietwriter.__version__ == '1.4.0'
+    assert f'Application version: {quietwriter.__version__}' in snapshot
+    assert 'Previous stable public release: 1.3.1' in snapshot
