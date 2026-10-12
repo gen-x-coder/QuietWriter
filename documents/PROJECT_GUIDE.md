@@ -1,6 +1,6 @@
 # QuietWriter — projectgids
 
-**Status:** QuietWriter **1.4.0** is de actuele releasekandidaat (eerst als pre-release aangeboden); **1.3.1** blijft publiek stabiel totdat 1.4.0 naar Latest wordt gepromoveerd. De 1.3-lijn bevat inmiddels de nieuwe Boekenkast met planken en Presentatiemodus; dev.11 introduceerde opt-in schrijfdoelen en lokale dagvoortgang; dev.18 startte Planning dichter bij het schrijven met presentation-only Planninghulp in lege hoofdstukken; dev.19 polijst de sceneweergave en maakt afgekapt gebleven scènes expliciet zichtbaar; dev.20 maakte Planning zelf duidelijker en trok context-subnavigatie visueel gelijk; dev.21 verduidelijkte de Planningworkflow en maakte scènestatus zichtbaar; dev.22 voegde de on-demand Planning-overlay in de editor toe, maakte Status een vaste dropdown en liet scènes bewust als Geschreven markeren; dev.23 polijstte die workflow; dev.24 maakt de overlay smaller/hoger, koppelt de Planning-knop aan de Planninghulp-instelling en repareert de losse zoek/vervang- en plakselectiebugs; dev.25 laat de Planning-knop ook zonder gekoppelde scènes beschikbaar en trekt de lege zoekstatus visueel gelijk. dev.26 maakte de lege flyout compact en vormde de basis voor een brede review; dev.27 verwerkte de review-hardening rond tests, opt-in, scrollwiel, profielinstellingen en popupgedrag; dev.28 rondt de kerneditor af met natuurlijke undo, veilige scènebreuk-plakacties, de updatecheck en een kleine polishbundel. dev.29 richt zich op echt Windows-/laptopgebruik: betrouwbare undo bij menselijke typesnelheid, zichtbare boeklaadfeedback, kleine-schermgedrag, thema-accenten en expliciete Integriteit.
+**Status:** QuietWriter **1.4.0** is de actuele publieke stabiele release. De vorige stabiele release is **1.3.1**. Actieve productiebranch: `main`; historische versies blijven via tags en changelog beschikbaar. Ontwikkeling vindt plaats in de afzonderlijke privé-repository `QuietWriter-dev`.
 
 ## Wat QuietWriter is
 
@@ -111,7 +111,7 @@ Deze lagen mogen niet stil in elkaar overlopen.
 - de SignPath Foundation-aanvraag is afgewezen wegens nog onvoldoende publieke adoptiesignalen; dit blokkeert de release niet;
 - de Windows-release wordt voorlopig unsigned gebouwd zonder UPX/obfuscatie, met lokaal gecompileerde PyInstaller-bootloader en gepubliceerde SHA-256-hashes;
 - stabiele releases worden als vaste Windows-build bevroren, gecontroleerd en met SHA-256 gepubliceerd;
-- de ontwikkellijn voor volgende functies wordt `1.5.0-dev.X` in `QuietWriter-dev`; deze 1.4.0-releasebranch blijft bevroren behalve voor releasecorrecties. Latere onderhoudsreleases volgen als `1.4.1`.
+- de ontwikkellijn voor volgende functies wordt `1.5.0-dev.X` in `QuietWriter-dev`; de publieke `main` wordt uitsluitend via geteste pull requests bijgewerkt. Latere onderhoudsreleases volgen als `1.4.1`.
 
 Zie `RELEASE_PROCESS.md`.
 
