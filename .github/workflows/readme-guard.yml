@@ -1,0 +1,29 @@
+name: Protect public READMEs
+
+on:
+  push:
+    paths:
+      - README.md
+      - README_EN.md
+      - .github/workflows/readme-guard.yml
+  pull_request:
+    paths:
+      - README.md
+      - README_EN.md
+      - .github/workflows/readme-guard.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readme-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify approved public README contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object README.md)" = "9ca870221495cf2e5c73118b97df48b07661d733" || { echo "::error::README.md differs from the approved public README"; exit 1; }
+          test "$(git hash-object README_EN.md)" = "09bf0581d7881aff04dfe073fc20b2262048569d" || { echo "::error::README_EN.md differs from the approved public README"; exit 1; }
