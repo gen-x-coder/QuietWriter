@@ -1,0 +1,57 @@
+name: Protect public branding
+
+on:
+  push:
+    paths:
+      - 'branding/**'
+      - '.github/workflows/branding-guard.yml'
+  pull_request:
+    paths:
+      - 'branding/**'
+      - '.github/workflows/branding-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  branding-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify approved branding files exist and are unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/approved-branding.sha <<'BRANDING_MANIFEST'
+          cd4ac83695b4fa19be4145643811e373b023f398  branding/bron/emblem_src.svg
+          80757fd491f3e863c5ccfce12a33314cd9a14744  branding/bron/logo_geometrie.py
+          40520fe082a51d31b752efb0a08687aabc9b80a3  branding/bron/maak_iconen.py
+          276d31b00636d7203ea025bc364df598852e9463  branding/bron/wordmark_src.svg
+          75b397dd22b8a23e70887d6b331e699b40fae8c1  branding/overzicht.png
+          0fd93b774117209441257093761e4f77b29b8cee  branding/README.md
+          d930370c3bc66790b9d8f4d397a0759369a85266  branding/screenshots/02-open-punten.png
+          f2e4ebda2ea58165abeb91235b267410d7bcab96  branding/screenshots/03-meelezer.png
+          e8e77610eceb00774cffa7baf3e8cf5cb10bba4c  branding/screenshots/04-in-dit-hoofdstuk.png
+          8b2ac30d62c0b957cbbe2c3763a1ccb2ff7212e3  branding/screenshots/05-planning-personages.png
+          5498c842fd9e146733337359f07264264ee73720  branding/screenshots/07-bewaarplaats.png
+          e3e9a76c42ea50766af69e38021962efabc32989  branding/screenshots/08-versiegeschiedenis.png
+          836a45ba38137f03571f7ee9814e64752c248a9c  branding/screenshots/11-exporteren.png
+          aff1bc50980ec8ddf9e25e5c37f158b552e3901b  branding/screenshots/13-themas.png
+          55efaa6848767f7fded3443b7271261640eff027  branding/screenshots/hero-met-logo.png
+          BRANDING_MANIFEST
+          git hash-object --stdin < /dev/null >/dev/null
+          if ! git -c core.quotePath=false hash-object --stdin </dev/null >/dev/null; then exit 1; fi
+          git --no-pager status --porcelain >/dev/null
+          while IFS=' ' read -r hash path; do
+            if [ ! -f "$path" ]; then
+              echo "::error file=$path::Approved branding file is missing"
+              exit 1
+            fi
+            actual="$(git hash-object "$path")"
+            if [ "$hash" != "$actual" ]; then
+              echo "::error file=$path::Approved branding file changed unexpectedly"
+              exit 1
+            fi
+          done < /tmp/approved-branding.sha
+          echo "All approved branding files are intact."
