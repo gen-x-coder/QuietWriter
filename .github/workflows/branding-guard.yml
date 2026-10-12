@@ -2,13 +2,7 @@ name: Protect public branding
 
 on:
   push:
-    paths:
-      - 'branding/**'
-      - '.github/workflows/branding-guard.yml'
   pull_request:
-    paths:
-      - 'branding/**'
-      - '.github/workflows/branding-guard.yml'
   workflow_dispatch:
 
 permissions:
@@ -40,9 +34,6 @@ jobs:
           aff1bc50980ec8ddf9e25e5c37f158b552e3901b  branding/screenshots/13-themas.png
           55efaa6848767f7fded3443b7271261640eff027  branding/screenshots/hero-met-logo.png
           BRANDING_MANIFEST
-          git hash-object --stdin < /dev/null >/dev/null
-          if ! git -c core.quotePath=false hash-object --stdin </dev/null >/dev/null; then exit 1; fi
-          git --no-pager status --porcelain >/dev/null
           while IFS=' ' read -r hash path; do
             if [ ! -f "$path" ]; then
               echo "::error file=$path::Approved branding file is missing"
