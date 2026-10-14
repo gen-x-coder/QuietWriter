@@ -5,14 +5,15 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication, QAbstractButton, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QRadioButton, QStackedWidget, QVBoxLayout, QWidget,
+    QLineEdit, QMessageBox, QPushButton, QRadioButton, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from ..dictionary_catalog import locale_label
+from ..dictionary_catalog import DictionaryCatalog
+from .dialog_notices import _notice as _translated_notice
 from ..i18n import set_locale, tr
 from ..icon_theme import set_icon_theme
 from ..themes import THEMES, stylesheet
-from ..workspace_path import normalize_workspace_path
+from ..workspace_path import normalize_workspace_path, require_external_user_directory, UnsafeWorkspacePath
 
 
 class FirstRunWizard(QDialog):
@@ -315,35 +316,21 @@ class FirstRunWizard(QDialog):
         return page
 
     def _populate_dictionaries(self) -> None:
-        locales: set[str] = set()
-        roots = [
-            Path(__file__).resolve().parents[2] / 'dictionaries',
-            Path(r'C:/Program Files/ONLYOFFICE/DesktopEditors/dictionaries'),
-            Path(r'C:/Program Files (x86)/ONLYOFFICE/DesktopEditors/dictionaries'),
-            Path(r'C:/Program Files/LibreOffice/share/extensions'),
-            Path(r'C:/Program Files (x86)/LibreOffice/share/extensions'),
-            Path(r'C:/Program Files/OpenOffice 4/share/extensions'),
-            Path(r'C:/Program Files (x86)/OpenOffice 4/share/extensions'),
-        ]
-        for root in roots:
-            if not root.exists():
+        """Offer only real spelling dictionaries, using the same catalog as Settings."""
+        workspace = Path(self.workspace.text().strip() or str(self.default_workspace))
+        catalog = DictionaryCatalog(workspace / 'dictionaries', create=False)
+        seen = set()
+        for entry in catalog.entries():
+            if entry.locale in seen or entry.aff is None:
                 continue
-            try:
-                for dic in root.rglob('*.dic'):
-                    if dic.name.lower().startswith('hyph_'):
-                        continue
-                    value = dic.stem.replace('-', '_')
-                    if len(value) in {2, 5, 6}:
-                        locales.add(value)
-            except (OSError, PermissionError):
-                continue
-        if not locales:
-            locales.add('nl_NL')
-        for locale in sorted(locales, key=lambda x: locale_label(x).casefold()):
-            self.spell_language.addItem(locale_label(locale), locale)
+            seen.add(entry.locale)
+            self.spell_language.addItem(entry.label, entry.locale)
         idx = self.spell_language.findData('nl_NL')
         if idx >= 0:
             self.spell_language.setCurrentIndex(idx)
+        if not seen:
+            self.spell_enabled.setChecked(False)
+            self.spell_enabled.setEnabled(False)
 
     def _choose_workspace(self) -> None:
         chosen = QFileDialog.getExistingDirectory(
@@ -371,23 +358,28 @@ class FirstRunWizard(QDialog):
     def _next(self) -> None:
         index = self.pages.currentIndex()
         if index == self.tour_choice_index and not self.tour_enabled.isChecked():
-            self._commit(tour_seen=False)
-            self.accept()
+            if self._commit(tour_seen=False):
+                self.accept()
             return
         if index < self.pages.count() - 1:
             self.pages.setCurrentIndex(index + 1)
             return
-        self._commit(tour_seen=True)
-        self.accept()
+        if self._commit(tour_seen=True):
+            self.accept()
 
     def _skip(self) -> None:
         # Keep the current/default selections. This makes --first-run safe for
         # deliberate testing on an existing profile: Skip never resets it.
-        self._commit(tour_seen=False)
-        self.accept()
+        if self._commit(tour_seen=False):
+            self.accept()
 
-    def _commit(self, *, tour_seen: bool | None = None) -> None:
+    def _commit(self, *, tour_seen: bool | None = None) -> bool:
         workspace = str(normalize_workspace_path(self.workspace.text(), self.default_workspace))
+        try:
+            require_external_user_directory(workspace)
+        except UnsafeWorkspacePath as exc:
+            _translated_notice(QMessageBox.Warning, self, tr('first_run.workspace_title', 'Werkmap'), tr('first_run.workspace_unsafe', str(exc)))
+            return False
         self.workspace.setText(workspace)
         self.settings.setValue('language', str(self.language.currentData() or 'nl'))
         self.settings.setValue('theme', self.theme.currentText() or 'Helder')
@@ -409,3 +401,4 @@ class FirstRunWizard(QDialog):
             tour_seen = bool(self.tour_enabled.isChecked() and self.pages.currentIndex() >= self.tour_start_index)
         self.settings.setValue('first_run_tour_seen', bool(tour_seen))
         self.settings.sync()
+        return True

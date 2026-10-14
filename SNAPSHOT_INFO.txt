@@ -1,7 +1,23 @@
-QuietWriter 1.4.0 release snapshot
+1.5.0-dev.62: Release preparation; refresh source-context regression assertions and snapshot metadata.
+1.5.0-dev.27: Frozen updater LAB acceptance for disposable swaps, commit and crash recovery.
+1.5.0-dev.26: Standalone Windows updater LAB executable build, fail-closed workspace and bounded Windows lock-release regression; no production update enabled.
+1.5.0-dev.25: External subprocess journaled directory-swap rehearsal with real EXE health check; crash recovery on temporary copies only.
+1.5.0-dev.23: Isolated real portable EXE directory swap and health-check rehearsal; no real installation modified.
+1.5.0-dev.22: External non-destructive EXE health probe worker and Windows handoff rehearsal; production disabled.
+1.5.0-dev.21: Fix direct CLI invocation of portable ZIP packager; subprocess regression.
+1.5.0-dev.18: Interrupted signed fixture update recovery worker, fail-closed journal checks; production disabled.
+1.5.0-dev.17: Separate signed NONEXECUTABLE updater worker, subprocess health-gated rollback, production still disabled.
+1.5.0-dev.16: Signed fixture verification, integrated health-gated directory transaction and rollback; production disabled.
+QuietWriter development snapshot
 
-Application version: 1.4.0
-Previous stable public release: 1.3.1
+Application version: 1.5.0-dev.63
+1.5.0-dev.15: OS-backed crash-released lock for directory-swap fixtures, serialized recovery and process-crash regressions.
+Source baseline: 1.4.0-dev.39 (provisional; final 1.4.0 source reconciliation required before feature work)
+1.5.0-dev.10: Isolated separate updater process, process-exit wait, lock, restart simulation; production updates remain disabled.
+1.5.0-dev.5: Update preferences and current/latest stable-version status; no download or install engine yet.
+1.5.0-dev.3: Verified first-run dictionaries, bundled source labels, suggestion casing.
+1.5.0-dev.2: Markdown import late-section prose preservation and Unicode-safe Planning note offsets.
+Stable public release: 1.3.1
 - dev.29 Windows/small-screen hardening: visible book-loading feedback, word/pause-based undo grouping, responsive window constraints, theme-correct chapter selection, explicit Integrity checks and quieter AI-context pages
 - dev.28 core-editor finish: safe scene-break paste, update checker and final small polish bundle
 - dev.27 review hardening: opt-in safety, profile-aware themes, wheel guards and popup behaviour

@@ -1,10 +1,11 @@
 ﻿QuietWriter - korte handleiding
 ===============================
 
-QuietWriter 1.4.0
------------------
-Dit is de stabiele portable Windows-versie van QuietWriter 1.4.0.
-Maak regelmatig een back-up van belangrijke boeken en meld onverwacht gedrag met het crashlog.
+Versie
+------
+QuietWriter {{VERSION}}
+{{STATUS_NL}}
+Maak regelmatig een back-up van je werkmap en meld onverwacht gedrag met het crashlog.
 
 Eerst uitpakken
 ---------------
@@ -59,10 +60,11 @@ normaal ook hier:
 QuietWriter - quick guide (English)
 ===================================
 
-QuietWriter 1.4.0
------------------
-This is the stable portable Windows release of QuietWriter 1.4.0.
-Back up important books regularly and report unexpected behaviour with the crash log.
+Version
+-------
+QuietWriter {{VERSION}}
+{{STATUS_EN}}
+Regularly back up your workspace and report unexpected behaviour with the crash log.
 
 Extract first
 -------------

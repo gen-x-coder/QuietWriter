@@ -15,7 +15,6 @@ class InsertPanel(QWidget):
     """Right-side insertion workflow for manuscript block elements."""
 
     sceneBreakRequested = Signal()
-    openPointRequested = Signal()
     imageInsertRequested = Signal(str, str, str, str, str, bool)
     imageEditRequested = Signal(str, str, str, str, str, bool, bool)
 
@@ -29,6 +28,7 @@ class InsertPanel(QWidget):
         root.addWidget(self.stack)
 
         self.menu_page = QWidget()
+        self.menu_page.setObjectName("insertMenuPage")
         layout = QVBoxLayout(self.menu_page)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(12)
@@ -51,16 +51,6 @@ class InsertPanel(QWidget):
         self.scene_break_button.clicked.connect(self.sceneBreakRequested.emit)
         scene_card.layout().addWidget(self.scene_break_button)
 
-        open_point_card = self._choice_card(
-            tr('open_points.title', 'Open punt'),
-            tr('open_points.insert_description', 'Markeer iets dat je later wilt aanvullen. QuietWriter houdt het zichtbaar bij en laat de markering niet in je export terechtkomen.'),
-        )
-        self.open_point_button = QPushButton(tr('open_points.add', 'Open punt toevoegen'))
-        self.open_point_button.setObjectName('secondaryButton')
-        self.open_point_button.setToolTip(tr('open_points.add_tip', 'Maak van de selectie of cursorpositie een open punt'))
-        self.open_point_button.clicked.connect(self.openPointRequested.emit)
-        open_point_card.layout().addWidget(self.open_point_button)
-
         image_card = self._choice_card(
             tr('insert.image.title', 'Afbeelding'),
             tr('insert.image.card_description', 'Plaats een JPG- of PNG-afbeelding tussen twee alinea’s.'),
@@ -78,7 +68,6 @@ class InsertPanel(QWidget):
         layout.addWidget(description)
         layout.addSpacing(4)
         layout.addWidget(scene_card)
-        layout.addWidget(open_point_card)
         layout.addWidget(image_card)
         layout.addStretch(1)
 

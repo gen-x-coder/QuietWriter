@@ -21,11 +21,12 @@ from ..i18n import tr
 from ..search import BookSearchIndex
 from ..themes import THEMES, stylesheet
 from ..update_checker import UpdateChecker, is_newer_version
+from ..update_pilot_gate import pilot_enabled
 from ..typography import typography_from_values
 from ..editor_view import DEFAULT_TEXT_WIDTH, normalize_text_width
 from ..manuscript_markup import ManuscriptStyle
 from ..manuscript_profile import profile_from_manifest
-from ..storage import CorruptSourceError
+from ..storage import CorruptSourceError, ChapterNotAvailableError
 from ..planning_validation import FuturePlanningFormatError
 from .book_details import BookDetailsPage
 from .book_profile_page import BookProfilePage
@@ -45,6 +46,10 @@ from .trash_page import TrashPage
 from .rail_model import RAIL_GROUPS, RailState, build_rail_view, fallback_destination
 
 class MainWindow(QMainWindow):
+    def _refresh_bookshelf_hotkey(self):
+        if self.stack.currentWidget() is self.start and self.isActiveWindow() and QApplication.activeModalWidget() is None:
+            self.start.refresh()
+
     def __init__(self, settings, library, models, startup_status=None):
         super().__init__(); self.settings=settings; self.library=library
         self.models = [str(item.get('name')) if isinstance(item, dict) else str(item) for item in (models or [])]
@@ -61,6 +66,7 @@ class MainWindow(QMainWindow):
         self.rail_expanded = self.settings.value('nav_expanded', False, bool)
         self._feature_visibility_preview = None
         self._update_checker = UpdateChecker(self)
+        self._last_update_result = None
         self._update_check_silent = True
         self._update_checker.finished.connect(self._update_check_finished)
         self._update_checker.failed.connect(self._update_check_failed)
@@ -88,6 +94,11 @@ class MainWindow(QMainWindow):
         if startup_status is not None:
             startup_status(tr('splash.books', 'Boeken laden…'))
         self.start = StartPage(library, settings)
+        self._bookshelf_refresh_action = QAction(self)
+        self._bookshelf_refresh_action.setShortcut('F5')
+        self._bookshelf_refresh_action.setShortcutContext(Qt.ApplicationShortcut)
+        self._bookshelf_refresh_action.triggered.connect(self._refresh_bookshelf_hotkey)
+        self.addAction(self._bookshelf_refresh_action)
         if startup_status is not None:
             startup_status(tr('splash.interface', 'Interface opbouwen…'))
         self.darlings_page = DarlingsPage(self)
@@ -320,7 +331,7 @@ class MainWindow(QMainWindow):
         if chapter is not None:
             try:
                 self.library.read_chapter(book, chapter)
-            except UnicodeDecodeError:
+            except (UnicodeDecodeError, ChapterNotAvailableError):
                 pass
         # Three-way merges and their recovery writes must happen before any page
         # is rebound. A snapshot failure therefore aborts adoption while the old
@@ -1162,6 +1173,9 @@ class MainWindow(QMainWindow):
         self._update_checker.check()
 
     def _update_check_finished(self, result):
+        self._last_update_result = result
+        if hasattr(self, 'settings_page'):
+            self.settings_page.show_update_status(result)
         silent = self._update_check_silent
         if result.update_available:
             box = QMessageBox(self)
@@ -1173,10 +1187,28 @@ class MainWindow(QMainWindow):
                 latest=result.latest_version, current=result.current_version,
             ))
             open_button = box.addButton(tr('updates.open_github', 'GitHub openen'), QMessageBox.ActionRole)
+            # Pilot remains fail-closed: until official signing and install wiring
+            # are reviewed, the extra route is a read-only readiness preview.
+            pilot_button = None
+            if pilot_enabled(self.library.root):
+                pilot_button = box.addButton(
+                    tr('updates.pilot_preview', 'Nieuwe updater (proef)'), QMessageBox.ActionRole
+                )
             box.addButton(tr('common.close', 'Sluiten'), QMessageBox.RejectRole)
             box.exec()
             if box.clickedButton() is open_button and result.release_url:
                 QDesktopServices.openUrl(QUrl(result.release_url))
+            elif pilot_button is not None and box.clickedButton() is pilot_button:
+                notice_information(
+                    self,
+                    tr('updates.pilot_title', 'Updater-proef ingeschakeld'),
+                    tr('updates.pilot_wait',
+                       'Deze computer is aangemeld voor de proef met de nieuwe updater. '
+                       'De automatische installatie is nog niet beschikbaar: officiële '
+                       'releaseondertekening en de onafhankelijke veiligheidscontrole '
+                       'moeten eerst zijn afgerond. Je kunt de nieuwe versie voorlopig '
+                       'handmatig via GitHub installeren.'),
+                )
         elif not silent:
             if is_newer_version(result.current_version, result.latest_version):
                 notice_warning(
@@ -1370,6 +1402,7 @@ class MainWindow(QMainWindow):
         """Render committed feature switches without preview side effects."""
         self._feature_visibility_preview = None
         self._update_checker = UpdateChecker(self)
+        self._last_update_result = None
         self._update_check_silent = True
         self._update_checker.finished.connect(self._update_check_finished)
         self._update_checker.failed.connect(self._update_check_failed)

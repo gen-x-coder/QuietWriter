@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from ..i18n import tr
 from ..storage import Library
+from ..workspace_path import require_external_user_directory
 
 
 def open_library_with_recovery(root: Path, settings, splash):
@@ -14,8 +15,13 @@ def open_library_with_recovery(root: Path, settings, splash):
     original = candidate
     while True:
         try:
+            require_external_user_directory(candidate)
+            # A previously selected workspace must never be silently recreated.
+            # A missing OneDrive/USB path requires an explicit user decision.
+            if settings.value('first_run_done', False, bool) and not candidate.is_dir():
+                raise FileNotFoundError(f'Opgeslagen werkmap bestaat niet: {candidate}')
             library = Library(candidate)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             box = QMessageBox(splash)
             box.setIcon(QMessageBox.Critical)
             box.setWindowTitle(tr('startup.workspace_unavailable_title', 'Werkmap niet bereikbaar'))

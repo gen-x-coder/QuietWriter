@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from ..i18n import tr
 from .panel_help import PanelHelp
@@ -22,8 +22,11 @@ class DarlingsActionsPanel(QWidget):
 
         self.panel_help = PanelHelp(
             editor_page.main.settings, 'darlings', tr('darlings.editor_panel.title', 'Bewaarplaats'),
-            tr('panel_help.darlings', 'Tekst die je schrapt maar niet kwijt wilt, bewaar je hier. Selecteer een passage en kopieer of knip hem naar de Bewaarplaats. Alles wat je bewaart, vind je terug via Bewaarplaats openen.')
+            tr('panel_help.darlings', 'Tekst die je schrapt maar niet kwijt wilt, bewaar je hier. Selecteer een passage en kopieer of knip hem naar de Bewaarplaats. Alles wat je bewaart, vind je terug via Bewaarplaats openen.'),
+            show_dismiss_button=False,
         )
+        self.panel_help.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self.panel_help.block.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         self.selection_status = QLabel()
         self.selection_status.setObjectName('muted')
         self.selection_status.setWordWrap(True)
@@ -38,8 +41,8 @@ class DarlingsActionsPanel(QWidget):
         self.open_button.setObjectName('secondaryButton')
         self.open_button.clicked.connect(self.editor_page.main.show_darlings)
 
-        root.addWidget(self.panel_help)
-        root.addWidget(self.selection_status)
+        root.addWidget(self.panel_help, 0)
+        root.addWidget(self.selection_status, 0)
         root.addSpacing(4)
         root.addWidget(self.copy_button)
         root.addWidget(self.cut_button)

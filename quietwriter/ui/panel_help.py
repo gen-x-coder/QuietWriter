@@ -58,7 +58,7 @@ class PanelHelp(QWidget):
 
     expandedChanged = Signal(bool)
 
-    def __init__(self, settings, panel_id: str, title: str, text: str | None, *, extra_title_widgets=(), parent=None):
+    def __init__(self, settings, panel_id: str, title: str, text: str | None, *, extra_title_widgets=(), show_dismiss_button=True, parent=None):
         super().__init__(parent)
         self.settings = settings if settings is not None else _MemorySettings()
         self.panel_id = panel_id
@@ -106,7 +106,10 @@ class PanelHelp(QWidget):
         ok_row.setContentsMargins(0, 0, 0, 0)
         ok_row.addWidget(self.ok)
         ok_row.addStretch(1)
-        block_layout.addLayout(ok_row)
+        if show_dismiss_button:
+            block_layout.addLayout(ok_row)
+        else:
+            self.ok.hide()
         root.addWidget(self.block)
 
         if not self._has_help:

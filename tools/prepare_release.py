@@ -37,6 +37,7 @@ ALLOWED_FILES = (
     "tools/fetch_bundled_fonts.py",
     "tools/fetch_dictionaries.py",
     "tools/write_build_manifest.py",
+    "tools/render_release_readme.py",
 )
 
 # Font binaries are fetched *inside* staging. Keep only the manifest/licenses
