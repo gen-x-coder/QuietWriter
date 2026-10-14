@@ -80,7 +80,7 @@ def test_book_profile_navigation_and_ai_layering_are_wired():
     assert "self.book_profile_page.adopt_book(book, prepared=prepared['profile'], show_message=False)" in main
     assert 'parse_book_profile(self.main.library.read_book_profile(self.book))' in page
     assert 'render_book_profile(self.profile)' in page
-    assert 'BOEKPROFIEL (dit boek)' in prompting
+    assert "('BOEKPROFIEL', book_profile)" in prompting
     assert 'read_book_profile(active_book)' in ai
     assert "'ai/boekprofiel.md'" in revisions
     assert "('planning', 'publication', 'ai')" in revisions

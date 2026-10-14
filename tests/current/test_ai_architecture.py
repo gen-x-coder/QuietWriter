@@ -22,7 +22,10 @@ class AIArchitectureTests(unittest.TestCase):
         self.assertEqual(provider.name, 'ollama')
 
     def test_openrouter_provider_can_be_selected_without_key(self):
-        provider = ProviderFactory.from_settings(FakeSettings({'ai_provider': 'openrouter'}))
+        from unittest.mock import patch
+        # A developer may have a real browser-auth key in Credential Manager.
+        with patch('quietwriter.ai.openrouter_auth.stored_key', return_value=''):
+            provider = ProviderFactory.from_settings(FakeSettings({'ai_provider': 'openrouter'}))
         self.assertEqual(provider.name, 'openrouter')
         self.assertFalse(provider.is_available())
 

@@ -37,7 +37,7 @@ from ..publication_storage import PublicationStore
 from ..open_points_storage import OpenPointStore
 from ..document_view import image_reference_for_block_line, text_for_language_tools, visible_projection
 from ..spell_engine import WordDictionary
-from ..storage import Chapter, Section, StorageWriteError, CorruptSourceError
+from ..storage import Chapter, Section, StorageWriteError, CorruptSourceError, ChapterNotAvailableError
 from ..themes import THEMES
 from ..typography import WritingTypography
 from ..writing_progress import WritingProgressStore
@@ -200,7 +200,7 @@ class EditorPage(QWidget):
         self.main = main
         self.media_store = MediaStore(main.library)
         self.open_point_store = OpenPointStore(main.library)
-        self.book = None; self.chapter = None; self.dirty = False; self._chapter_corrupt = False
+        self.book = None; self.chapter = None; self.dirty = False; self._chapter_corrupt = False; self._chapter_unavailable = False
         self._clean_text = ''
         self._editing_image_block: int | None = None
         self._editing_image_reference_path: str | None = None
@@ -339,7 +339,6 @@ class EditorPage(QWidget):
         self._right_escape.setContext(Qt.WidgetWithChildrenShortcut)
         self._right_escape.activated.connect(self._close_right_panel_from_keyboard)
         self.insert.sceneBreakRequested.connect(self._insert_scene_break_from_panel)
-        self.insert.openPointRequested.connect(self._insert_open_point_from_panel)
         self.insert.imageInsertRequested.connect(self._insert_image_from_panel)
         self.insert.imageEditRequested.connect(self._save_image_edit_from_panel)
         self.history.versionSelected.connect(self.enter_history_preview)
@@ -1306,7 +1305,27 @@ class EditorPage(QWidget):
         self.editor.blockSignals(True)
         try:
             text = self.main.library.read_chapter(self.book, chapter)
+        except ChapterNotAvailableError:
+            self._chapter_corrupt = True
+            self._chapter_unavailable = True
+            self.editor.setPlainText(tr(
+                'editor.chapter_not_available',
+                'Dit hoofdstuk is nog niet op deze computer beschikbaar. Mogelijk is Dropbox of OneDrive nog bezig met synchroniseren. Je tekst is niet verdwenen. Wacht tot de synchronisatie klaar is en open het hoofdstuk opnieuw.'
+            ))
+            self._clean_text = self._editor_source_text()
+            self.editor.setReadOnly(True)
+            self.chapter_title.setReadOnly(True)
+            self.editor.blockSignals(False)
+            self.dirty = False
+            self.autosave_timer.stop()
+            self.autosave_status.setText(tr('editor.chapter_waiting', 'Wachten op synchronisatie · alleen-lezen'))
+            self._sync_undo_redo()
+            self.update_counts()
+            self.refresh_chapter_context()
+            self.main.sync_tool_buttons()
+            return
         except UnicodeDecodeError:
+            self._chapter_unavailable = False
             self._chapter_corrupt = True
             text = tr(
                 'editor.corrupt_text',
@@ -1327,6 +1346,7 @@ class EditorPage(QWidget):
             self.main.sync_tool_buttons()
             return
         self._chapter_corrupt = False
+        self._chapter_unavailable = False
         self.editor.setPlainText(text)
         self._clean_text = self._editor_source_text()
         if not self.preview_live_book:
@@ -1730,7 +1750,7 @@ class EditorPage(QWidget):
 
     def update_counts(self, saved=False):
         txt = self.editor.toPlainText()
-        words = count_words(txt)
+        words = 0 if self._chapter_unavailable else count_words(txt)
         self._ensure_word_count_cache()
         if self.chapter:
             self._chapter_word_counts[self.chapter.id] = words
@@ -2469,7 +2489,7 @@ class EditorPage(QWidget):
         for ch in self._chapters_in_scope():
             try:
                 text=self._editor_source_text() if self.chapter and ch.id==self.chapter.id else self.main.library.read_chapter(self.book,ch)
-            except UnicodeDecodeError:
+            except (UnicodeDecodeError, ChapterNotAvailableError):
                 skipped.append(ch.title)
                 continue
             projection = visible_projection(text)
@@ -2513,7 +2533,7 @@ class EditorPage(QWidget):
 
     def replace_current_match(self):
         if self._chapter_corrupt:
-            self.main.status.showMessage(tr('editor.corrupt_readonly', 'Beschadigd · alleen-lezen'), 3000)
+            self.main.status.showMessage(tr('editor.chapter_waiting', 'Wachten op synchronisatie · alleen-lezen') if self._chapter_unavailable else tr('editor.corrupt_readonly', 'Beschadigd · alleen-lezen'), 3000)
             return
         if self.preview_live_book:
             self.main.status.showMessage(tr('history.read_only', 'Historische versie is alleen-lezen.'), 3000)
@@ -2531,42 +2551,61 @@ class EditorPage(QWidget):
 
     def replace_all_matches(self):
         if self._chapter_corrupt:
-            self.main.status.showMessage(tr('editor.corrupt_readonly', 'Beschadigd · alleen-lezen'), 3000)
+            self.main.status.showMessage(tr('editor.chapter_waiting', 'Wachten op synchronisatie · alleen-lezen') if self._chapter_unavailable else tr('editor.corrupt_readonly', 'Beschadigd · alleen-lezen'), 3000)
             return
         if self.preview_live_book:
             self.main.status.showMessage(tr('history.read_only', 'Historische versie is alleen-lezen.'), 3000)
             return
-        rows=self.collect_search_matches()
-        if not rows: return
-        if not confirm(self, tr('editor.replace_all.title', 'Alles vervangen'), tr('editor.replace_all.confirm', 'Wil je {count} voorkomens vervangen?', count=len(rows))): return
-        replacement=self.search.replace.text(); rx=self._search_regex()
+        rows = self.collect_search_matches()
+        if not rows:
+            return
+        if getattr(self, '_search_corrupt_skipped', []):
+            self.main.status.showMessage(tr('editor.chapter_waiting', 'Wachten op synchronisatie · alleen-lezen'), 5000)
+            return
+        if not confirm(self, tr('editor.replace_all.title', 'Alles vervangen'), tr('editor.replace_all.confirm', 'Wil je {count} voorkomens vervangen?', count=len(rows))):
+            return
         if self.save() is False:
             return
-        chapters=self._chapters_in_scope()
-        skipped=[]
-        for ch in chapters:
+        replacement = self.search.replace.text()
+        rx = self._search_regex()
+        changes = {}
+        for chapter in self._chapters_in_scope():
             try:
-                text=self._editor_source_text() if self.chapter and ch.id==self.chapter.id else self.main.library.read_chapter(self.book,ch)
-            except UnicodeDecodeError:
-                skipped.append(ch.title)
-                continue
-            changed=replace_searchable_text(text, rx, replacement)
-            if changed!=text:
-                if self.chapter and ch.id==self.chapter.id:
-                    self.editor.blockSignals(True); self.editor.setPlainText(changed); self.editor.blockSignals(False); self.dirty=True
-                else:
-                    try:
-                        self.main.library.save_chapter(self.book, ch, changed)
-                    except (ExternalModificationError, RevisionVerificationError) as exc:
-                        self._handle_concurrency_issue(exc); return
-                self._chapter_word_counts[ch.id] = count_words(changed)
-        if self.save() is False:
+                source = self.main.library.read_chapter(self.book, chapter)
+            except (UnicodeDecodeError, ChapterNotAvailableError):
+                self.main.status.showMessage(tr('editor.chapter_waiting', 'Wachten op synchronisatie · alleen-lezen'), 5000)
+                return
+            changed = replace_searchable_text(source, rx, replacement)
+            if changed != source:
+                changes[chapter.id] = (source, changed)
+        if not changes:
             return
-        self.main.search_index.rebuild_book(self.book); self.do_search(); self.update_counts(saved=True)
-        if skipped:
-            count=len(skipped)
-            self.main.status.showMessage(tr('editor.corrupt.replace_skipped.one', '1 beschadigd hoofdstuk is overgeslagen bij vervangen. Herstel via Integriteit.') if count == 1 else tr('editor.corrupt.replace_skipped.many', '{count} beschadigde hoofdstukken zijn overgeslagen bij vervangen. Herstel via Integriteit.', count=count), 5000)
-
+        try:
+            self.main.library.replace_chapters_guarded(self.book, changes)
+        except (ExternalModificationError, RevisionVerificationError) as exc:
+            self._handle_concurrency_issue(exc)
+            return
+        except (OSError, RuntimeError, ChapterNotAvailableError) as exc:
+            notice_warning(self, tr('editor.replace_all.title', 'Alles vervangen'),
+                           tr('editor.replace_all.sync_failed', 'Vervangen is afgebroken omdat een hoofdstuk ondertussen veranderde of niet beschikbaar is. Controleer eerst de synchronisatie. Er is een herstelkopie bewaard als het terugzetten niet volledig lukte.') + '\n\n' + str(exc))
+            return
+        if self.chapter and self.chapter.id in changes:
+            changed = changes[self.chapter.id][1]
+            self.editor.blockSignals(True)
+            try:
+                self.editor.setPlainText(changed)
+            finally:
+                self.editor.blockSignals(False)
+            self._clean_text = changed
+            self.editor.document().setModified(False)
+            self.dirty = False
+            self.autosave_timer.stop()
+        for cid, (_, changed) in changes.items():
+            self._chapter_word_counts[cid] = count_words(changed)
+            self._saved_chapter_word_counts[cid] = count_words(changed)
+        self.main.search_index.rebuild_book(self.book)
+        self.do_search()
+        self.update_counts(saved=True)
 
     def _remember_panel_widths(self, *_):
         sizes = self.left_split.sizes()

@@ -162,8 +162,11 @@ def replace_existing_book(library: Library, source: Path, backup_root: Path, *, 
                 except OSError:
                     pass  # Workspace is preserved regardless of marker write failures.
                 raise RestoreError(
-                    'Het terugzetten is niet gelukt. Je boek is veilig bewaard als back-up; '
-                    'kies het in Instellingen > Herstellen.'
+                    'Het terugzetten is niet gelukt en ook het terugdraaien is onvolledig. '
+                    'Voer geen nieuw herstel uit voordat de bestanden gecontroleerd zijn. '
+                    'Een eerder gemaakte veiligheidsback-up staat in de ingestelde back-upmap. '
+                    f'Mogelijke reddingsbestanden staan in: {rescue_parent} en {workspace}. '
+                    'Deze mappen worden niet automatisch verwijderd.'
                 ) from rollback_errors[0]
             raise RestoreError('Het terugzetten is afgebroken. Je oorspronkelijke boek is behouden.') from exc
 

@@ -104,6 +104,12 @@ def split_book_body(body: str, fallback_title: str) -> list[tuple[str | None, li
     for line in lines:
         sec = SECTION_MARKER_RE.match(line)
         if sec:
+            # Any prose after the final chapter of the previous section (or
+            # before its first chapter) belongs to THAT section, not the next.
+            if preface:
+                flush_chapter()
+                current_chapters.append({'title': 'Inleiding', 'text': '\n'.join(preface).strip()})
+                preface = []
             flush_group()
             current_section = sec.group(1).strip() or 'Nieuwe sectie'
             continue
@@ -123,12 +129,14 @@ def split_book_body(body: str, fallback_title: str) -> list[tuple[str | None, li
         else:
             current_lines.append(line)
 
-    flush_group()
+    # Final unheaded section prose must be added BEFORE the section is flushed.
+    # Otherwise it gets associated with the first section or silently lost.
     if preface:
-        if groups:
-            groups[0][1].insert(0, {'title': 'Inleiding', 'text': '\n'.join(preface).strip()})
-        else:
-            groups = [(current_section, [{'title': fallback_title, 'text': '\n'.join(preface).strip()}])]
+        flush_chapter()
+        current_chapters.append({'title': fallback_title if not groups and not current_chapters else 'Inleiding',
+                                 'text': '\n'.join(preface).strip()})
+        preface = []
+    flush_group()
     if not groups:
         groups = [(None, [{'title': fallback_title, 'text': body.strip()}])]
     return groups

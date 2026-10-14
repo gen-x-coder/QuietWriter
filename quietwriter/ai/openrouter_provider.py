@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import threading
+from urllib.parse import urlsplit
 from decimal import Decimal, InvalidOperation
 import requests
 from .providers import AIProvider, StreamChunk
@@ -12,10 +13,22 @@ class OpenRouterProvider(AIProvider):
 
     def __init__(self, api_key: str, base_url='https://openrouter.ai/api/v1'):
         self.api_key = api_key.strip()
-        self.base_url = base_url.rstrip('/')
+        self.base_url = self._validated_base_url(base_url)
         self._response_lock = threading.Lock()
         self._active_response = None
         self._cancelled = False
+
+    @staticmethod
+    def _validated_base_url(base_url: str) -> str:
+        """Never send an OpenRouter bearer token to a substituted endpoint."""
+        candidate = str(base_url or '').strip().rstrip('/')
+        parsed = urlsplit(candidate)
+        if (parsed.scheme.lower() != 'https' or parsed.hostname != 'openrouter.ai'
+                or parsed.port not in (None, 443) or parsed.username is not None
+                or parsed.password is not None or parsed.path != '/api/v1'
+                or parsed.query or parsed.fragment):
+            raise ValueError('Ongeldig OpenRouter-adres: alleen https://openrouter.ai/api/v1 is toegestaan.')
+        return 'https://openrouter.ai/api/v1'
 
     @property
     def headers(self):
@@ -113,10 +126,10 @@ class OpenRouterProvider(AIProvider):
         return [
             {
                 'name': x.get('id', ''),
+                'description': x.get('description') or '',
+                'output_modalities': (x.get('architecture') or {}).get('output_modalities'),
                 'size': 0,
-                # OpenRouter exposes supported_parameters in model metadata.
-                # `reasoning` means QuietWriter can send reasoning.enabled=false;
-                # OpenRouter will route to an endpoint that accepts that option.
+                # Parameter support does not imply an endpoint permits disabling reasoning.
                 'thinking_supported': self._supports_reasoning(x),
                 'thinking_can_disable': self._supports_reasoning(x),
                 'thinking_values': [],
@@ -132,7 +145,7 @@ class OpenRouterProvider(AIProvider):
         payload = {'model': model, 'messages': messages, 'stream': True}
         payload.update({k:v for k,v in options.items() if v is not None})
         self._begin_request()
-        r = requests.post(f'{self.base_url}/chat/completions', headers=self.headers, json=payload, stream=True, timeout=(10, 900))
+        r = requests.post(f'{self.base_url}/chat/completions', headers=self.headers, json=payload, stream=True, timeout=(10, 45))
         self._set_active(r)
         try:
             # A cancellation can happen while requests.post() waits for the
@@ -143,6 +156,7 @@ class OpenRouterProvider(AIProvider):
             # OpenRouter streams Server-Sent Events as UTF-8. Requests may
             # otherwise decode text/event-stream as Latin-1 when the response
             # omits an explicit charset, producing mojibake such as scÃ¨ne.
+            completed = False
             for raw in r.iter_lines(decode_unicode=False):
                 if self._is_cancelled():
                     break
@@ -157,25 +171,40 @@ class OpenRouterProvider(AIProvider):
                 if line.startswith('data:'):
                     line = line[5:].strip()
                 if line == '[DONE]':
+                    completed = True
                     break
                 try:
                     data = json.loads(line)
                 except Exception:
                     continue
-                error = data.get('error') if isinstance(data, dict) else None
+                if not isinstance(data, dict):
+                    continue
+                error = data.get('error')
                 if error:
                     if isinstance(error, dict):
                         detail = error.get('message') or error.get('code') or str(error)
                     else:
                         detail = error
                     raise RuntimeError(f'OpenRouter stream mislukt: {detail}')
-                delta = (((data.get('choices') or [{}])[0]).get('delta') or {})
+                actual_model = data.get('model') if isinstance(data, dict) else None
+                if isinstance(actual_model, str) and actual_model.strip():
+                    yield StreamChunk(model=actual_model.strip())
+                choices = data.get('choices') or []
+                if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+                    continue
+                if choices[0].get('finish_reason'):
+                    completed = True
+                delta = choices[0].get('delta') or {}
+                if not isinstance(delta, dict):
+                    continue
                 reasoning = delta.get('reasoning') or delta.get('reasoning_content') or ''
                 content = delta.get('content') or ''
                 if reasoning:
                     yield StreamChunk(thinking=reasoning)
                 if content:
                     yield StreamChunk(content=content)
+            if not self._is_cancelled() and not completed:
+                raise RuntimeError('OpenRouter stream onderbroken: het antwoord is mogelijk onvolledig ontvangen.')
         finally:
             try:
                 r.close()

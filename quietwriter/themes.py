@@ -592,6 +592,7 @@ def stylesheet(name: str) -> str:
     QScrollArea#planningOverlayScroll > QWidget > QWidget {{ background: transparent; }}
     QFrame#planningOverlayScene {{ background: {t['bg']}; border: 1px solid {t['border_subtle']}; border-radius: 9px; }}
     QFrame#flyout {{ background: {t['panel']}; border: 1px solid {t['border']}; border-radius: 4px; }}
+    QWidget#insertMenuPage {{ background: {t['panel']}; }}
     QFrame#insertChoiceCard {{ background: {t['panel']}; border: 1px solid {t['border_subtle']}; border-radius: 10px; }}
     QPushButton#flyoutButton {{ background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 10px 14px; text-align: left; font-weight: 600; min-width: 190px; }}
     QPushButton#flyoutButton:hover {{ background: {t['accent_soft']}; color: {t['text']}; }}

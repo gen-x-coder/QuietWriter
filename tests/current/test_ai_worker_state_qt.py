@@ -78,11 +78,11 @@ def test_late_cancel_from_book_a_cannot_mutate_book_b(app):
 
         _active['book'] = book_b
         panel.set_book(book_b)
-        assert [m['content'] for m in panel.messages] == ['Bericht van boek B.']
+        assert [m['content'] for m in panel.messages] == []
 
         provider.release.set()
         _run_events()
 
-        assert [m['content'] for m in panel.messages] == ['Bericht van boek B.']
+        assert [m['content'] for m in panel.messages] == []
         assert [m['content'] for m in b_store.load()] == ['Bericht van boek B.']
         panel.close()

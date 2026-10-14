@@ -68,6 +68,7 @@ python -m pip install --disable-pip-version-check --force-reinstall --no-deps --
 python tools\fetch_bundled_fonts.py || exit /b 1
 python tools\fetch_dictionaries.py || exit /b 1
 python packaging\make_version_info.py || exit /b 1
+python tools\render_release_readme.py --template documents\LEESMIJ.txt --version-file quietwriter\__init__.py --out documents\LEESMIJ.txt || exit /b 1
 
 rem 3. Portable onedir bouwen.
 pyinstaller --noconfirm --clean packaging\quietwriter.spec || exit /b 1
@@ -100,7 +101,8 @@ rem 6. Distributie-zip + hash maken naast de schone releasemap.
 cd /d "%~dp0"
 set ZIP=release\QuietWriter-!VER!-windows-portable.zip
 if exist "!ZIP!" del /q "!ZIP!"
-powershell -NoProfile -Command "Compress-Archive -Force -Path 'release\QuietWriter-!VER!' -DestinationPath '!ZIP!'; $h=(Get-FileHash '!ZIP!' -Algorithm SHA256).Hash.ToLower(); ($h + '  QuietWriter-!VER!-windows-portable.zip') | Out-File -Encoding ascii '!ZIP!.sha256'" || exit /b 1
+python tools\create_portable_zip.py --source "release\QuietWriter-!VER!" --output "!ZIP!" || exit /b 1
+powershell -NoProfile -Command "$h=(Get-FileHash '!ZIP!' -Algorithm SHA256).Hash.ToLower(); ($h + '  QuietWriter-!VER!-windows-portable.zip') | Out-File -Encoding ascii '!ZIP!.sha256'" || exit /b 1
 
 rem 7. Vaste assetnamen voor /releases/latest/download/... links.
 copy /y "!ZIP!" "release\QuietWriter-windows-portable.zip" >nul || exit /b 1

@@ -18,6 +18,7 @@ class UpdateResult:
     latest_version: str
     release_url: str
     update_available: bool
+    release_notes: str = ""
 
 
 def _version_tuple(value: str) -> tuple[int, ...]:
@@ -82,14 +83,19 @@ class UpdateChecker(QObject):
             payload = json.loads(bytes(reply.readAll()).decode('utf-8'))
             tag = str(payload.get('tag_name') or '').strip()
             url = str(payload.get('html_url') or '').strip()
-            if not tag:
-                raise ValueError('GitHub response has no tag_name')
+            if not tag or _is_prerelease(tag) or not re.fullmatch(r'v?\d+\.\d+\.\d+', tag, re.I):
+                raise ValueError('GitHub response is not a stable version')
+            if payload.get('draft') or payload.get('prerelease'):
+                raise ValueError('GitHub response is not a stable published release')
+            if not url.startswith('https://github.com/gen-x-coder/QuietWriter/releases/tag/'):
+                raise ValueError('GitHub response has no official release URL')
             latest = tag[1:] if tag.lower().startswith('v') else tag
             self.finished.emit(UpdateResult(
                 current_version=__version__,
                 latest_version=latest,
                 release_url=url,
                 update_available=is_newer_version(latest),
+                release_notes=str(payload.get('body') or '')[:2000],
             ))
         except Exception as exc:
             self.failed.emit(str(exc))

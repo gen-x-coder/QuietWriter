@@ -144,7 +144,7 @@ def append_memory_entry(markdown: str, section_key: str, text: str) -> tuple[str
     memory = parse_book_memory(markdown)
     if section_key not in memory:
         return markdown, False
-    clean = (text or '').strip()
+    clean = ' '.join((text or '').split())
     if not clean:
         return markdown, False
     current = (memory.get(section_key) or '').rstrip()

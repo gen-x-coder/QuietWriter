@@ -39,7 +39,7 @@ def test_application_offscreen_smoke_startup():
     pytest.importorskip('PySide6', reason='PySide6 is required for the Qt startup gate')
     environment = dict(os.environ, QT_QPA_PLATFORM='offscreen')
     outcome = subprocess.run(
-        [sys.executable, '-m', 'quietwriter.app', '--smoke-test'],
+        [sys.executable, 'main.py', '--smoke-test'],
         cwd=ROOT, env=environment, capture_output=True, text=True, timeout=60,
     )
     assert outcome.returncode == 0, outcome.stdout + '\n' + outcome.stderr

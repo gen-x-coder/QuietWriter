@@ -1,9 +1,215 @@
-## 1.4.0 — Betrouwbaar schrijven, plannen en herstellen
+## 1.5.0-dev.63 — Windows release-gate test portability fixes and OpenRouter authentication status worker lifecycle hardening.
+## 1.5.0-dev.62 — Release test consistency
 
-- Boekback-ups, automatische dagkopieën, herstel en versiegeschiedenis, met bescherming tegen externe wijzigingen en onvolledige synchronisatie.
-- Planning met overzichtelijke scènes, personages en notities, direct bereikbaar vanuit de editor.
-- Verbeterde spellingresponsiviteit, privacyveilige controles en doorlopende stabiliteits- en toegankelijkheidsverbeteringen.
-- Uitgebreide regressietests en Windows-buildcontrole vóór publicatie.
+- Update tests for the intentional separation of source material and system instructions.
+- Bring development snapshot version metadata up to date.
+- No application functionality changed. Windows build and full PySide6 test suite remain release gates.
+
+## 1.5.0-dev.61 — OpenRouter-endpointbeveiliging en releasecontroles
+
+- Sta voor OpenRouter uitsluitend het officiële HTTPS API-endpoint toe, zodat een opgeslagen bearer-token niet naar een afwijkende URL gaat.
+- Voeg regressietests toe voor gemanipuleerde endpoint-URL's.
+- Leg de controles en het resterende Windows/Qt-releasewerk vast; nog geen GitHub-publicatie.
+
+## 1.5.0-dev.60 — Contextscheiding en releasevoorbereiding
+
+- Stuur manuscript, profielen, Boekgeheugen en Planning als afzonderlijk, afgebakend gebruikersmateriaal in plaats van in het systeembericht.
+- Neutraliseer QW-geheugenmarkeringen in meegestuurde broncontext.
+- Sluit een open Meelezer-pop-out bij het verlaten van een boek.
+- Leg de afgesproken GitHub-pre-releasevolgorde vast; de updater-pilot blijft verborgen zonder marker.
+- Geen GitHub-publicatie uitgevoerd; deze versie is een testbuild.
+
+## 1.5.0-dev.59 — Boekgeheugen en reviewcorrecties
+
+- Voorkom verlies van bevestigde canonfeiten bij een open bewerking in dezelfde sectie.
+- Vertaal OpenRouter- en HTTPS-linkmeldingen met eigen QuietWriter-knoppen.
+- Vervang verouderde versiepins in regressietests door actuele metadatacontroles.
+- Behoud de smoke-test- en linkbeveiliging uit dev.58.
+
+## 1.5.0-dev.58 — Claude review hardening (eerste ronde)
+
+- Herstel echte smoke-starttest en tijdelijke werkmap.
+- Verifieer meerregelig Boekgeheugen en bewaar geen andere niet-opgeslagen wijzigingen.
+- Beperk links uit AI-chat en gespreksarchief tot bevestigde HTTPS-bestemmingen.
+- Toon geheugenvoorstellen letterlijk; verberg interne voorstelmarkeringen.
+- Bewaar manuscriptcitaten in AI-reacties bij opslagclaimcontrole.
+- Nog geen release: Windows Qt-acceptatietest en openstaande reviewpunten blijven nodig.
+
+## 1.5.0-dev.28 — Updater laboratory hardening (partial; production NO-GO)
+
+- Share the collision-resistant tree digest with the existing fixture transaction engine.
+- Permit a second laboratory transaction without overwriting a retained previous build.
+- Safely handle stale journal temp files and unique recovered candidate names.
+- Accept an optional externally trusted candidate digest; production manifest verification and Windows handshake remain blocked pending further work.
+- Update stale version metadata tests.
+
+## 1.5.0-dev.27 — Acceptatietest zelfstandige updater-EXE
+
+- Nieuwe test voor de daadwerkelijk gebouwde updater-lab-EXE: weiger onveilige map, maak testwissel, commit en herstel na procescrash.
+- Alleen tijdelijke synthetische installaties; geen gebruikersinstallaties of originele Windows-builds wijzigen.
+- Geen productie-update ingeschakeld.
+
+## 1.5.0-dev.26 — Zelfstandige updater-test-EXE en Windows-lockherstel
+
+- Nieuwe apart te bouwen `QuietWriterUpdaterLab.exe` voor uitsluitend geïsoleerde, gemarkeerde testwerkruimtes; niet verbonden met de echte app.
+- Bestaande crash-/rollback-worker als zelfstandige entrypoint, veilig afwijzen van gewone installatiemap.
+- Windows-lockregressie wacht na een afgebroken eigenaar begrensd op OS-lockvrijgave; blokkeren tijdens actieve update blijft direct.
+- Geen productiekoppeling, download-/handtekeningintegratie of echte updateractivatie.
+
+## 1.5.0-dev.25 — External rehearsal process isolation and crash recovery
+
+- OS-backed lock serializes standalone updater swap, recover and commit; hard crashes release ownership.
+- Staged candidate recovery verifies file hashes and preserves candidate outside the active slot.
+- Add cross-process locking, tamper detection and crash-release regression tests.
+- Actual production updates remain disabled.
+
+## 1.5.0-dev.24 — Geïsoleerde transactie met echte EXE en procesherstel
+
+- Afzonderlijk updater-testproces voert een gejournalde mapwissel uit tussen tijdelijke kopieën van twee echte Windows-builds.
+- Een tweede proces kan na geforceerd stoppen tijdens staging of mapwissel de vorige testinstallatie herstellen.
+- Gezondheidscontrole van de kandidaat-EXE bepaalt commit of rollback, inclusief tree-hashcontroles.
+- Originele buildmappen worden nooit gewijzigd; productie-updates blijven uitgeschakeld.
+
+## 1.5.0-dev.23 — Geïsoleerde echte Windows-mapwisseltest
+
+- Twee echte portable buildmappen worden alleen naar een tijdelijke testomgeving gekopieerd.
+- Complete mapwissel gevolgd door EXE-gezondheidscontrole; bij fout herstel van tijdelijke oude map.
+- De oorspronkelijke builds en productiegegevens worden nooit gewijzigd. Dit is nog geen productie-updater.
+- Nieuwe unit- en foutinjectietests.
+
+## 1.5.0-dev.22 — Onafhankelijke EXE-gezondheidscontrole in updaterproces (testlab)
+
+- Afzonderlijk Python-proces controleert een bestaande Windows-EXE zonder installatiebestanden te wijzigen.
+- Proceswachten en gezondheidscontrole worden in vaste volgorde uitgevoerd.
+- Gerichte regressies voor fouten en procesisolatie. Geen productie-installatie geactiveerd.
+
+## 1.5.0-dev.21 — Windows portable ZIP buildfix
+
+- Verpakking start nu als zelfstandig Python-script zonder `PYTHONPATH` of installatie van de projectmodule.
+- Regressietest voor het exacte `build_exe.cmd`-aanroeppad, vanuit een andere werkmap.
+- Geen veranderingen in de updater of manuscriptgegevens.
+
+## 1.5.0-dev.20 — Voorbereiding echte EXE-gezondheidscontrole
+
+- Toegevoegd: `--update-health-check` gebruikt geïsoleerde smoke-testinstellingen en tijdelijke werkmap.
+- Probe controleert zowel exitcode als een unieke bevestiging van de nieuwe applicatie.
+- Testdekking voor mislukte start, timeout-/procesfout, ontbrekende of verkeerde bevestiging.
+- **Nog niet geactiveerd:** geen productiemapwissel, externe updater-EXE, proceshandle-overdracht of automatische herstart.
+
+## 1.5.0-dev.19 — Veilige update-transacties (testlab)
+
+- Onderbroken staging herstelbaar; verifieerbare transactiejournalen en herstelkopieën.
+- Opeenvolgende updates mogelijk en onbekende gebruikersmappen blijven behouden.
+- Download op volumes zonder hardlinks kan worden herhaald.
+- Productie-updater en echte EXE blijven uitgeschakeld; Windows-review nodig.
+
+## 1.5.0-dev.18 — Crashherstel via aparte updater en veiligheidscontrole
+
+- Een gescheiden herstelactie voor onderbroken mapwissels is nu bereikbaar in het testlab.
+- Een onleesbaar of onbekend hersteljournaal wordt zonder gegevensverlies geweigerd; junctions worden ook gecontroleerd.
+- Proces-crashtest na mapwissel en herstel in een volgend proces toegevoegd.
+- Werkelijke EXE-procesoverdracht, productiesleutel en Windows-productieactivering blijven buiten deze build.
+
+## 1.5.0-dev.17 — Gescheiden ondertekende updater-testketen
+
+- Testharnas voert update nu uit in zelfstandig Python-proces met verificatie van het gesigneerde manifest in dat proces.
+- Verifieert herstel bij mislukte gezondheidstest en weigert vervalste handtekeningen voor mapwissel.
+- Productieactivatie, echte EXE-start, Windows-proceshandle en sleutelbeheer blijven open.
+
+## 1.5.0-dev.16 — Updateketen met gezondheidstest (testomgeving)
+
+- Volledige testketen voor ondertekende manifesten, versiebeleid, mapwissel, externe health-probe en rollback.
+- Oude programmamap blijft na een geslaagde health-probe beschikbaar. Productieactivatie blijft uitgeschakeld.
+
+## 1.5.0-dev.15 — Windows-symlinktestcorrectie
+
+- De portable update-ZIP-test behandelt Windows WinError 1314 als omgevingsbeperking, zonder andere fouten te maskeren.
+- Productie-updater en updatebeveiliging ongewijzigd.
+
+## 1.5.0-dev.14 — Windows-update integratie
+
+- Portable ZIP layout gestandaardiseerd; schema-2 manifestvalidatie; veilige hardlink-fallback; offline signer en regressietests.
+
+## 1.5.0-dev.13 — Transaction recovery and version policy (test only)
+
+- Recover from process death after second directory rename: restore prior installation and preserve protected data.
+- Add standalone, not-yet-wired downgrade/replay and signed-expiry policy.
+- Add hard-process-kill regression test for second rename.
+- Official release ZIP parsing and signing integration remain future work; production updater disabled.
+
+## 1.5.0-dev.12 — Crash-safe updater process lock (fixture only)
+
+- Add cross-process OS-owned lock for the side-by-side updater, automatically released on process termination.
+- Serialize recovery and replacement under one lock; prevent concurrent recovery.
+- Add crash, concurrency and ambiguous recovery regression tests. Production updater remains disabled.
+
+## 1.5.0-dev.11 — Windows-updater beveiligingscontroles
+
+- Weigert naamconflicten en onveilige Windows-archiefpaden voordat bestanden worden vervangen.
+- Hercontroleert symlinks na voorbereidingsacties.
+- Voegt gerichte regressietests toe.
+- Nog steeds uitsluitend wegwerpinstallaties; geen echte EXE of productie-updates.
+
+## 1.5.0-dev.9 — Afzonderlijk updaterproces (alleen testinstallaties)
+
+- Afzonderlijk, via Python startbaar updaterproces voor wegwerpinstallaties.
+- Wachten op procesafsluiting met Windows-proceshandle, met timeout en fail-closed gedrag.
+- Lock tegen gelijktijdig updaten en test-herstart na succesvolle update.
+- Foutscenario's, tests en gebruikersbestandsbehoud.
+- Productieactivering blijft nadrukkelijk geblokkeerd.
+
+## 1.5.0-dev.8 — Windows-portable updater integration test engine
+- Isolated transactional updater and rollback tests; live updating remains disabled pending review.
+
+## 1.5.0-dev.7 — Testen zonder echte installaties
+
+- Lokale mock-updateserver onder tools/ met per start een tijdelijke Ed25519-testsleutel.
+- Wegwerpinstallaties met verplichte marker en alleen toegestane nepbestanden.
+- Simulatie van succesvolle omwisseling en rollback bij foutinjectie, inclusief integriteitscontrole.
+- Geen wijzigingen aan de productiedownloader, UI, gebruikersboeken of release-keybeleid.
+
+## 1.5.0-dev.6 — Veilige downloadbasis
+
+- Nieuwe onafhankelijke downloadmodule met verplichte Ed25519-manifesthandtekening en SHA-256/size-controle.
+- Tijdelijke downloads met opruiming bij annuleren of corruptie; nooit bestaande bestanden overschrijven.
+- Testbare component, nog niet geactiveerd in de gebruikersinterface totdat de officiële sleutel en releaseprocedure vaststaan.
+
+## 1.5.0-dev.5 — Updates zichtbaar en onder controle
+
+- Instellingen tonen de huidige versie en na een controle de nieuwste officiële stabiele versie.
+- Automatische updatecontrole staat standaard aan op nieuwe profielen, maar bestaande keuzes blijven bewaard.
+- Automatisch downloaden blijft uitgeschakeld totdat er een veilige downloader bestaat; geen stille installaties.
+- Strengere validatie van versie, prerelease-status en officiële release-URL.
+- Download- en installatiefunctionaliteit volgt in latere builds.
+
+## 1.5.0-dev.4 — Eerlijke herstelmelding en bescherming voor vertaalsleutels
+
+- Bij een onvolledig teruggedraaid boekherstel toont QuietWriter de werkelijke reddingslocaties in plaats van te verwijzen naar de normale herstelkeuzelijst.
+- Gebruiker wordt gewaarschuwd om geen nieuw herstel te starten voordat reddingsbestanden zijn nagekeken.
+- De vertaalcontrole weigert dubbele JSON-sleutels expliciet; een dubbele sleutel kan geen vertaling meer stil overschrijven.
+- Regressietests voor beide problemen, zonder wijzigingen aan het opslagformaat.
+- De definitieve 1.4.0-baseline moet nog gecontroleerd worden voordat updater-featurewerk start.
+
+## 1.5.0-dev.3 — Woordenboeken correct tonen en spellingsuggesties netjes houden
+
+- De eerste-runwizard toont uitsluitend daadwerkelijk gevonden woordenboeken met een geldig .dic/.aff-paar.
+- Niet-Nederlandse meegeleverde woordenboeken krijgen niet onterecht het OpenTaal-label.
+- Spellingsuggesties volgen hoofdlettergebruik van het originele woord, zonder de cache van anders gespelde aanvragen te verwarren.
+- De definitieve 1.4.0-baseline en resterende reviewpunten moeten nog worden vergeleken.
+
+## 1.5.0-dev.2 — Correcte secties en veilige notities
+
+- Markdown-import bewaart tekst zonder hoofdstukkop bij de juiste (ook laatste) sectie.
+- Planning-notities behouden exacte bronposities bij bijzondere Unicode-regeleinden.
+- Nieuwe regressietests voor beide gevallen.
+- Gebaseerd op voorlopige 1.4.0-dev.39-bron; definitieve 1.4-baseline moet nog worden gereconcilieerd.
+
+## 1.5.0-dev.1 — De juiste versie, op de juiste plaats
+
+- Eerste voorbereidingssnapshot voor de 1.5-ontwikkellijn op basis van 1.4.0-dev.39; de definitieve 1.4-baseline moet nog worden afgestemd.
+- De Windows-handleiding naast de EXE krijgt tijdens het bouwen de werkelijke versie en het bijbehorende releasekanaal.
+- Tests toegevoegd voor versie-invulling en beveiliging tegen verouderde 1.0-tekst.
+- Geen wijzigingen aan gebruikersdata, opgeslagen manuscripten of de bestaande updatechecker.
 
 ## 1.4.0-dev.39 — De laatste drie schroefjes
 

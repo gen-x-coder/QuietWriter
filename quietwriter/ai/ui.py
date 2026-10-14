@@ -2,18 +2,19 @@ from __future__ import annotations
 import html
 import re
 import time
-from PySide6.QtCore import QThread, Signal, Qt, QTimer
-from PySide6.QtGui import QTextCursor, QTextDocument, QIcon, QPalette, QColor
+from PySide6.QtCore import QThread, Signal, Qt, QTimer, QUrl
+from PySide6.QtGui import QTextCursor, QTextDocument, QIcon, QPalette, QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox, QPushButton,
-    QTextEdit, QTextBrowser, QFrame, QDialog, QDialogButtonBox, QCheckBox
+    QTextEdit, QTextBrowser, QFrame, QDialog, QDialogButtonBox, QCheckBox, QFileDialog, QMessageBox, QListWidget, QSplitter, QStackedWidget, QStyle
 )
 from .providers import ProviderFactory
 from .context import ContextBuilder, ContextBundle, read_optional_source
-from .conversations import ConversationStore
-from .memory_suggestions import extract_memory_suggestions, proposal_instruction
+from .conversations import ConversationStore, SavedConversationArchive
+from .memory_suggestions import extract_memory_suggestions, proposal_instruction, visible_stream_text
+from .response_guard import guard_memory_claims
 from .planning_context import PlanningSelection, build_planning_context_result, chapter_planning_preview
-from .prompting import build_system_prompt
+from .prompting import build_system_prompt, build_source_context
 from .quick_actions import QUICK_ACTIONS, QUICK_ACTION_BY_KEY
 from ..book_memory import SECTIONS
 from ..i18n import tr
@@ -21,11 +22,13 @@ from ..themes import THEMES
 from ..ui.planning_context_dialog import PlanningContextDialog
 from ..ui.panel_help import PanelHelp, WrappedLabel
 from ..ui.dialog_notices import notice_information
+from ..ui.dialogs import prompt_text
 
 
 class ProviderChatWorker(QThread):
     token = Signal(str)
     thinking = Signal(str)
+    response_model = Signal(str)
     finished_ok = Signal()
     failed = Signal(str)
     cancelled = Signal()
@@ -50,6 +53,7 @@ class ProviderChatWorker(QThread):
             for chunk in self.provider.stream_chat(self.model, self.messages, **self.options):
                 if self._stop:
                     self.cancelled.emit(); return
+                if chunk.model: self.response_model.emit(chunk.model)
                 if chunk.thinking: self.thinking.emit(chunk.thinking)
                 if chunk.content: self.token.emit(chunk.content)
             if self._stop:
@@ -73,7 +77,7 @@ def markdown_to_html(text: str) -> str:
     theme. A clean fragment inherits the card colours we set explicitly.
     """
     doc = QTextDocument()
-    doc.setMarkdown(text or '')
+    doc.setMarkdown(text or '', QTextDocument.MarkdownDialectGitHub | QTextDocument.MarkdownNoHTML)
     rendered = doc.toHtml()
     match = re.search(r'<body[^>]*>(.*)</body>', rendered, flags=re.IGNORECASE | re.DOTALL)
     return match.group(1) if match else rendered
@@ -103,6 +107,13 @@ class AIPanel(QWidget):
         self._warmup_attempted = False
         self.messages: list[dict] = []
         self.store = None
+        self.archive = None
+        self._expanded_dialog = None
+        self._home_layout = None
+        self._workspace_placeholder = None
+        self._last_provider = ""
+        self._last_model = ""
+        self._actual_response_model = ''
         self.theme_name = str(self.main.settings.value('theme','Helder') or 'Helder')
 
         self.thinking_timer = QTimer(self); self.thinking_timer.setInterval(350); self.thinking_timer.timeout.connect(self._animate_thinking)
@@ -119,8 +130,27 @@ class AIPanel(QWidget):
             extra_title_widgets=(self.clear_button,),
         )
         lay.addWidget(self.panel_help)
+        self.expand_button = QPushButton(tr('ai.workspace.popout', 'Pop-out'))
+        self.expand_button.setIcon(self.style().standardIcon(QStyle.SP_TitleBarMaxButton))
+        self.expand_button.setToolTip(tr('ai.workspace.title', 'AI Meelezer — werkruimte'))
+        self.expand_button.clicked.connect(self.open_workspace)
+        self.save_chat_button = QPushButton(tr('ai.archive.save_short', 'Bewaren'))
+        self.save_chat_button.setToolTip(tr('ai.archive.save', 'Gesprek bewaren'))
+        self.save_chat_button.clicked.connect(self.save_conversation)
+        self.archives_button = QPushButton(tr('ai.archive.list_short', 'Gesprekken'))
+        self.archives_button.setToolTip(tr('ai.archive.open', 'Bewaarde gesprekken'))
+        self.archives_button.clicked.connect(self.open_archives)
+        archive_controls = QHBoxLayout()
+        archive_controls.setSpacing(5)
+        archive_controls.addWidget(self.expand_button)
+        archive_controls.addWidget(self.save_chat_button)
+        archive_controls.addWidget(self.archives_button)
+        self.remember_button = QPushButton(tr('ai.memory.manual_button', 'Onthouden'))
+        self.remember_button.setToolTip(tr('ai.memory.manual_tip', 'Voeg zelf een feit of afspraak toe aan het Boekgeheugen'))
+        self.remember_button.clicked.connect(self.remember_manually)
+        lay.addLayout(archive_controls)
 
-        self.chat = QTextBrowser(); self.chat.setObjectName('aiChat'); self.chat.setOpenExternalLinks(True)
+        self.chat = QTextBrowser(); self.chat.setObjectName('aiChat'); self.chat.setOpenExternalLinks(False); self.chat.setOpenLinks(False); self.chat.anchorClicked.connect(self._confirm_external_link)
         lay.addWidget(self.chat, 1)
 
         self.thinking_button = QPushButton(tr('ai.thinking', 'Denken…')); self.thinking_button.setObjectName('thinkingButton'); self.thinking_button.clicked.connect(self._toggle_thinking_details); self.thinking_button.hide()
@@ -129,8 +159,8 @@ class AIPanel(QWidget):
 
         self.memory_card = QFrame(); self.memory_card.setObjectName('panel'); self.memory_card.hide()
         memory_lay = QVBoxLayout(self.memory_card); memory_lay.setContentsMargins(10,8,10,8); memory_lay.setSpacing(6)
-        self.memory_title = QLabel(tr('ai.memory.question', 'Onthouden voor dit boek?')); self.memory_title.setObjectName('sectionTitle')
-        self.memory_text = QLabel(); self.memory_text.setWordWrap(True)
+        self.memory_title = QLabel(tr('ai.memory.question', 'Onthouden voor dit boek?')); self.memory_title.setObjectName('sectionTitle'); self.memory_title.setTextFormat(Qt.PlainText)
+        self.memory_text = QLabel(); self.memory_text.setTextFormat(Qt.PlainText); self.memory_text.setWordWrap(True)
         memory_actions = QHBoxLayout()
         self.memory_accept = QPushButton(tr('ai.memory.remember', 'Onthouden')); self.memory_accept.setObjectName('primaryButton'); self.memory_accept.clicked.connect(self._remember_suggestion)
         self.memory_edit = QPushButton(tr('common.edit', 'Bewerken')); self.memory_edit.clicked.connect(self._edit_suggestion)
@@ -219,7 +249,7 @@ class AIPanel(QWidget):
         tools = QHBoxLayout(); tools.setContentsMargins(0,0,0,0); tools.setSpacing(6)
         self.context_toggle = QPushButton(tr('ai.context.toggle', 'Context')); self.context_toggle.setObjectName('suggestionButton'); self.context_toggle.setCheckable(True); self.context_toggle.clicked.connect(self._toggle_context_controls)
         self.quick_toggle = QPushButton(tr('ai.quick_actions', 'Snelacties')); self.quick_toggle.setObjectName('suggestionButton'); self.quick_toggle.setCheckable(True); self.quick_toggle.setChecked(self.quick_panel.isVisible()); self.quick_toggle.clicked.connect(self._toggle_quick_actions)
-        tools.addWidget(self.context_toggle); tools.addWidget(self.quick_toggle); tools.addStretch()
+        tools.addWidget(self.context_toggle); tools.addWidget(self.quick_toggle); tools.addWidget(self.remember_button); tools.addStretch()
         lay.addLayout(tools)
         self._refresh_idle_context_summary()
         self._update_busy_buttons()
@@ -284,6 +314,20 @@ class AIPanel(QWidget):
         self.chapter_planning_check.setEnabled(bool(preview and preview.text and not preview.error and not busy))
         self.refresh_quick_actions()
 
+    def _confirm_external_link(self, url: QUrl):
+        """Never launch untrusted model URLs without an explicit HTTPS-only gate."""
+        if url.scheme().lower() != 'https' or not url.host():
+            return
+        destination = url.toString(QUrl.FullyEncoded)
+        box = QMessageBox(self)
+        box.setWindowTitle(tr('ai.link.title', 'Externe link openen'))
+        box.setText(tr('ai.link.confirm', 'Wil je deze externe HTTPS-link openen?\n\n{url}').format(url=destination))
+        accept = box.addButton(tr('ai.link.open', 'Openen'), QMessageBox.AcceptRole)
+        box.addButton(tr('ai.link.cancel', 'Annuleren'), QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() == accept:
+            QDesktopServices.openUrl(url)
+
     def set_book(self, book):
         new_book_id = getattr(book, 'id', None) if book is not None else None
         if book is not None and new_book_id == self._book_id:
@@ -298,6 +342,8 @@ class AIPanel(QWidget):
         # before retiring an old worker. QThread signals are queued to the GUI
         # thread, so they may arrive only after this method has already swapped
         # self.store/self.messages to another book.
+        if book is None and self._expanded_dialog is not None:
+            self._expanded_dialog.close()
         self._book_generation += 1
         self._book_id = new_book_id
         self._planning_selection = PlanningSelection()
@@ -320,7 +366,10 @@ class AIPanel(QWidget):
         self._active_context = None
         self._active_user_index = None
         self.store = ConversationStore(book) if book else None
-        self.messages = self.store.load() if self.store else []
+        self.archive = SavedConversationArchive(book) if book else None
+        # Existing legacy chat is not migrated into a saved archive automatically.
+        # An active session is always transient until explicitly saved.
+        self.messages = []
         self._warming_up = False
         self._warmup_attempted = bool(self.messages)
         self.context.setCurrentIndex(max(0, self.context.findData('chapter')))
@@ -517,11 +566,11 @@ class AIPanel(QWidget):
         excluded from provider context (only user/assistant roles are sent).
         """
         self.messages.append(ConversationStore.entry('notice', text))
-        if self.store:
-            self.store.save(self.messages)
         self._render_chat()
 
     def _persist_memory_suggestion(self, section_key: str, text: str) -> bool:
+        self.memory_feedback.clear()
+        self.memory_feedback.hide()
         book = self.main.active_book()
         if not book:
             self.memory_feedback.setText(tr('ai.memory.no_active_book', 'Niet opgeslagen: er is geen actief boek.'))
@@ -547,6 +596,53 @@ class AIPanel(QWidget):
             return False
         self.main.status.showMessage(tr('ai.memory.saved_status', 'Opgeslagen in Boekgeheugen.'), 4000)
         return True
+
+    def remember_manually(self):
+        """Save an author-approved book memory without involving the AI provider."""
+        if not self.main.active_book():
+            notice_information(self, tr('ai.memory.manual_title', 'Toevoegen aan Boekgeheugen'),
+                               tr('ai.memory.no_active_book', 'Open eerst een boek.'))
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(tr('ai.memory.manual_title', 'Toevoegen aan Boekgeheugen'))
+        dialog.resize(500, 300)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(tr('ai.memory.manual_explain', 'Wat wil je voor dit boek onthouden? Controleer de tekst voordat je opslaat.')))
+        field = QTextEdit(dialog)
+        field.setAcceptRichText(False)
+        # Only the author's own text is used, never a possibly inaccurate AI assertion.
+        recent = next((str(item.get('content') or '').strip() for item in reversed(self.messages)
+                       if item.get('role') == 'user' and str(item.get('content') or '').strip()), '')
+        if recent.lower().startswith(('nieuw feit:', 'feit:')):
+            recent = recent.split(':', 1)[1].strip()
+        field.setPlainText(recent)
+        field.setPlaceholderText(tr('ai.memory.manual_placeholder', 'Bijvoorbeeld: Pip heeft geen haar.'))
+        layout.addWidget(field, 1)
+        layout.addWidget(QLabel(tr('ai.memory.category', 'Categorie')))
+        category = QComboBox(dialog)
+        for section in SECTIONS:
+            category.addItem(tr(f'book_memory.section.{section.key}.title', section.title), section.key)
+        layout.addWidget(category)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, parent=dialog)
+        buttons.button(QDialogButtonBox.Save).setText(tr('ai.memory.remember', 'Onthouden'))
+        buttons.button(QDialogButtonBox.Cancel).setText(tr('common.cancel', 'Annuleren'))
+        buttons.button(QDialogButtonBox.Save).setEnabled(bool(recent))
+        field.textChanged.connect(lambda: buttons.button(QDialogButtonBox.Save).setEnabled(bool(field.toPlainText().strip())))
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        content = field.toPlainText().strip()
+        if not content:
+            return
+        section_key = str(category.currentData())
+        if self._persist_memory_suggestion(section_key, content):
+            self._append_chat_notice(tr('ai.memory.saved_notice', 'Opgeslagen in Boekgeheugen · {section}',
+                                        section=self._memory_section_title(section_key)))
+        else:
+            notice_information(self, tr('ai.memory.manual_title', 'Toevoegen aan Boekgeheugen'),
+                               tr('ai.memory.save_failed', 'Niet opgeslagen. Controleer Boekgeheugen of probeer opnieuw.'))
 
     def _remember_suggestion(self):
         if not self._pending_memory_suggestions:
@@ -599,7 +695,7 @@ class AIPanel(QWidget):
         self.messages = []
         self._warming_up = False
         self._warmup_attempted = False
-        if self.store: self.store.save(self.messages)
+        # Active conversations are intentionally not persisted.
         self._render_chat()
         self.ensure_warmup()
 
@@ -621,7 +717,6 @@ class AIPanel(QWidget):
                 'ai.warmup.welcome',
                 'Ik ben jouw meelees-assistent. Ik kan feedback geven op je eigen tekst, bijvoorbeeld met een persona-check, feitencheck en controles op continuïteit en consistentie. Selecteer gerust een tekstfragment en stel daar een vraag over; ik lees mee en adviseer, maar neem het schrijven niet van je over.'
             )))
-            self.store.save(self.messages)
             self._render_chat()
             return
         provider, model = self._provider_model()
@@ -706,10 +801,14 @@ class AIPanel(QWidget):
         if warmup:
             self._active_user_index = None
         else:
-            self.messages.append(ConversationStore.entry('user', prompt, {'pieces': context.pieces, 'scope': str(self.context.currentData() or 'chapter')}))
+            editor = getattr(getattr(self.main, 'editor_page', None), 'editor', None)
+            # Capture the exact selection at request time, not the mutable chapter later.
+            selection = editor.textCursor().selectedText().replace('\u2029', '\n') if editor and editor.textCursor().hasSelection() else ''
+            self.messages.append(ConversationStore.entry('user', prompt, {'pieces': context.pieces, 'scope': str(self.context.currentData() or 'chapter'), 'selected_text': selection}))
             self._active_user_index=len(self.messages)-1
         self._warming_up = bool(warmup)
         self.current_assistant=''; self._final_started=False; self._thinking_text=''
+        self._actual_response_model = ''
         thinking_requested = bool(self.main.settings.value('ai_disable_thinking', False, bool))
         provider_name = str(getattr(provider, 'name', '') or '')
         capability = str(self.main.settings.value(
@@ -726,8 +825,15 @@ class AIPanel(QWidget):
         # QuietWriter sends the stable Reader context plus a limited recent chat.
         # A warm-up deliberately excludes manuscript text and uses a hidden user
         # instruction only to initialize the model and introduce its Reader role.
-        recent=[{'role':m['role'],'content':m['content']} for m in self.messages[-6:] if m.get('role') in {'user','assistant'}]
-        messages=[{'role':'system','content':system_prompt}] + recent
+        recent=[{'role':m['role'],'content':m['content']} for m in self.messages if m.get('role') in {'user','assistant'}][-6:]
+        source_context = build_source_context(
+            persona=persona, book_profile=book_profile, book_memory=book_memory,
+            planning_text=planning_text, chapter_planning_text=chapter_planning_text,
+            context_label=context.label, context_text=context_text,
+        )
+        # Source material is not an instruction and never belongs in system role.
+        messages=[{'role':'system','content':system_prompt},
+                  {'role':'user','content':source_context}] + recent
         if warmup:
             messages.append({'role':'user','content':prompt})
         self._request_serial += 1
@@ -744,6 +850,7 @@ class AIPanel(QWidget):
         self._active_request_id = request_id
         worker.token.connect(lambda text, w=worker, rid=request_id: self._token(w, rid, text))
         worker.thinking.connect(lambda text, w=worker, rid=request_id: self._thinking(w, rid, text))
+        worker.response_model.connect(lambda name, w=worker, rid=request_id: self._set_response_model(w, rid, name))
         worker.failed.connect(lambda err, w=worker, rid=request_id: self._fail(w, rid, err))
         worker.finished_ok.connect(lambda w=worker, rid=request_id: self._done(w, rid))
         worker.cancelled.connect(lambda w=worker, rid=request_id: self._chat_cancelled(w, rid))
@@ -803,6 +910,10 @@ class AIPanel(QWidget):
         self.thinking_details.setPlainText(self._thinking_text)
         cur = self.thinking_details.textCursor(); cur.movePosition(QTextCursor.End); self.thinking_details.setTextCursor(cur)
 
+    def _set_response_model(self, worker, request_id, name):
+        if self._request_is_current(worker, request_id) and isinstance(name, str):
+            self._actual_response_model = name[:200]
+
     def _finish_thinking(self):
         self.thinking_timer.stop(); self.thinking_details.clear(); self.thinking_details.hide(); self.thinking_button.hide(); self._thinking_text = ''
 
@@ -826,14 +937,18 @@ class AIPanel(QWidget):
                 visible, suggestions = self.current_assistant.strip(), []
             else:
                 visible, suggestions = extract_memory_suggestions(self.current_assistant)
+                visible = guard_memory_claims(visible)
             if visible:
-                self.messages.append(ConversationStore.entry('assistant', visible, {'pieces': context.pieces if context else []}))
-            if self.store: self.store.save(self.messages)
+                msg_context = {'pieces': context.pieces if context else []}
+                if getattr(worker.provider, 'name', '') == 'openrouter' and self._actual_response_model:
+                    msg_context['response_model'] = self._actual_response_model
+                self.messages.append(ConversationStore.entry('assistant', visible, msg_context))
+            # Active conversations are intentionally not persisted.
             if suggestions:
                 self._pending_memory_suggestions.extend(suggestions)
                 self._show_memory_suggestion()
         self._active_user_index=None
-        self.render_timer.stop(); self.current_assistant = ''; self._render_chat()
+        self.render_timer.stop(); self.current_assistant = ''; self._actual_response_model = ''; self._render_chat()
 
     def _fail(self, worker, request_id, err):
         if not self._request_is_current(worker, request_id):
@@ -847,9 +962,9 @@ class AIPanel(QWidget):
                 'Ik ben jouw meelees-assistent. Ik kan feedback geven op je eigen tekst, bijvoorbeeld met een persona-check, feitencheck en controles op continuïteit en consistentie. Selecteer gerust een tekstfragment en stel daar een vraag over; ik lees mee en adviseer, maar neem het schrijven niet van je over.'
             )))
         else:
-            self.messages.append(ConversationStore.entry('assistant', f'Fout: {err}'))
+            self.messages.append(ConversationStore.entry('notice', self._friendly_error(err)))
         self._active_user_index=None
-        if self.store: self.store.save(self.messages)
+        # Active conversations are intentionally not persisted.
         self._render_chat()
 
     def _chat_cancelled(self, worker, request_id):
@@ -875,6 +990,171 @@ class AIPanel(QWidget):
         self._workers.discard(worker)
         worker.deleteLater()
         self._update_busy_buttons()
+
+    @staticmethod
+    def _friendly_error(err):
+        raw = str(err or '').strip()
+        lower = raw.lower()
+        if 'reasoning' in lower and ('mandatory' in lower or 'required' in lower or 'cannot be disabled' in lower):
+            guidance = tr('ai.error.reasoning_required', 'Dit OpenRouter-model vereist Thinking. Ga naar Instellingen → AI Meelezer en zet Thinking op Modelstandaard. Probeer daarna opnieuw.')
+        elif any(x in lower for x in ('401', 'unauthorized', 'invalid api key', 'invalid_api_key')):
+            guidance = tr('ai.error.key', 'De AI-sleutel wordt niet geaccepteerd. Controleer de sleutel bij Instellingen.')
+        elif any(x in lower for x in ('429', 'rate limit', 'too many requests')):
+            guidance = tr('ai.error.limit', 'De AI-aanbieder vraagt om even te wachten. Probeer het straks opnieuw.')
+        elif any(x in lower for x in ('timeout', 'timed out', 'connection error', 'connection refused')):
+            guidance = tr('ai.error.network', 'De AI-aanbieder reageert niet. Controleer je verbinding of probeer later opnieuw.')
+        elif any(x in lower for x in ('model not found', '404', 'model unavailable')):
+            guidance = tr('ai.error.model', 'Het gekozen model is niet beschikbaar. Probeer een ander model.')
+        else:
+            guidance = tr('ai.error.general', 'De Meelezer kon geen antwoord ophalen. Probeer het opnieuw of kies een ander model.')
+        # Keep technical diagnostics available, never as the only explanation.
+        return guidance + '\n' + tr('ai.error.details', 'Technische details: {detail}', detail=raw[:400])
+
+    def open_workspace(self):
+        if self._expanded_dialog is not None:
+            self._expanded_dialog.raise_()
+            self._expanded_dialog.activateWindow()
+            return
+        home = self.parentWidget()
+        if not isinstance(home, QStackedWidget):
+            return
+        index = home.indexOf(self)
+        if index < 0:
+            return
+        # Never leave the QStackedWidget with a different real tool selected.
+        # The placeholder occupies the Meelezer's original slot until restore.
+        placeholder = QWidget()
+        home.insertWidget(index, placeholder)
+        home.setCurrentWidget(placeholder)
+        home.removeWidget(self)
+        dialog = QDialog(self.window())
+        dialog.setWindowTitle(tr('ai.workspace.title', 'AI Meelezer — werkruimte'))
+        dialog.resize(980, 740)
+        dialog.setModal(False)
+        wrapper = QVBoxLayout(dialog)
+        wrapper.setContentsMargins(0, 0, 0, 0)
+        self.setParent(dialog)
+        wrapper.addWidget(self)
+        self.show()
+        self._expanded_dialog = dialog
+        self._home_layout = (home, index)
+        self._workspace_placeholder = placeholder
+        self.expand_button.setText(tr('ai.workspace.close', 'Terug'))
+        self.expand_button.setIcon(self.style().standardIcon(QStyle.SP_TitleBarNormalButton))
+        self.expand_button.clicked.disconnect()
+        self.expand_button.clicked.connect(dialog.close)
+
+        def restore():
+            if self._expanded_dialog is not dialog:
+                return
+            try:
+                home.currentChanged.disconnect(on_panel_changed)
+            except (RuntimeError, TypeError):
+                pass
+            was_selected = home.currentWidget() is placeholder
+            wrapper.removeWidget(self)
+            self.setParent(None)
+            home.insertWidget(index, self)
+            if was_selected:
+                home.setCurrentWidget(self)
+            home.removeWidget(placeholder)
+            placeholder.deleteLater()
+            self._workspace_placeholder = None
+            self._expanded_dialog = None
+            self._home_layout = None
+            self.expand_button.clicked.disconnect()
+            self.expand_button.clicked.connect(self.open_workspace)
+            self.expand_button.setText(tr('ai.workspace.popout', 'Pop-out'))
+            self.expand_button.setIcon(self.style().standardIcon(QStyle.SP_TitleBarMaxButton))
+            if was_selected:
+                self.show()
+            dialog.deleteLater()
+
+        def on_panel_changed(_index):
+            if home.currentWidget() is not placeholder:
+                dialog.close()
+
+        dialog.finished.connect(lambda _result: restore())
+        home.currentChanged.connect(on_panel_changed)
+        dialog.show()
+
+    def save_conversation(self):
+        if self.is_busy():
+            notice_information(self, tr('ai.archive.save', 'Gesprek bewaren'),
+                tr('ai.archive.wait_until_ready', 'Wacht totdat de Meelezer klaar is met antwoorden. Daarna kun je het gesprek bewaren.'))
+            return
+        if not any(m.get('role') == 'user' for m in self.messages):
+            QMessageBox.information(self, tr('ai.archive.save', 'Gesprek bewaren'),
+                tr('ai.archive.nothing_to_save', 'Er is nog geen gesprek om te bewaren. Stel eerst een vraag aan de Meelezer.'))
+            return
+        if self.archive is None:
+            notice_information(self, tr('ai.archive.save', 'Gesprek bewaren'),
+                tr('ai.archive.book_required', 'Open eerst een boek om een gesprek te kunnen bewaren.'))
+            return
+        title, ok = prompt_text(self, tr('ai.archive.save', 'Gesprek bewaren'),
+            tr('ai.archive.title_prompt', 'Titel van het gesprek:'))
+        if not ok:
+            return
+        try:
+            self.archive.save_explicit(self.messages, title, self._last_provider, self._last_model)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, tr('ai.archive.save', 'Gesprek bewaren'), str(exc))
+
+    def open_archives(self):
+        if self.archive is None:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(tr('ai.archive.open', 'Bewaarde gesprekken'))
+        dialog.resize(850, 580)
+        layout = QVBoxLayout(dialog)
+        items = self.archive.list_items()
+        if not items:
+            notice = QLabel(tr('ai.archive.empty', 'Er zijn nog geen bewaarde gesprekken voor dit boek. Bewaar eerst een gesprek via Bewaren.'))
+            notice.setWordWrap(True)
+            layout.addWidget(notice)
+        else:
+            splitter = QSplitter()
+            entries = QListWidget()
+            viewer = QTextBrowser()
+            viewer.setReadOnly(True)
+            viewer.setOpenExternalLinks(False)
+            viewer.setOpenLinks(False)
+            viewer.anchorClicked.connect(self._confirm_external_link)
+            for _, data in items:
+                entries.addItem(str(data.get('title', 'Meelezer')))
+            splitter.addWidget(entries)
+            splitter.addWidget(viewer)
+            splitter.setSizes([220, 620])
+            layout.addWidget(splitter)
+            export_button = QPushButton(tr('ai.archive.export', 'Exporteren naar Markdown'))
+            layout.addWidget(export_button)
+
+            def show_item(index):
+                if index < 0 or index >= len(items):
+                    viewer.clear()
+                    return
+                viewer.document().setMarkdown(SavedConversationArchive.export_markdown(items[index][1]), QTextDocument.MarkdownDialectGitHub | QTextDocument.MarkdownNoHTML)
+
+            def export_item():
+                index = entries.currentRow()
+                if index < 0 or index >= len(items):
+                    return
+                dest, _ = QFileDialog.getSaveFileName(dialog, tr('ai.archive.export', 'Exporteren naar Markdown'),
+                    'meelezer-gesprek.md', 'Markdown (*.md);;Tekst (*.txt)')
+                if dest:
+                    from pathlib import Path
+                    try:
+                        Path(dest).write_text(SavedConversationArchive.export_markdown(items[index][1]), encoding='utf-8')
+                    except OSError as exc:
+                        QMessageBox.warning(dialog, tr('ai.archive.export', 'Exporteren naar Markdown'), str(exc))
+
+            entries.currentRowChanged.connect(show_item)
+            export_button.clicked.connect(export_item)
+            entries.setCurrentRow(0)
+        close_button = QPushButton(tr('common.close', 'Sluiten'))
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
 
     def apply_theme(self, theme_name: str):
         """Re-render rich chat content for the active QuietWriter theme."""
@@ -918,15 +1198,16 @@ class AIPanel(QWidget):
                 )
             else:
                 body = markdown_to_html(content)
+                actual_model = str((msg.get('context') or {}).get('response_model') or '')
+                if actual_model:
+                    model_label = html.escape(tr('ai.response_model', 'Model: {model}', model=actual_model))
+                    body += f'<div style="margin-top:8px; color:{muted}; font-size:10px;">{model_label}</div>'
                 blocks.append(
                     f'<div align="left"><table width="96%" cellspacing="0" cellpadding="10" bgcolor="{ai_bg}">'
                     f'<tr><td style="color:{text};"><span style="color:{muted}; font-size:10px; font-weight:600;">{role_label}</span><br><div style="color:{text};">{body}</div></td></tr></table></div><br>'
                 )
         if streaming_placeholder and self.current_assistant:
-            stream_text = self.current_assistant
-            marker_at = stream_text.find('[[QW_MEMORY|')
-            if marker_at >= 0:
-                stream_text = stream_text[:marker_at].rstrip()
+            stream_text = visible_stream_text(self.current_assistant)
             if stream_text:
                 body = markdown_to_html(stream_text)
                 blocks.append(

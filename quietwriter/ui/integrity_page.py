@@ -2,16 +2,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-    QPushButton, QVBoxLayout, QWidget,
+    QPushButton, QVBoxLayout, QWidget, QDialog, QPlainTextEdit,
 )
 
 from .dialog_notices import notice_information, notice_warning, notice_critical
 from .dialogs import confirm
 from ..i18n import tr
 from ..integrity import BookIntegrityChecker
+from ..sync_conflicts import discover_conflict_copies
+from ..recovery_overview import list_replacement_recoveries, compare_recovery_files
 from ..migrations import FutureBookFormatError, MigrationError
 from ..revisions import ExternalModificationError
 from ..storage import BookBlockedError, StorageWriteError
@@ -66,6 +69,55 @@ class IntegrityPage(QWidget):
         self.summary.setWordWrap(True)
         summary_layout.addWidget(self.summary)
         root.addWidget(self.summary_box)
+        # Cloud conflict copies are only listed; never repaired automatically.
+        self.conflict_summary = QLabel('')
+        self.conflict_summary.setObjectName('muted')
+        self.conflict_summary.setWordWrap(True)
+        root.addWidget(self.conflict_summary)
+        self.conflict_list = QListWidget()
+        self.conflict_list.setMaximumHeight(115)
+        self.conflict_list.hide()
+        root.addWidget(self.conflict_list)
+        conflict_actions = QHBoxLayout()
+        self.conflict_refresh_button = QPushButton(tr('integrity.conflicts.scan', 'Conflictkopieën zoeken'))
+        self.conflict_refresh_button.clicked.connect(self.scan_conflicts)
+        self.conflict_open_button = QPushButton(tr('integrity.conflicts.open', 'Openen in Verkenner'))
+        self.conflict_open_button.clicked.connect(self.open_conflict_location)
+        self.conflict_open_button.setEnabled(False)
+        self.conflict_list.itemSelectionChanged.connect(
+            lambda: self.conflict_open_button.setEnabled(self.conflict_list.currentItem() is not None))
+        conflict_actions.addWidget(self.conflict_refresh_button)
+        conflict_actions.addWidget(self.conflict_open_button)
+        conflict_actions.addStretch()
+        root.addLayout(conflict_actions)
+
+        # Read-only view: never restore or delete recovery copies automatically.
+        self.replacement_summary = QLabel('')
+        self.replacement_summary.setObjectName('muted')
+        self.replacement_summary.setWordWrap(True)
+        root.addWidget(self.replacement_summary)
+        self.replacement_list = QListWidget()
+        self.replacement_list.setMaximumHeight(130)
+        self.replacement_list.hide()
+        root.addWidget(self.replacement_list)
+        recovery_actions = QHBoxLayout()
+        self.replacement_scan_button = QPushButton(tr('integrity.replacement.scan', 'Herstelkopieën bekijken'))
+        self.replacement_scan_button.clicked.connect(self.scan_replacement_recoveries)
+        self.replacement_open_button = QPushButton(tr('integrity.replacement.open', 'Map met herstelkopieën openen'))
+        self.replacement_open_button.clicked.connect(self.open_replacement_recovery_location)
+        self.replacement_open_button.setEnabled(False)
+        self.replacement_list.itemSelectionChanged.connect(
+            lambda: self.replacement_open_button.setEnabled(self.replacement_list.currentItem() is not None))
+        recovery_actions.addWidget(self.replacement_scan_button)
+        recovery_actions.addWidget(self.replacement_open_button)
+        self.replacement_compare_button = QPushButton(tr('integrity.replacement.compare', 'Tekst vergelijken'))
+        self.replacement_compare_button.setEnabled(False)
+        self.replacement_compare_button.clicked.connect(self.compare_replacement_recovery)
+        self.replacement_list.itemSelectionChanged.connect(
+            lambda: self.replacement_compare_button.setEnabled(self.replacement_list.currentItem() is not None))
+        recovery_actions.addWidget(self.replacement_compare_button)
+        recovery_actions.addStretch()
+        root.addLayout(recovery_actions)
 
         self.list = QListWidget()
         self.list.itemSelectionChanged.connect(self._selection_changed)
@@ -113,6 +165,108 @@ class IntegrityPage(QWidget):
         self.migrate_button.setVisible(False)
         if book:
             self.summary.setText(tr('integrity.not_checked', 'Nog niet gecontroleerd.'))
+
+    def scan_conflicts(self):
+        """List potential Dropbox conflict files; never change manuscript data."""
+        self.conflict_list.clear()
+        self.conflict_open_button.setEnabled(False)
+        try:
+            paths = discover_conflict_copies(self.library.root)
+        except OSError:
+            paths = []
+        for path in paths:
+            item = QListWidgetItem(str(path.relative_to(self.library.root)))
+            item.setData(Qt.UserRole, str(path.parent))
+            item.setToolTip(str(path))
+            self.conflict_list.addItem(item)
+        self.conflict_list.setVisible(bool(paths))
+        self.conflict_summary.setText(
+            tr('integrity.conflicts.found',
+               '{count} mogelijke conflictkopie(ën). Open de map en vergelijk de bestanden zelf; QuietWriter wijzigt niets.',
+               count=len(paths)) if paths else
+            tr('integrity.conflicts.none', 'Geen herkenbare conflictkopieën gevonden.'))
+
+    def open_conflict_location(self):
+        item = self.conflict_list.currentItem()
+        if item is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(item.data(Qt.UserRole)))
+
+    def scan_replacement_recoveries(self):
+        """Only report backup locations; do not run recovery from the UI."""
+        self.replacement_list.clear()
+        self.replacement_open_button.setEnabled(False)
+        try:
+            records = list_replacement_recoveries(self.library.archive_dir,
+                                                   book_id=self.book.id if self.book else None)
+        except OSError:
+            records = []
+        labels = {
+            'pending': tr('integrity.replacement.pending', 'Herstelcontrole nodig'),
+            'attention': tr('integrity.replacement.attention', 'Handmatige controle nodig'),
+            'recovered': tr('integrity.replacement.recovered', 'Hersteld'),
+            'committed': tr('integrity.replacement.committed', 'Voltooid'),
+        }
+        for entry in records:
+            item = QListWidgetItem(f'{labels[entry.status]} · {entry.copies} · {entry.location.name}')
+            item.setData(Qt.UserRole, str(entry.location))
+            item.setToolTip(str(entry.location) + (' — ' + entry.note if entry.note else ''))
+            self.replacement_list.addItem(item)
+        self.replacement_list.setVisible(bool(records))
+        self.replacement_summary.setText(
+            tr('integrity.replacement.found',
+               '{count} herstelmap(pen) gevonden. Bekijk de kopieën voordat je iets handmatig wijzigt; QuietWriter verwijdert niets.',
+               count=len(records)) if records else
+            tr('integrity.replacement.none', 'Geen herstelkopieën van onderbroken vervangacties gevonden.')
+        )
+
+    def open_replacement_recovery_location(self):
+        item = self.replacement_list.currentItem()
+        if item is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(item.data(Qt.UserRole)))
+
+    def compare_replacement_recovery(self):
+        """Preview old/current manuscript safely; never offer an overwrite action."""
+        item = self.replacement_list.currentItem()
+        if item is None or self.book is None:
+            return
+        try:
+            comparisons = compare_recovery_files(Path(item.data(Qt.UserRole)), self.book.path)
+        except (OSError, ValueError, UnicodeError, TypeError) as exc:
+            notice_warning(self, tr('integrity.replacement.compare_error_title', 'Vergelijken niet mogelijk'),
+                           tr('integrity.replacement.compare_error',
+                              'De herstelkopieën konden niet veilig worden gelezen. Open de map om ze handmatig te controleren.'))
+            return
+        if not comparisons:
+            notice_information(self, tr('integrity.replacement.compare_empty_title', 'Geen hoofdstukken'),
+                               tr('integrity.replacement.compare_empty', 'Deze herstelmap bevat geen hoofdstukken om te vergelijken.'))
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(tr('integrity.replacement.compare', 'Tekst vergelijken'))
+        dialog.resize(980, 600)
+        layout = QVBoxLayout(dialog)
+        explanation = QLabel(tr('integrity.replacement.compare_explanation',
+                                'Links staat de bewaarde tekst, rechts de huidige tekst. Dit overzicht wijzigt niets.'))
+        explanation.setWordWrap(True)
+        layout.addWidget(explanation)
+        for entry in comparisons:
+            layout.addWidget(QLabel(entry.chapter + ' · ' + tr(
+                'integrity.replacement.missing' if entry.state == 'missing' else 'integrity.replacement.present',
+                'Huidig bestand ontbreekt' if entry.state == 'missing' else 'Huidig bestand aanwezig')))
+            panes = QHBoxLayout()
+            for title, content in ((tr('integrity.replacement.original', 'Bewaarde tekst'), entry.original),
+                                   (tr('integrity.replacement.current', 'Huidige tekst'), entry.current)):
+                column = QVBoxLayout()
+                column.addWidget(QLabel(title))
+                view = QPlainTextEdit()
+                view.setReadOnly(True)
+                view.setPlainText(content)
+                column.addWidget(view)
+                panes.addLayout(column, 1)
+            layout.addLayout(panes)
+        close = QPushButton(tr('integrity.replacement.close', 'Sluiten'))
+        close.clicked.connect(dialog.accept)
+        layout.addWidget(close)
+        dialog.exec()
 
     def _adopt_latest_disk_state(self):
         """Reload the current book centrally without saving anything.

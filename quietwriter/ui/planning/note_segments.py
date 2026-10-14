@@ -7,6 +7,11 @@ from __future__ import annotations
 
 import re
 
+# Only CR, LF and CRLF are Markdown line boundaries. str.splitlines() also
+# splits on Unicode separators (NEL, VT, FF, U+2028, U+2029), corrupting
+# source offsets when those characters occur inside a note.
+_SOURCE_LINE = re.compile(r'[^\r\n]*(?:\r\n|\r|\n|$)')
+
 _HEADING = re.compile(r'^## ([^\r\n]+)\r?$', re.MULTILINE)
 _FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})(.*)$')
 
@@ -17,7 +22,10 @@ def split_notes(source: str) -> list[tuple[int, int, str | None, str]]:
     fence_char = None
     fence_size = 0
     offset = 0
-    for line in source.splitlines(keepends=True):
+    for match_line in _SOURCE_LINE.finditer(source):
+        line = match_line.group(0)
+        if not line:
+            continue
         logical = line.rstrip('\r\n')
         fence = _FENCE.match(logical)
         if fence:

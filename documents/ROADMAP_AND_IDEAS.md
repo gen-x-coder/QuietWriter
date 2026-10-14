@@ -7,7 +7,7 @@ Deze roadmap beschrijft alleen de actuele productrichting. Uitgebreide oude 1.0/
 
 ## 1. Waar we nu staan
 
-**QuietWriter 1.3.1** is de huidige publieke stabiele release. **QuietWriter 1.4.0** is gereed voor publicatie als pre-release. Nieuwe functies worden ontwikkeld op de afzonderlijke **1.5.0**-lijn; 1.4 blijft beperkt tot releasecorrecties.
+**QuietWriter 1.3.1** is de huidige publieke stabiele release. De actieve ontwikkellijn is **1.4.0-dev.39**. QuietWriter 1.3.0 is uitgebracht; nieuwe functies komen in 1.4.0.
 
 **dev.24–dev.28:** Planning, schrijfdoelen en kerneditor zijn afgerond en breed gereviewd. **dev.29:** Windows- en kleine-scherm-hardening op basis van echte laptoptests: boeklaadfeedback, undo bij menselijke typesnelheid, responsieve geometrie, expliciete Integriteit en rustigere technische UI.
 
@@ -269,7 +269,7 @@ Veilige diagnoseweergave zonder manuscriptinhoud, API-sleutels of gevoelige boek
 ## 8. Distributie en platforms
 
 ### Nu
-- 1.4.0 is de huidige releasekandidaat; totdat die wordt gepromoveerd blijft 1.3.1 de laatst gepubliceerde stabiele Windows-release;
+- 1.2.32 is de huidige publieke stabiele Windows-release;
 - exacte buildomgeving en SHA-256 van EXE/portable ZIP vastleggen;
 - exact dezelfde EXE controleren via Microsoft Security Intelligence en VirusTotal;
 - alleen bij daadwerkelijke false positives de betreffende AV-leveranciers benaderen;
@@ -327,3 +327,27 @@ De roadmap is een beslisdocument, geen verzamelbak voor iedere mogelijke feature
 6. Wijzig geen Office-installaties. Eigen downloads in de QuietWriter-werkmap, met duidelijke keuze van taal, bron en persoonlijke woordenlijst. Geen stille download of verbinding zonder toestemming.
 7. Bij wisselen van woordenboek tijdens achtergrond-suggesties oude resultaten veilig negeren. Test op Windows met grote woordenboeken, snelle wisselingen en ontbrekende `.aff`-bestanden.
 8. Voeg expliciete herstel-/foutmeldingen toe voor ontbrekend woordenboek, onbereikbare catalogus en onvoldoende schijfruimte, in vijf talen.
+
+
+## Synchronisatie en meerdere computers (review dev.32, 13 oktober 2026)
+
+Gebaseerd op Claude’s `sync532.py`: een nieuwe Dropbox/OneDrive-boekenmap kan gedeeltelijk binnenkomen. Deze bevindingen zijn vastgesteld met een nagebootste synchronisatie, niet met een echte Dropbox-installatie.
+
+1. **HOOG — ontbrekend hoofdstuk nooit als leeg interpreteren.** Een wel ontvangen `book.json` met nog ontbrekend Markdown-bestand toonde voorheen een lege editor en liet opslaan toe. In de dev.33-reviewbron is een eerste fail-closed correctie aangebracht: expliciete fout, editor alleen-lezen, opslaan blokkeren. Nog op Windows/Qt en echte cloudsynchronisatie testen.
+2. **MIDDEN — boekenkast verversen.** Dev.35 bevat een handmatige knop, F5 en een periodieke lichte metadatawijzigingscontrole (8 seconden zolang de boekenkast zichtbaar is). Praktijkproef op Windows en Dropbox blijft nodig; geen claim dat de clouddienst klaar is.
+3. **MIDDEN — rustige synchronisatiestatus.** Als `book.json` ontbreekt of een online-only placeholder nog niet lokaal beschikbaar is, toon een neutrale hint in plaats van een enge leesfout. Geen claim dat Dropbox klaar is: generieke synchronisatiestatus is niet betrouwbaar beschikbaar.
+4. **MIDDEN — conflictkopieën zichtbaar maken.** In dev.36 is een begrensde alleen-lezen zoekfunctie op Integriteit & herstel toegevoegd, met ‘Openen in Verkenner’. Geen automatische wijzigingen. Nog open: herkenning van meer OneDrive-naamconventies en Windows-visuele acceptatie.
+5. **LAAG — praktische gebruikershulp.** Leg uit waarom twee computers niet tegelijk in hetzelfde boek moeten schrijven, waarom de boekenmap het beste lokaal beschikbaar blijft en hoe je controleert of synchronisatie is afgerond.
+
+**Acceptatie:** geen stille lege hoofdstukken, geen verlies van bronbestanden, geen automatische creatie van een ontbrekend gesynchroniseerd manuscript; rustige, vertaalde meldingen; Qt- en Windows-test, plus handmatige proef op twee echte computers.
+
+### Dev.35 vervolgaandachtspunten
+- Conflictkopieën worden op de boekenkast gesignaleerd, maar een gericht overzicht met bestandslocaties en “Openen in Verkenner” bij Integriteit & herstel blijft op de backlog (midden).
+- Zoeken en vervangen: ontbrekende hoofdstukken blokkeren de operatie; volledige meerhoofdstuk-atomiciteit bij gelijktijdige externe wijzigingen vereist apart transactioneel ontwerp (hoog voor toekomstige iteratie).
+- Synchronisatiestatus is heuristisch en kan niet aangeven of Dropbox/OneDrive volledig klaar is.
+
+### Openstaande praktijkacceptatie — twee computers (dev.36)
+
+De echte Dropbox/OneDrive-proef op desktop en laptop is bewust uitgesteld: momenteel is testen met twee computers niet mogelijk. Zodra het kan: boek A maken, op laptop gedeeltelijke synchronisatie afwachten, controleren dat ontbrekende hoofdstukken niet als leeg geopend of opgeslagen worden, wachten op volledige synchronisatie en controleren dat de boekenkast automatisch of via F5 ververst. Ook online-only placeholders en conflictkopieën beoordelen. Deze acceptatietest is **niet uitgevoerd** en blijft open.
+
+**Hoog open:** alles vervangen over meerdere hoofdstukken is nog niet transactioneel bij externe wijzigingen tussen de afzonderlijke saves. Geen volledige atomariteit claimen voordat een transactie- of preconditioneel batchprotocol is gebouwd en getest.

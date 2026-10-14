@@ -14,7 +14,7 @@ class MemorySuggestion:
 
 _VALID_KEYS = {section.key for section in SECTIONS}
 _BLOCK_RE = re.compile(
-    r"\[\[QW_MEMORY\|(?P<key>[a-z_]+)\]\]\s*(?P<text>.*?)\s*\[\[/QW_MEMORY\]\]",
+    r"\[\[\s*QW_MEMORY\s*\|\s*(?P<key>[a-z_]+)\s*\]\]\s*(?P<text>.*?)\s*\[\[\s*/QW_MEMORY\s*\]\]",
     flags=re.IGNORECASE | re.DOTALL,
 )
 
@@ -32,10 +32,11 @@ def extract_memory_suggestions(response: str) -> tuple[str, list[MemorySuggestio
     for match in _BLOCK_RE.finditer(source):
         key = match.group('key').lower()
         text = match.group('text').strip()
-        if key not in _VALID_KEYS or not text:
-            continue
-        suggestions.append(MemorySuggestion(key, text))
+        # Hide every complete internal marker, even when invalid or beyond the
+        # two proposal limit. Never show raw protocol tokens to the writer.
         spans.append(match.span())
+        if key in _VALID_KEYS and text and len(suggestions) < 2:
+            suggestions.append(MemorySuggestion(key, text))
 
     if not spans:
         return source.strip(), []
@@ -62,3 +63,23 @@ def proposal_instruction() -> str:
         "Geldige categorieën zijn canon, book_style, decisions, preferences en open_points. "
         "Voeg geen blok toe als er niets zinvols te onthouden is."
     )
+
+
+def visible_stream_text(response: str) -> str:
+    """Do not flash internal memory instructions in the live chat.
+
+    Models can send the opening marker token by token, so hiding only the
+    complete marker leaks partial markup. Keep any possible marker prefix hidden
+    until the stream establishes whether it is ordinary user-facing text.
+    """
+    source = response or ''
+    marker = '[[QW_MEMORY'
+    upper = source.upper()
+    complete = upper.find(marker)
+    if complete >= 0:
+        return source[:complete].rstrip()
+    # A streaming response can stop partway through the private tag.
+    for size in range(min(len(marker) - 1, len(source)), 1, -1):
+        if upper.endswith(marker[:size]):
+            return source[:-size].rstrip()
+    return source

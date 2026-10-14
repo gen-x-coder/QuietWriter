@@ -21,6 +21,7 @@ class SmokeTestContext:
         root = Path(tempfile.mkdtemp(prefix="quietwriter-smoke-"))
         settings = QSettings(str(root / "smoke.ini"), QSettings.IniFormat)
         settings.setValue("first_run_done", True)
+        (root / "workspace").mkdir(parents=True, exist_ok=True)
         settings.setValue("workspace", str(root / "workspace"))
         settings.setValue("ai_enabled", False)
         settings.sync()
