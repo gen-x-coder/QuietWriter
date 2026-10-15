@@ -50,7 +50,7 @@ def main() -> int:
     out = ROOT / 'build' / 'version_info.txt'
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(TEMPLATE.format(tup=version_tuple(version), version=version), encoding='utf-8')
-    print(f'{out.relative_to(ROOT)} → {version}')
+    print(f'{out.relative_to(ROOT)} -> {version}')
     return 0
 
 
