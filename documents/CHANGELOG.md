@@ -1,3 +1,10 @@
+## 1.5.0-rc1 — Eerste publieke release candidate
+
+- Eerste publieke release candidate op basis van 1.5.0-dev.63.
+- Windows-build en applicatiestart getest.
+- Bekend probleem: browseraanmelding bij OpenRouter werkt niet in de geteste Windows-build.
+- Geen nieuwe functionaliteit ten opzichte van dev.63.
+
 ## 1.5.0-dev.63 — Windows release-gate test portability fixes and OpenRouter authentication status worker lifecycle hardening.
 ## 1.5.0-dev.62 — Release test consistency
 
