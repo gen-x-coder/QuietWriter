@@ -10,7 +10,7 @@
 1.5.0-dev.16: Signed fixture verification, integrated health-gated directory transaction and rollback; production disabled.
 QuietWriter development snapshot
 
-Application version: 1.5.0-dev.63
+Application version: 1.5.0-rc1
 1.5.0-dev.15: OS-backed crash-released lock for directory-swap fixtures, serialized recovery and process-crash regressions.
 Source baseline: 1.4.0-dev.39 (provisional; final 1.4.0 source reconciliation required before feature work)
 1.5.0-dev.10: Isolated separate updater process, process-exit wait, lock, restart simulation; production updates remain disabled.
