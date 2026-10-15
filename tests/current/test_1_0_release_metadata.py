@@ -4,7 +4,7 @@ import quietwriter
 
 
 def test_stable_1_0_release_metadata():
-    assert quietwriter.__version__.startswith("1.5.0-dev.")
+    assert quietwriter.__version__.startswith(("1.5.0-dev.", "1.5.0-rc"))
 
     changelog = Path("documents/CHANGELOG.md").read_text(encoding="utf-8-sig")
     assert changelog.startswith(f"## {quietwriter.__version__} —")
