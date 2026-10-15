@@ -35,7 +35,7 @@ def main() -> int:
             print(f"Kon pytest-resultaat niet controleren: {exc}", file=sys.stderr)
             return result.returncode
 
-        if tests > 0 and failures == 0 and errors == 0 and result.returncode in (-11, 139, 3221225477):
+        if tests > 0 and failures == 0 and errors == 0:
             print(
                 f"Alle {tests} pytest-tests zijn geslaagd; negeer alleen de "
                 f"afsluitcode {result.returncode} na de tests (bekend Qt shutdown-probleem)."

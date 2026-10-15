@@ -1,16 +1,18 @@
 
 from pathlib import Path
+import threading
+import weakref
 from datetime import datetime
-from PySide6.QtCore import Qt, QSettings, QTimer, QUrl, Signal
+from PySide6.QtCore import Qt, QSettings, QTimer, QUrl, Signal, QObject
 from PySide6.QtGui import QDesktopServices, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QGridLayout, QLineEdit, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSizePolicy, QVBoxLayout, QWidget
 )
 from .current_page_stack import CurrentPageStack
-from ..workspace_path import normalize_workspace_path
+from ..workspace_path import normalize_workspace_path, require_external_user_directory, UnsafeWorkspacePath
 from ..first_run import request_first_run_reset
-from .. import APP_NAME
+from .. import APP_NAME, __version__
 from ..ai.providers import ProviderFactory
 from ..dictionary_catalog import DictionaryCatalog
 from ..i18n import tr
@@ -27,6 +29,11 @@ from ..automatic_backups import BackupError, validate_backup_root
 
 
 from .dialog_notices import _notice as _translated_notice
+
+
+class _OpenRouterAuthBridge(QObject):
+    completed = Signal(object, str)
+    checked = Signal(bool, str)
 
 
 class WrappedHeightLabel(QLabel):
@@ -174,8 +181,43 @@ class SettingsPage(QWidget):
         self.auto_update_check = SettingsBooleanChoice(settings.value('auto_update_check', False, bool), tr('settings.updates.not_automatic', 'Niet automatisch'), tr('settings.updates.automatic', 'Automatisch'))
         self._add_settings_field(
             gl, tr('settings.updates.auto', 'Automatisch controleren op updates'), self.auto_update_check,
-            tr('settings.updates.auto_help', 'Vraagt GitHub na het opstarten alleen naar de nieuwste stabiele versie. Er worden geen boeken of manuscripten verstuurd en QuietWriter downloadt niets automatisch.')
+            tr('settings.updates.auto_help', 'Standaard aan. QuietWriter vraagt GitHub na het opstarten naar de nieuwste stabiele versie. Hiervoor is internet nodig. Er worden geen boeken of manuscripten verstuurd. Uitschakelen kan hier altijd.')
         )
+        # The unfinished download/updater experiment is strictly opt-in.
+        # Keep its widget instantiated for existing settings/dirty tracking,
+        # but never expose the control without the workspace pilot marker.
+        from ..update_pilot_gate import pilot_enabled
+        updater_pilot = pilot_enabled(self.main.library.root)
+        self.auto_update_download = SettingsBooleanChoice(
+            False, tr('settings.updates.download_off', 'Niet automatisch'),
+            tr('settings.updates.download_on', 'Automatisch'),
+        )
+        self.auto_update_download.setEnabled(False)
+        if updater_pilot:
+            self._add_settings_field(
+                gl, tr('settings.updates.download', 'Updates automatisch downloaden'),
+                self.auto_update_download,
+                tr('settings.updates.download_help', 'Deze optie is nog niet beschikbaar.'),
+            )
+            pilot_info = WrappedHeightLabel(tr(
+                'settings.updates.pilot_notice',
+                'Updater-proef actief. Automatische installatie is nog niet beschikbaar.'
+            ))
+            pilot_info.setObjectName('muted')
+            self._add_settings_field(
+                gl, tr('settings.updates.pilot', 'Proefprogramma'), pilot_info,
+                tr('settings.updates.pilot_help',
+                   'Verwijder het lege bestand .quietwriter-update-pilot uit je boekenwerkmap om de proef uit te schakelen.')
+            )
+        self.update_version_status = WrappedHeightLabel(
+            tr('settings.updates.version_info', 'Huidige versie: {current}. Beschikbare stabiele versie: nog niet gecontroleerd.', current=__version__)
+        )
+        self.update_version_status.setObjectName('muted')
+        self._add_settings_field(
+            gl, tr('settings.updates.version', 'Versie-informatie'), self.update_version_status,
+            tr('settings.updates.version_help', 'Alleen officiële stabiele GitHub-releases. Geen automatische installatie.')
+        )
+        self.show_update_status(getattr(self.main, '_last_update_result', None))
         check_now = QPushButton(tr('settings.updates.check_now', 'Nu controleren')); check_now.setObjectName('secondaryButton')
         check_now.clicked.connect(lambda: self.main.check_for_updates(silent=False))
         self._add_settings_field(
@@ -382,8 +424,46 @@ class SettingsPage(QWidget):
             tr('settings.ai.provider_help', 'Ollama draait lokaal op je computer. OpenRouter gebruikt een externe API-key.'))
         self._add_settings_field(ail, tr('settings.ai.ollama_url', 'Ollama-adres'), self.ollama,
             tr('settings.ai.ollama_url_help', 'Alleen relevant wanneer Ollama als provider is gekozen.'))
-        self._add_settings_field(ail, tr('settings.ai.openrouter_key', 'OpenRouter API-key'), self.openrouter_key,
-            tr('settings.ai.openrouter_key_help', 'Alleen relevant wanneer OpenRouter als provider is gekozen. De sleutel wordt lokaal in je QuietWriter-instellingen bewaard.'))
+        self.ollama_row = self.ollama.parentWidget().parentWidget()
+        self.openrouter_auth_method = QuietComboBox()
+        self.openrouter_auth_method.addItem(tr('settings.ai.auth_browser_choice', 'Verbinden via browser'), 'browser')
+        self.openrouter_auth_method.addItem(tr('settings.ai.auth_manual_choice', 'API-sleutel invoeren'), 'manual')
+        saved_method = str(settings.value('openrouter_auth_method', '') or '').strip()
+        if saved_method not in ('browser', 'manual'):
+            # Match the previous implicit priority for existing users.
+            saved_method = 'browser' if self._has_openrouter_vault_key() else 'manual'
+        self.openrouter_auth_method.setCurrentIndex(self.openrouter_auth_method.findData(saved_method))
+        self._add_settings_field(ail, tr('settings.ai.auth_method', 'Verbindingsmethode'), self.openrouter_auth_method,
+            tr('settings.ai.auth_method_help', 'Kies hoe QuietWriter verbinding maakt met OpenRouter. Alleen de gekozen methode wordt gebruikt.'))
+        self._add_settings_field(ail, tr('settings.ai.openrouter_key', 'OpenRouter API-sleutel'), self.openrouter_key,
+            tr('settings.ai.openrouter_key_help', 'Gebruik een eigen API-sleutel. Deze wordt lokaal in je QuietWriter-instellingen bewaard.'))
+        self.openrouter_manual_row = self.openrouter_key.parentWidget().parentWidget()
+
+        self._auth_bridge = _OpenRouterAuthBridge(self)
+        self._auth_bridge.completed.connect(self._openrouter_login_finished)
+        self._auth_bridge.checked.connect(self._openrouter_check_finished)
+        self._auth_check_running = False
+        authbox = QWidget(); authlayout = QVBoxLayout(authbox)
+        authlayout.setContentsMargins(0, 0, 0, 0); authlayout.setSpacing(7)
+        authrow = QHBoxLayout(); authrow.setSpacing(8)
+        self.openrouter_connect = QPushButton(tr('settings.ai.openrouter_connect', 'Verbinden met OpenRouter'))
+        self.openrouter_connect.clicked.connect(self._openrouter_login)
+        self.openrouter_disconnect = QPushButton(tr('settings.ai.openrouter_disconnect', 'Verbinding verbreken'))
+        self.openrouter_disconnect.setObjectName('secondaryButton')
+        self.openrouter_disconnect.clicked.connect(self._openrouter_disconnect)
+        authrow.addWidget(self.openrouter_connect); authrow.addWidget(self.openrouter_disconnect)
+        self.openrouter_auth_status = QLabel('')
+        self.openrouter_auth_status.setAlignment(Qt.AlignCenter)
+        self.openrouter_auth_status.setMinimumWidth(95)
+        self.openrouter_auth_status.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        authrow.addWidget(self.openrouter_auth_status)
+        authrow.addStretch(1)
+        authlayout.addLayout(authrow)
+        self._add_settings_field(ail, tr('settings.ai.openrouter_browser', 'OpenRouter-browserlogin'), authbox,
+            tr('settings.ai.openrouter_browser_help', 'Log in via je browser. QuietWriter bewaart de verbinding in Windows Credential Manager.'))
+        self.openrouter_browser_row = authbox.parentWidget().parentWidget()
+        self._refresh_openrouter_auth_status()
+        QTimer.singleShot(0, self._check_openrouter_connection)
 
         self._add_settings_section(ail, tr('settings.section.model', 'Model'))
         self.model = QuietComboBox(); self.model.setEditable(False)
@@ -391,10 +471,17 @@ class SettingsPage(QWidget):
         self.openrouter_free_only = SettingsBooleanChoice(settings.value('openrouter_free_only', False, bool), tr('settings.ai.all_models', 'Alle modellen'), tr('settings.ai.free_models', 'Alleen gratis'))
         self.openrouter_free_only.setToolTip(tr('settings.ai.openrouter_free_only_help', 'Toont alleen OpenRouter-modellen waarvan de actuele prompt- en outputprijs nul zijn. Gebruik Modellen ophalen om de prijsstatus te verversen.'))
         self.openrouter_free_only.toggled.connect(self._openrouter_free_filter_changed)
+        self.openrouter_writing_only = SettingsBooleanChoice(settings.value('openrouter_writing_only', True, bool), tr('settings.ai.all_models', 'Alle modellen'), tr('settings.ai.writing_models', 'Geschikt voor schrijven'))
+        self.openrouter_writing_only.setToolTip(tr('settings.ai.writing_models_help', 'Verbergt duidelijk gespecialiseerde programmeermodellen. Algemene taalmodellen blijven beschikbaar.'))
+        self.openrouter_writing_only.toggled.connect(self._openrouter_free_filter_changed)
         modelbox = QWidget(); mv = QVBoxLayout(modelbox); mv.setContentsMargins(0,0,0,0); mv.setSpacing(5)
         modelrow = QWidget(); mh = QHBoxLayout(modelrow); mh.setContentsMargins(0,0,0,0); mh.setSpacing(8); mh.addWidget(self.model, 1); mh.addWidget(self.ai_refresh_button)
         self.ai_model_status = QLabel(''); self.ai_model_status.setObjectName('settingsFieldHelp'); self.ai_model_status.hide()
-        mv.addWidget(modelrow); mv.addWidget(self.openrouter_free_only); mv.addWidget(self.ai_model_status)
+        self.free_router_hint = QLabel(tr('settings.ai.free_router_hint', 'OpenRouter Free kiest voor ieder bericht opnieuw een gratis model. De schrijfstijl en mogelijkheden kunnen verschillen. Kies een specifiek model voor meer consistentie.'))
+        self.free_router_hint.setObjectName('settingsFieldHelp')
+        self.free_router_hint.setWordWrap(True)
+        self.free_router_hint.hide()
+        mv.addWidget(modelrow); mv.addWidget(self.free_router_hint); mv.addWidget(self.openrouter_writing_only); mv.addWidget(self.openrouter_free_only); mv.addWidget(self.ai_model_status)
         self._add_settings_field(ail, tr('settings.ai.model', 'Schrijf- en analysemodel'), modelbox,
             tr('settings.ai.model_help', 'QuietWriter stuurt alleen de context die je in de Meelezer-zijbalk kiest, samen met je schrijverspersona.\n🧠 = bij dit model kan thinking worden uitgeschakeld. Zonder thinking zijn antwoorden vaak sneller en directer. Het effect verschilt per model.'))
 
@@ -405,11 +492,13 @@ class SettingsPage(QWidget):
         self.ai_quick_actions_expanded = SettingsBooleanChoice(settings.value('ai_quick_actions_expanded', False, bool), tr('settings.ai.quick_actions_collapsed', 'Ingeklapt'), tr('settings.ai.quick_actions_open', 'Uitgeklapt'))
         self._add_settings_field(ail, tr('settings.ai.quick_actions_expanded', 'Snelacties standaard uitklappen'), self.ai_quick_actions_expanded,
             tr('settings.ai.quick_actions_expanded_help', 'Toont de drie Meelezer-snelacties direct wanneer het paneel opent. Staat dit uit, dan blijven ze bereikbaar via de knop Snelacties zonder permanente ruimte in te nemen.'))
-        self._ai_controls = (self.ai_provider, self.ollama, self.openrouter_key, self.model, self.ai_refresh_button, self.openrouter_free_only, self.ai_disable_thinking, self.ai_quick_actions_expanded)
+        self._ai_controls = (self.ai_provider, self.ollama, self.openrouter_auth_method, self.openrouter_key, self.openrouter_connect, self.openrouter_disconnect, self.model, self.ai_refresh_button, self.openrouter_free_only, self.openrouter_writing_only, self.ai_disable_thinking, self.ai_quick_actions_expanded)
         self.ai_enabled.toggled.connect(self._update_ai_controls)
         self.ai_provider.currentIndexChanged.connect(self._ai_provider_changed)
+        self.openrouter_auth_method.currentIndexChanged.connect(self._update_ai_controls)
         self.model.currentIndexChanged.connect(self._update_thinking_control)
         self.model.currentIndexChanged.connect(self._ai_model_selection_changed)
+        self.model.currentIndexChanged.connect(self._update_free_router_hint)
         self._update_ai_controls()
         ail.addStretch(1)
         self._add_settings_category(nav_lay, tr('settings.ai', 'AI Meelezer'), ai)
@@ -668,6 +757,15 @@ class SettingsPage(QWidget):
             button.setChecked(i == index)
             button.blockSignals(False)
 
+    def show_update_status(self, result):
+        if not hasattr(self, 'update_version_status'):
+            return
+        if result is None:
+            text = tr('settings.updates.version_info', 'Huidige versie: {current}. Beschikbare stabiele versie: nog niet gecontroleerd.', current=__version__)
+        else:
+            text = tr('settings.updates.version_found', 'Huidige versie: {current}. Nieuwste stabiele versie: {latest}.', current=result.current_version, latest=result.latest_version)
+        self.update_version_status.setText(text)
+
     def _current_form_state(self):
         return (
             self.language.currentData() or 'nl',
@@ -683,6 +781,7 @@ class SettingsPage(QWidget):
             bool(self.advanced_options.isChecked()),
             bool(self.guided_export.isChecked()),
             bool(self.auto_update_check.isChecked()),
+            bool(self.auto_update_download.isChecked()),
             bool(self.writing_progress_enabled.isChecked()),
             bool(self.backup_enabled.isChecked()), self.backup_path.text(),
             self.root.text(),
@@ -691,8 +790,10 @@ class SettingsPage(QWidget):
             self.ai_provider.currentData() or 'ollama',
             self.ollama.text(),
             self.openrouter_key.text(),
+            self.openrouter_auth_method.currentData(),
             self._selected_ai_model(),
             bool(self.openrouter_free_only.isChecked()),
+            bool(self.openrouter_writing_only.isChecked()),
             bool(self.ai_disable_thinking.isChecked()),
             bool(self.ai_quick_actions_expanded.isChecked()),
             bool(self.spell_enabled.isChecked()),
@@ -705,8 +806,8 @@ class SettingsPage(QWidget):
             self.language, self.theme, self.editor_font,
             self.editor_font_size, self.editor_text_width, self.manuscript_line_spacing,
             self.manuscript_indent, self.manuscript_paragraph_spacing,
-            self.smart_quotes, self.planning_ghosts_enabled, self.advanced_options, self.guided_export, self.auto_update_check, self.writing_progress_enabled, self.backup_enabled, self.backup_path, self.root, self.cover_template,
-            self.ai_enabled, self.ai_provider, self.ollama, self.openrouter_key, self.model, self.openrouter_free_only,
+            self.smart_quotes, self.planning_ghosts_enabled, self.advanced_options, self.guided_export, self.auto_update_check, self.auto_update_download, self.writing_progress_enabled, self.backup_enabled, self.backup_path, self.root, self.cover_template,
+            self.ai_enabled, self.ai_provider, self.ollama, self.openrouter_auth_method, self.openrouter_key, self.model, self.openrouter_free_only, self.openrouter_writing_only,
             self.ai_disable_thinking, self.ai_quick_actions_expanded,
             self.spell_enabled, self.spell_language, self.spell_dictionary_source,
         )
@@ -829,6 +930,11 @@ class SettingsPage(QWidget):
         if dialog.exec() != QDialog.Accepted:
             return
         request_first_run_reset(self.settings, Path(workspace))
+        try:
+            from ..ai.openrouter_auth import remove_key
+            remove_key()
+        except (RuntimeError, OSError, ImportError):
+            pass  # No vault exists, or the Windows vault is unavailable.
         if self.settings.status() != QSettings.Status.NoError:
             _translated_notice(QMessageBox.Warning, 
                 self, tr('settings.reset.error_title', 'Opnieuw instellen mislukt'),
@@ -849,10 +955,10 @@ class SettingsPage(QWidget):
     def _dictionary_workspace(self) -> Path:
         return Path(self.root.text().strip() or str(Path.home() / 'QuietWriter')) / 'dictionaries'
 
-    def _dictionary_source_label(self, source: str) -> str:
+    def _dictionary_source_label(self, source: str, locale: str = "") -> str:
         labels = {
             'Werkmap': tr('settings.spelling.source_workspace', 'Zelf toegevoegd'),
-            'Meegeleverd': tr('settings.spelling.source_bundled', 'OpenTaal (meegeleverd)'),
+            'Meegeleverd': (tr('settings.spelling.source_bundled', 'OpenTaal (meegeleverd)') if locale == 'nl_NL' else tr('settings.spelling.source_bundled_generic', 'Meegeleverd')),
         }
         return labels.get(source, source)
 
@@ -913,7 +1019,7 @@ class SettingsPage(QWidget):
             self.remove_dict_btn.setEnabled(False)
             return
         aff = tr('settings.spelling.aff_rules', 'met .aff-regels') if entry.aff else tr('settings.spelling.dic_only', 'alleen .dic')
-        self.dictionary_info.setText(tr('settings.spelling.dictionary_info', 'Bron: {source} · {locale} · {kind}\n{path}', source=self._dictionary_source_label(entry.source), locale=entry.locale, kind=aff, path=entry.dic))
+        self.dictionary_info.setText(tr('settings.spelling.dictionary_info', 'Bron: {source} · {locale} · {kind}\n{path}', source=self._dictionary_source_label(entry.source, entry.locale), locale=entry.locale, kind=aff, path=entry.dic))
         self.dictionary_info.sync_height()
         self.remove_dict_btn.setEnabled(entry.source == 'Werkmap')
 
@@ -955,6 +1061,12 @@ class SettingsPage(QWidget):
         if provider_name in self._ai_model_drafts and selected:
             self._ai_model_drafts[provider_name] = selected
 
+    def _update_free_router_hint(self, *_):
+        self.free_router_hint.setVisible(
+            str(self.ai_provider.currentData() or '') == 'openrouter'
+            and str(self.model.currentData() or '') == 'openrouter/free'
+        )
+
     def _ai_model_selection_changed(self, *_):
         # _populate_models blocks combo signals, so this only records an actual
         # form selection and not a programmatic catalogue rebuild.
@@ -976,6 +1088,11 @@ class SettingsPage(QWidget):
         info_by_name = self._ai_model_info_by_provider.get(provider_name, {})
         filter_active = False
         if provider_name == 'openrouter':
+            from ..ai.model_suitability import suitable_for_writing
+            if self.openrouter_writing_only.isChecked():
+                models = [name for name in models if suitable_for_writing(info_by_name.get(name, {'name': name}))]
+            if 'openrouter/free' not in models:
+                models.insert(0, 'openrouter/free')
             # Keep OpenRouter's own ordering within each group, but put models
             # that are currently free before paid models. The free-only filter
             # is only meaningful after a catalogue refresh supplied pricing
@@ -984,6 +1101,12 @@ class SettingsPage(QWidget):
             filter_active = self.openrouter_free_only.isChecked() and bool(info_by_name)
             if filter_active:
                 models = [name for name in models if info_by_name.get(name, {}).get('free') is True]
+                if 'openrouter/free' not in models:
+                    models.insert(0, 'openrouter/free')
+            # Keep the automatic free router at the top regardless of prices.
+            if 'openrouter/free' in models:
+                models.remove('openrouter/free')
+                models.insert(0, 'openrouter/free')
 
         self.model.blockSignals(True)
         self.model.clear()
@@ -1015,7 +1138,7 @@ class SettingsPage(QWidget):
         if current:
             index = self.model.findData(current)
             explicit_free = current == 'openrouter/free' or current.endswith(':free')
-            if index < 0 and (not filter_active or explicit_free):
+            if index < 0 and (not filter_active or explicit_free) and (provider_name != 'openrouter' or not self.openrouter_writing_only.isChecked() or current == 'openrouter/free' or suitable_for_writing(info_by_name.get(current, {'name': current}))):
                 # Preserve a saved model that is not in the current provider
                 # response (for example before the first refresh/offline). An
                 # explicit :free model remains visible even with the filter on.
@@ -1029,6 +1152,7 @@ class SettingsPage(QWidget):
             self.model.setCurrentIndex(0)
         self.model.blockSignals(False)
         self._update_thinking_control()
+        self._update_free_router_hint()
 
     def _cache_model_capabilities(self, provider_name: str, infos) -> None:
         """Persist provider capability metadata independently from form saves."""
@@ -1087,9 +1211,145 @@ class SettingsPage(QWidget):
         provider_name = str(self.ai_provider.currentData() or 'ollama')
         for control in self._ai_controls:
             control.setEnabled(enabled)
+        is_openrouter = provider_name == 'openrouter'
+        browser_mode = self.openrouter_auth_method.currentData() == 'browser'
+        self.ollama_row.setVisible(provider_name == 'ollama')
+        self.openrouter_manual_row.setVisible(is_openrouter and not browser_mode)
+        self.openrouter_browser_row.setVisible(is_openrouter and browser_mode)
+        self.openrouter_auth_method.parentWidget().parentWidget().setVisible(is_openrouter)
+        self.openrouter_connect.setEnabled(enabled and is_openrouter and browser_mode and not getattr(self, '_auth_running', False))
+        self.openrouter_writing_only.setVisible(provider_name == 'openrouter')
+        self.openrouter_writing_only.setEnabled(enabled and provider_name == 'openrouter')
         self.openrouter_free_only.setVisible(provider_name == 'openrouter')
         self.openrouter_free_only.setEnabled(enabled and provider_name == 'openrouter')
+        self.openrouter_disconnect.setEnabled(enabled and is_openrouter and browser_mode and self._has_openrouter_vault_key())
         self._update_thinking_control()
+
+    def _has_openrouter_vault_key(self):
+        try:
+            from ..ai.openrouter_auth import stored_key
+            return bool(stored_key())
+        except (RuntimeError, OSError, ImportError):
+            return False
+
+    def _set_openrouter_status(self, kind: str, message: str | None = None):
+        labels = {
+            'connected': tr('settings.ai.status_connected', 'Verbonden'),
+            'checking': tr('settings.ai.status_checking', 'Controleren…'),
+            'disconnected': tr('settings.ai.status_disconnected', 'Niet verbonden'),
+            'error': tr('settings.ai.status_error', 'Verbinding mislukt'),
+        }
+        # Restrained status colors, consistent with QuietWriter's quiet layout.
+        palette = {
+            'connected': ('#23673f', '#e6f3e9'),
+            'checking': ('#865e18', '#fff3dc'),
+            'disconnected': ('#626d79', '#edf0f3'),
+            'error': ('#a62e37', '#fdecee'),
+        }
+        fg, bg = palette[kind]
+        self.openrouter_auth_status.setText(labels[kind])
+        self.openrouter_auth_status.setStyleSheet(
+            f'QLabel {{ color: {fg}; background-color: {bg}; border-radius: 5px;'
+            ' padding: 5px 9px; font-weight: 600; }}'
+        )
+        self.openrouter_auth_status.setToolTip(message or labels[kind])
+
+    def _refresh_openrouter_auth_status(self):
+        self._set_openrouter_status('checking' if self._has_openrouter_vault_key() else 'disconnected')
+
+    def _check_openrouter_connection(self):
+        if self._auth_check_running or getattr(self, '_auth_running', False):
+            return
+        try:
+            from ..ai.openrouter_auth import stored_key
+            key = stored_key()
+        except (RuntimeError, OSError, ImportError) as exc:
+            self._set_openrouter_status('error', str(exc))
+            return
+        if not key:
+            self._set_openrouter_status('disconnected')
+            return
+        self._auth_check_running = True
+        self._set_openrouter_status('checking')
+
+        bridge_ref = weakref.ref(self._auth_bridge)
+
+        def worker():
+            try:
+                from ..ai.openrouter_auth import verify_key
+                verify_key(key)
+                result = (True, '')
+            except Exception as exc:
+                result = (False, str(exc))
+            bridge = bridge_ref()
+            if bridge is not None:
+                try:
+                    bridge.checked.emit(*result)
+                except RuntimeError:
+                    # Settings dialog closed while the remote check was running.
+                    pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _openrouter_check_finished(self, valid, error):
+        self._auth_check_running = False
+        if getattr(self, '_auth_running', False):
+            return
+        if not self._has_openrouter_vault_key():
+            self._set_openrouter_status('disconnected')
+        elif valid:
+            self._set_openrouter_status('connected')
+        else:
+            self._set_openrouter_status('error', error)
+
+    def _openrouter_login(self):
+        from ..ai.openrouter_auth import authorize
+        if getattr(self, '_auth_running', False):
+            return
+        self._auth_running = True
+        self.openrouter_connect.setEnabled(False)
+        self._set_openrouter_status('checking', tr('settings.ai.openrouter_wait', 'Wacht op autorisatie in de browser (maximaal drie minuten)…'))
+
+        bridge_ref = weakref.ref(self._auth_bridge)
+
+        def worker():
+            try:
+                result = (authorize(), '')
+            except Exception as exc:
+                result = (None, str(exc))
+            bridge = bridge_ref()
+            if bridge is not None:
+                try:
+                    bridge.completed.emit(*result)
+                except RuntimeError:
+                    # The settings page may have been destroyed before login ended.
+                    pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _openrouter_login_finished(self, detail, error):
+        self._auth_running = False
+        self.openrouter_connect.setEnabled(self.ai_enabled.isChecked())
+        if error:
+            self._set_openrouter_status('error', tr('settings.ai.openrouter_login_failed', 'Verbinden mislukt: {reason}', reason=error))
+            return
+        # Do not destroy a manually configured key when browser login succeeds.
+        self._refresh_openrouter_auth_status()
+        self._update_ai_controls()
+        self._set_openrouter_status('connected', tr('settings.ai.openrouter_login_success', 'Verbonden. De sleutel is veilig opgeslagen. Kies een model en sla je instellingen op.'))
+
+    def _openrouter_disconnect(self):
+        from ..ai.openrouter_auth import remove_key
+        try:
+            removed = remove_key()
+        except (RuntimeError, OSError) as exc:
+            _translated_notice(QMessageBox.Warning, self, 'OpenRouter', str(exc))
+            return
+        self._refresh_openrouter_auth_status()
+        self._update_ai_controls()
+        if removed:
+            _translated_notice(QMessageBox.Information, self, 'OpenRouter', tr('settings.ai.openrouter_removed',
+                'De lokale browserkoppeling is verwijderd. Trek de sleutel zo nodig ook in via openrouter.ai/settings/keys.'))
 
     def refresh_models(self):
         # Model discovery must not silently persist unsaved form values. Settings
@@ -1100,6 +1360,7 @@ class SettingsPage(QWidget):
             'ai_provider': provider_name,
             'ollama_url': self.ollama.text(),
             'openrouter_api_key': self.openrouter_key.text(),
+            'openrouter_auth_method': self.openrouter_auth_method.currentData(),
             'openrouter_url': self.settings.value('openrouter_url', 'https://openrouter.ai/api/v1'),
         }
 
@@ -1437,6 +1698,13 @@ class SettingsPage(QWidget):
         ))
         normalized_workspace = str(normalize_workspace_path(self.root.text(), default_workspace))
         self.root.setText(normalized_workspace)
+        try:
+            require_external_user_directory(normalized_workspace)
+            if self.backup_path.text().strip():
+                require_external_user_directory(self.backup_path.text().strip())
+        except UnsafeWorkspacePath as exc:
+            _translated_notice(QMessageBox.Warning, self, tr('settings.section.workspace', 'Werkmap'), str(exc))
+            return
         old_language = str(self.settings.value('language', 'nl') or 'nl')
         new_language = str(self.language.currentData() or 'nl')
         new_typography = typography_from_values(self.editor_font.currentText(), self.editor_font_size.value())
@@ -1469,6 +1737,7 @@ class SettingsPage(QWidget):
             'advanced_options': self.advanced_options.isChecked(),
             'export/guided': self.guided_export.isChecked(),
             'auto_update_check': self.auto_update_check.isChecked(),
+            'auto_update_download': False,  # Disabled until verified downloader ships
             'writing_progress_enabled': self.writing_progress_enabled.isChecked(),
             'backup/enabled': self.backup_enabled.isChecked(),
             'backup/path': self.backup_path.text().strip(),
@@ -1478,7 +1747,9 @@ class SettingsPage(QWidget):
             'ai_provider': str(self.ai_provider.currentData() or 'ollama'),
             'ollama_url': self.ollama.text(),
             'openrouter_api_key': self.openrouter_key.text(),
+            'openrouter_auth_method': self.openrouter_auth_method.currentData(),
             'openrouter_free_only': self.openrouter_free_only.isChecked(),
+            'openrouter_writing_only': self.openrouter_writing_only.isChecked(),
             'ai_disable_thinking': self.ai_disable_thinking.isChecked(),
             'ai_quick_actions_expanded': self.ai_quick_actions_expanded.isChecked(),
             'cover_header_template': self.cover_template.text().strip() or '/{slug}.jpg',
@@ -1551,6 +1822,7 @@ class SettingsPage(QWidget):
         self.advanced_options.setChecked(self.settings.value('advanced_options', True, bool))
         self.guided_export.setChecked(self.settings.value('export/guided', True, bool))
         self.auto_update_check.setChecked(self.settings.value('auto_update_check', False, bool))
+        self.auto_update_download.setChecked(False)
         self.writing_progress_enabled.setChecked(self.settings.value('writing_progress_enabled', False, bool))
         self.backup_enabled.setChecked(self.settings.value('backup/enabled', False, bool))
         self.backup_path.setText(str(self.settings.value('backup/path', '') or ''))
@@ -1575,7 +1847,12 @@ class SettingsPage(QWidget):
         self._last_ai_provider = provider
         self.ollama.setText(self.settings.value('ollama_url', 'http://127.0.0.1:11434'))
         self.openrouter_key.setText(self.settings.value('openrouter_api_key', ''))
+        method = str(self.settings.value('openrouter_auth_method', '') or '')
+        if method not in ('browser', 'manual'):
+            method = 'browser' if self._has_openrouter_vault_key() else 'manual'
+        self.openrouter_auth_method.setCurrentIndex(self.openrouter_auth_method.findData(method))
         self.openrouter_free_only.setChecked(self.settings.value('openrouter_free_only', False, bool))
+        self.openrouter_writing_only.setChecked(self.settings.value('openrouter_writing_only', True, bool))
         self.ai_disable_thinking.setChecked(self.settings.value('ai_disable_thinking', False, bool))
         self.ai_quick_actions_expanded.setChecked(self.settings.value('ai_quick_actions_expanded', False, bool))
         self._populate_models(provider)

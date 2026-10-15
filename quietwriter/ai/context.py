@@ -32,6 +32,8 @@ class ContextBuilder:
 
     def _chapter_text(self, book, current_chapter, chapter):
         if current_chapter and chapter.id == current_chapter.id:
+            if getattr(self.main.editor_page, "_chapter_unavailable", False):
+                return tr("ai.context.chapter_pending", "[Hoofdstuk nog niet op deze computer beschikbaar]")
             return text_for_ai(self.main.editor_page.editor.toPlainText())
         try:
             return text_for_ai(self.main.library.read_chapter(book, chapter))
@@ -45,7 +47,7 @@ class ContextBuilder:
         if not book or not chapter:
             return ContextBundle(tr('ai.context.none_open', 'geen manuscript geopend'), '', [tr('context.persona', 'Schrijverspersona')])
 
-        selected = ep.editor.textCursor().selectedText().replace('\u2029', '\n').strip()
+        selected = ('' if getattr(ep, "_chapter_unavailable", False) else ep.editor.textCursor().selectedText().replace('\u2029', '\n').strip())
         pieces = [tr('context.persona', 'Schrijverspersona'), tr('context.book_profile', 'Boekprofiel'), tr('context.book_memory', 'Boekgeheugen')]
         if selected:
             pieces.append(tr('ai.context.selected_text', 'Geselecteerde tekst'))
@@ -53,7 +55,7 @@ class ContextBuilder:
 
         if mode in ('chapter', 'Huidig hoofdstuk'):
             pieces.append(tr('ai.context.chapter_piece', 'Hoofdstuk: {title}', title=chapter.title))
-            return ContextBundle(tr('ai.context.chapter_label', 'hoofdstuk: {title}', title=chapter.title), text_for_ai(ep.editor.toPlainText()), pieces)
+            return ContextBundle(tr('ai.context.chapter_label', 'hoofdstuk: {title}', title=chapter.title), self._chapter_text(book, chapter, chapter), pieces)
 
         if mode in ('section', 'Huidige sectie'):
             section, _ = ep.find_chapter_in_book(chapter.id)

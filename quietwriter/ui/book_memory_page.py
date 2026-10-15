@@ -336,35 +336,37 @@ class BookMemoryPage(QWidget):
         clean = (text or '').strip()
         if not clean:
             return False
-        self._store_editor()
-        before = deepcopy(self.memory)
-        source = render_book_memory(self.memory)
-        rendered, changed = append_memory_entry(source, section_key, clean)
-        if not changed:
-            # Already present counts as successfully remembered.
-            parsed = parse_book_memory(rendered)
-            if section_key in parsed:
-                normalized = clean.lstrip('-*').strip().casefold()
-                existing = {line.strip().lstrip('-*').strip().casefold() for line in parsed[section_key].splitlines() if line.strip()}
-                if normalized in existing:
-                    return True
+        # Append only to the persisted version. Unsaved edits on the visible
+        # Boekgeheugen page must not be silently saved by this other action.
+        clean = ' '.join(clean.split())
+        try:
+            disk_source = self.main.library.read_book_memory(self.book)
+        except Exception:
             return False
-        self.memory = parse_book_memory(rendered)
-        self._set_dirty(self.memory != self._loaded_memory)
-        if self._persist_memory_state() is False:
-            self.memory = before
-            self._loading = True
-            try:
-                if self._current_key is not None:
-                    self.edit.setPlainText(self.memory.get(self._current_key, ''))
-            finally:
-                self._loading = False
-            self._set_dirty(self.memory != self._loaded_memory)
+        rendered, changed = append_memory_entry(disk_source, section_key, clean)
+        if not changed:
+            existing = parse_book_memory(disk_source).get(section_key, '')
+            normalized = clean.lstrip('-*').strip().casefold()
+            return normalized in {line.strip().lstrip('-*').strip().casefold() for line in existing.splitlines() if line.strip()}
+        try:
+            self.main.library.save_book_memory(self.book, rendered)
+            persisted_memory = parse_book_memory(self.main.library.read_book_memory(self.book))
+        except (ExternalModificationError, RevisionVerificationError):
+            return False
+        except Exception as exc:
+            notice_warning(self, tr('book_memory.verify_title', 'Boekgeheugen controleren'),
+                tr('book_memory.verify_failed', 'Kan niet controleren of het voorstel op schijf staat: {error}').format(error=exc))
             return False
         normalized = clean.lstrip('-*').strip().casefold()
-        saved_lines = {line.strip().lstrip('-*').strip().casefold() for line in (self.memory.get(section_key) or '').splitlines() if line.strip()}
+        saved_lines = {line.strip().lstrip('-*').strip().casefold() for line in (persisted_memory.get(section_key) or '').splitlines() if line.strip()}
         if normalized not in saved_lines:
             return False
+        # Keep the visible draft, including unsaved edits, intact; append the
+        # confirmed new entry to this in-memory version only.
+        local_rendered, _ = append_memory_entry(render_book_memory(self.memory), section_key, clean)
+        self.memory = parse_book_memory(local_rendered)
+        self._loaded_memory = persisted_memory
+        self._set_dirty(self.memory != self._loaded_memory)
         if self._current_key == section_key:
             self._loading = True
             try:

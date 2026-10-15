@@ -22,6 +22,14 @@ from .manuscript_profile import (
 )
 
 
+class ChapterNotAvailableError(FileNotFoundError):
+    """A referenced manuscript has not arrived locally; never represent it as empty."""
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        super().__init__(f'Hoofdstukbestand is (nog) niet beschikbaar: {self.path.name}')
+
+
 class BookBlockedError(RuntimeError):
     """A detached/incompatible book is deliberately closed for writes."""
 
@@ -186,6 +194,7 @@ class Library:
                   self.persona_dir, self.dict_dir, self.cache_dir]:
             d.mkdir(parents=True, exist_ok=True)
         self._cleanup_stale_import_staging()
+        self._replace_recovery_alerts = self.recover_interrupted_replacements()
         persona = self.persona_dir / 'schrijver.md'
         if not persona.exists():
             _safe_atomic_write_text(persona, default_persona_markdown())
@@ -608,7 +617,10 @@ class Library:
 
     def read_chapter(self, book: Book, chapter: Chapter) -> str:
         path = book.path / chapter.file
-        return path.read_text(encoding='utf-8') if path.exists() else ''
+        try:
+            return path.read_text(encoding='utf-8')
+        except FileNotFoundError as exc:
+            raise ChapterNotAvailableError(path) from exc
 
     def locate_chapter(self, book: Book, chapter_id: str):
         for section in book.sections:
@@ -646,8 +658,10 @@ class Library:
         target_path.parent.mkdir(parents=True, exist_ok=True)
         # Duplicating is a normal content operation, not a recovery path.
         # Never turn invalid UTF-8 into a generic decode crash or copy it blindly.
+        if not source_path.is_file():
+            raise ChapterNotAvailableError(source_path)
         _guard_existing_utf8(source_path)
-        _safe_atomic_write_text(target_path, source_path.read_text(encoding='utf-8') if source_path.exists() else '')
+        _safe_atomic_write_text(target_path, source_path.read_text(encoding='utf-8'))
         section.chapters.insert(index + 1, target)
         try:
             self._write_manifest_unchecked(book)
@@ -759,6 +773,11 @@ class Library:
         return section
 
     def save_chapter(self, book: Book, chapter: Chapter, text: str):
+        # Never create a replacement for a referenced manuscript that has not yet
+        # synchronized. A newly created chapter already has an empty file.
+        chapter_path = book.path / chapter.file
+        if not chapter_path.is_file():
+            raise ChapterNotAvailableError(chapter_path)
         # Verify the complete currently tracked book before the logical save.
         # The manuscript file is authoritative; updating ``last_used`` in the
         # manifest is bookkeeping and may fail transiently under sync/file locks.
@@ -783,6 +802,103 @@ class Library:
             # book.json could not be touched. Otherwise the next save reports
             # our own text as an external modification.
             self._refresh_if_tracked(book)
+
+    def recover_interrupted_replacements(self) -> list[str]:
+        """Restore crash-interrupted batches, never overwriting sync changes.
+
+        Called at library startup and before every new batch. Failed recoveries
+        remain on disk for manual inspection.
+        """
+        from .replace_journal import recover_transaction, replace_lock
+        alerts = []
+        if not self.archive_dir.exists():
+            return alerts
+        for book_archive in self.archive_dir.iterdir():
+            if not book_archive.is_dir() or book_archive.is_symlink():
+                continue
+            matches = [p for p in self.books_dir.glob('*') if p.is_dir() and not p.is_symlink() and p.name.endswith('-' + book_archive.name[:8])]
+            if len(matches) != 1:
+                if any((p / 'transaction.json').exists() for p in book_archive.glob('replace-recovery-*')):
+                    alerts.append(f'{book_archive.name}: boekmap niet eenduidig gevonden')
+                continue
+            book_folder = matches[0]
+            for transaction in book_archive.glob('replace-recovery-*'):
+                if not transaction.is_dir() or transaction.is_symlink():
+                    continue
+                try:
+                    with replace_lock(book_archive):
+                        conflicts = recover_transaction(transaction, book_folder, _safe_atomic_write_bytes)
+                    if conflicts:
+                        alerts.append(f'{book_archive.name}: handmatige controle nodig ({", ".join(conflicts)})')
+                except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
+                    alerts.append(f'{book_archive.name}: vervangherstel niet voltooid ({exc})')
+        return alerts
+
+    def replace_chapters_guarded(self, book: Book, replacements: dict[str, tuple[str, str]]) -> int:
+        from .replace_journal import replace_lock
+        with replace_lock(self.archive_dir / book.id):
+            return self._replace_chapters_guarded_locked(book, replacements)
+
+    def _replace_chapters_guarded_locked(self, book: Book, replacements: dict[str, tuple[str, str]]) -> int:
+        """Journaled all-or-recover replacement. External edits are never overwritten.
+
+        A durable pending journal is written *before* the first manuscript write.
+        Crash recovery happens on next Library construction. A second writer
+        must still be coordinated by the separate workspace lock (not provided
+        by this journal); an interrupted batch is never silently assumed safe.
+        """
+        from .replace_journal import digest, journal_write, recover_transaction
+        if not replacements:
+            return 0
+        for transaction in (self.archive_dir / book.id).glob('replace-recovery-*'):
+            if transaction.is_dir() and (transaction / 'transaction.json').exists():
+                conflicts = recover_transaction(transaction, book.path, _safe_atomic_write_bytes)
+                if conflicts:
+                    raise RuntimeError('Er staat een onafgerond vervangherstel open. Controleer Integriteit & herstel.')
+        self.verify_book_unchanged(book)
+        chapters = {chapter.id: chapter for sec in book.sections for chapter in sec.chapters}
+        planned = []
+        for cid, (original, replacement) in replacements.items():
+            chapter = chapters.get(cid)
+            if chapter is None:
+                raise ValueError('Unknown chapter in replacement batch')
+            path = book.path / chapter.file
+            if not path.is_file():
+                raise ChapterNotAvailableError(path)
+            actual = path.read_text(encoding='utf-8')
+            if actual != original:
+                raise RuntimeError('Hoofdstuk is ondertussen gewijzigd. Er is niets vervangen.')
+            if actual != replacement:
+                planned.append((path, actual.encode('utf-8'), replacement.encode('utf-8')))
+        if not planned:
+            return 0
+        recovery = self.archive_dir / book.id / ('replace-recovery-' + uuid.uuid4().hex)
+        recovery.mkdir(parents=True, exist_ok=False)
+        entries = []
+        for i, (path, old, new) in enumerate(planned):
+            backup_name = f'{i:05d}.original'
+            _safe_atomic_write_bytes(recovery / backup_name, old)
+            entries.append({'name': path.relative_to(book.path).as_posix(), 'backup': backup_name,
+                            'old_sha256': digest(old), 'new_sha256': digest(new)})
+        state = {'schema': 1, 'book': book.id, 'status': 'pending', 'files': entries}
+        journal = recovery / 'transaction.json'
+        self.verify_book_unchanged(book)
+        journal_write(journal, state, _safe_atomic_write_bytes)
+        try:
+            for path, old, new in planned:
+                if path.read_bytes() != old:
+                    raise RuntimeError('Hoofdstuk gewijzigd tijdens vervangen. De bewerking is afgebroken.')
+                _safe_atomic_write_bytes(path, new)
+            state['status'] = 'committed'
+            journal_write(journal, state, _safe_atomic_write_bytes)
+        except BaseException:
+            conflicts = recover_transaction(recovery, book.path, _safe_atomic_write_bytes)
+            self._refresh_if_tracked(book)
+            if conflicts:
+                raise RuntimeError('Vervangen onderbroken; handmatige controle nodig. Herstelkopieën: ' + str(recovery))
+            raise
+        self._refresh_if_tracked(book)
+        return len(planned)
 
     def ensure_daily_archive(self, book: Book):
         files = [book.path / c.file for sec in book.sections for c in sec.chapters if (book.path / c.file).exists()]
@@ -889,6 +1005,14 @@ class Library:
         remains reachable from History even if the external structure changed.
         """
         chapter_overrides = chapter_overrides or {}
+        # Preflight before making any history directory: cloud placeholders are
+        # not empty manuscripts, and failed snapshots must leave no partial tree.
+        for section in book.sections:
+            for chapter in section.chapters:
+                if Path(chapter.file).as_posix() not in chapter_overrides:
+                    source = book.path / chapter.file
+                    if not source.is_file():
+                        raise ChapterNotAvailableError(source)
         root = self._history_root(book)
         now = datetime.now()
         version_id = now.strftime('%Y-%m-%dT%H-%M-%S-%f')
@@ -914,7 +1038,11 @@ class Library:
                     text = chapter_overrides[relative]
                 else:
                     source = book.path / chapter.file
-                    text = source.read_text(encoding='utf-8') if source.exists() else ''
+                    # A partial cloud sync is not an empty manuscript. Fail the
+                    # snapshot instead of recording a false complete revision.
+                    if not source.is_file():
+                        raise ChapterNotAvailableError(source)
+                    text = source.read_text(encoding='utf-8')
                 _safe_atomic_write_text(destination, text)
         # A conflict-local snapshot must remain a complete book snapshot. Keep
         # auxiliary book-owned data alongside the in-memory manuscript state.

@@ -455,6 +455,11 @@ class StartPage(QWidget):
         controls.addWidget(self.count)
         controls.addWidget(add_shelf)
         controls.addWidget(self.demo_toggle)
+        self.refresh_button = QPushButton(tr('bookshelf.refresh', 'Vernieuwen'))
+        self.refresh_button.setObjectName('secondaryButton')
+        self.refresh_button.setToolTip(tr('bookshelf.refresh.tip', 'Controleer of er nieuwe boeken zijn binnengekomen'))
+        self.refresh_button.clicked.connect(self.refresh)
+        controls.addWidget(self.refresh_button)
         controls.addStretch(1)
         controls.addWidget(self.sorting)
         controls.addWidget(self.search)
@@ -481,6 +486,12 @@ class StartPage(QWidget):
         self.no_results.setAlignment(Qt.AlignCenter)
         self.no_results.hide()
         outer.addWidget(self.no_results)
+        self.sync_hint = QLabel()
+        self.sync_hint.setObjectName('muted')
+        self.sync_hint.setWordWrap(True)
+        self.sync_hint.setAlignment(Qt.AlignCenter)
+        self.sync_hint.hide()
+        outer.addWidget(self.sync_hint)
 
         scroll = QScrollArea()
         scroll.setObjectName('bookshelfScroll')
@@ -496,8 +507,57 @@ class StartPage(QWidget):
         self.shelves_layout.setAlignment(Qt.AlignTop)
         scroll.setWidget(self.shelves_host)
         outer.addWidget(scroll, 1)
+        self._sync_signature = None
+        self._sync_refresh_timer = QTimer(self)
+        self._sync_refresh_timer.setInterval(8000)
+        self._sync_refresh_timer.timeout.connect(self._refresh_if_changed)
+        self._sync_refresh_timer.start()
         self.refresh()
 
+    def _disk_book_signature(self):
+        """Cheap metadata probe; no cloud placeholders are hydrated/read."""
+        entries = []
+        try:
+            for folder in self.library.books_dir.iterdir():
+                if not folder.is_dir() or folder.name.startswith('.'):
+                    continue
+                manifest = folder / 'book.json'
+                try:
+                    stat = manifest.stat()
+                    entries.append((folder.name, stat.st_mtime_ns, stat.st_size))
+                except FileNotFoundError:
+                    entries.append((folder.name, None, None))
+                except OSError:
+                    entries.append((folder.name, 'unavailable', None))
+        except OSError:
+            return None
+        return tuple(sorted(entries))
+
+    def _refresh_if_changed(self):
+        if not self.isVisible():
+            return
+        signature = self._disk_book_signature()
+        if signature is not None and signature != self._sync_signature:
+            self.refresh()
+
+    def _sync_observations(self):
+        """Report potential cloud conflicts without changing or reading content."""
+        missing_metadata = 0
+        conflicts = 0
+        try:
+            for folder in self.library.books_dir.iterdir():
+                if not folder.is_dir() or folder.name.startswith('.'):
+                    continue
+                if not (folder / 'book.json').is_file():
+                    missing_metadata += 1
+                for path in folder.rglob('*'):
+                    if path.is_file() and ('conflicted copy' in path.name.casefold() or 'conflictkopie' in path.name.casefold()):
+                        conflicts += 1
+                        if conflicts >= 50:
+                            break
+        except OSError:
+            return missing_metadata, conflicts, True
+        return missing_metadata, conflicts, False
 
     def _word_count_cache_path(self) -> Path:
         local_root = QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation)
@@ -704,6 +764,18 @@ class StartPage(QWidget):
         loaded = self.library.shelves.load()
         self._update_notice(loaded)
         books = self.library.list_books()
+        self._sync_signature = self._disk_book_signature()
+        pending, conflicts, failed = self._sync_observations()
+        if pending or conflicts or failed:
+            lines = []
+            if pending or failed:
+                lines.append(tr('bookshelf.sync.pending', 'Sommige boeken zijn mogelijk nog niet volledig gesynchroniseerd. Controleer Dropbox of OneDrive en kies Vernieuwen.'))
+            if conflicts:
+                lines.append(tr('bookshelf.sync.conflicts', 'Er zijn mogelijke conflictkopieën gevonden. Controleer de bestanden in de werkmap voordat je iets herstelt.'))
+            self.sync_hint.setText('  '.join(lines))
+            self.sync_hint.show()
+        else:
+            self.sync_hint.hide()
         demo_mode = self.demo_mode_enabled()
         visible_book_ids = self.library.shelves.visible_book_ids(
             [book.id for book in books], demo_mode=demo_mode, loaded=loaded

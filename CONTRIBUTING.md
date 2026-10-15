@@ -1,7 +1,15 @@
 # Bijdragen aan QuietWriter
 
-Bedankt voor je interesse in QuietWriter. Meld fouten en suggesties via [Issues](https://github.com/gen-x-coder/QuietWriter/issues).
+Bijdragen zijn welkom via issues en pull requests in de openbare repository.
 
-Voor codewijzigingen: maak een eigen branch, houd de wijziging zo klein mogelijk, voer de bestaande tests uit en open een pull request naar `main`. Wijzig `README.md`, `README_EN.md` of de inhoud van `branding/` niet als onderdeel van een gewone functionele update; voor bewuste veranderingen aan de publieke presentatie moet de beheerder ook de integriteitscontroles expliciet bijwerken.
+Voor codewijzigingen:
 
-De applicatieversie staat in `quietwriter/__init__.py`. Voor releases moeten broncode, tag, build en release notes dezelfde versie vertegenwoordigen.
+1. Maak een aparte branch.
+2. Houd wijzigingen klein en gericht.
+3. Voeg waar relevant tests toe of werk bestaande tests bij.
+4. Controleer minimaal `python tools/check_undefined_names.py` en `pytest`.
+5. Beschrijf in de pull request wat is veranderd en hoe het is getest.
+
+Door een bijdrage in te dienen ga je ermee akkoord dat je bijdrage onder dezelfde GNU GPLv3-licentie als QuietWriter wordt gepubliceerd.
+
+Grote ontwerpwijzigingen kunnen het beste eerst als issue worden besproken.

@@ -89,9 +89,10 @@ class DictionaryCatalog:
     All discovered spelling dictionaries are eligible. Hyphenation dictionaries
     (hyph_*.dic) are ignored because they are not spelling dictionaries.
     """
-    def __init__(self, workspace_dir: Path, extra_roots: list[tuple[Path, str]] | None = None):
+    def __init__(self, workspace_dir: Path, extra_roots: list[tuple[Path, str]] | None = None, *, create: bool = True):
         self.workspace_dir = Path(workspace_dir)
-        self.workspace_dir.mkdir(parents=True, exist_ok=True)
+        if create:
+            self.workspace_dir.mkdir(parents=True, exist_ok=True)
         self.extra_roots = extra_roots
         self._entries: list[DictionaryEntry] = []
         self.scan()

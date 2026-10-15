@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-from contextlib import closing
 import json
 import sqlite3
 import tempfile
@@ -28,6 +27,7 @@ def test_corrupt_search_cache_is_rebuilt_instead_of_blocking_startup():
         index = BookSearchIndex(db)
         try:
             assert index.search('missing', 'iets') == []
+            from contextlib import closing
             with closing(sqlite3.connect(db)) as conn:
                 row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chapters'").fetchone()
                 assert row == ('chapters',)
@@ -162,7 +162,7 @@ def test_startup_handles_unreachable_workspace_with_visible_choice():
     source = _source('quietwriter/ui/workspace_recovery.py')
     assert 'open_library_with_recovery(root, settings, splash)' in app_source
     assert 'def open_library_with_recovery(' in source
-    assert 'except OSError as exc:' in source
+    assert 'except (OSError, ValueError) as exc:' in source
     assert 'QMessageBox' in source
     assert 'QFileDialog.getExistingDirectory' in source
     assert "startup.workspace_unavailable" in source

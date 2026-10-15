@@ -32,3 +32,10 @@ ppm/
 # Environment / secrets
 .env
 .env.*
+
+# Local review/translation backups
+*.bak
+
+/pytest-dev63.txt
+/test_qw_models.py
+/test_qw_models_v2.py

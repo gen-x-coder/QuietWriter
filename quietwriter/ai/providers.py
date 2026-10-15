@@ -8,6 +8,7 @@ from typing import Iterator
 class StreamChunk:
     content: str = ''
     thinking: str = ''
+    model: str = ''  # Actual model reported by the provider, if present.
 
 
 class AIProvider(ABC):
@@ -41,8 +42,21 @@ class ProviderFactory:
         provider = str(provider or 'ollama').lower()
         if provider == 'openrouter':
             from .openrouter_provider import OpenRouterProvider
+            from .openrouter_auth import stored_key
+            method = str(settings.value('openrouter_auth_method', '') or '').strip().lower()
+            manual_key = str(settings.value('openrouter_api_key', '') or '').strip()
+            # Existing installations previously preferred a stored browser key.
+            # Preserve that behaviour until the user explicitly chooses a method.
+            if method == 'manual':
+                key = manual_key
+            else:
+                try:
+                    browser_key = stored_key()
+                except (RuntimeError, OSError, ImportError):
+                    browser_key = ''
+                key = browser_key if method == 'browser' else (browser_key or manual_key)
             return OpenRouterProvider(
-                api_key=str(settings.value('openrouter_api_key', '') or ''),
+                api_key=key,
                 base_url=str(settings.value('openrouter_url', 'https://openrouter.ai/api/v1') or 'https://openrouter.ai/api/v1'),
             )
         from .ollama_provider import OllamaProvider

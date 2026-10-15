@@ -179,7 +179,7 @@ class WordDictionary:
     def suggest(self, word: str):
         key = word.lower()
         generation = self._generation
-        cached = self._suggest_cache.get(key)
+        cached = self._suggest_cache.get(word)
         if cached is not None:
             return list(cached)
         out = []
@@ -204,9 +204,13 @@ class WordDictionary:
             pool = self.words | self.personal_words
             if pool: out = difflib.get_close_matches(key, pool, n=8, cutoff=.72)
         out = list(dict.fromkeys(value.replace('ĳ', 'ij').replace('Ĳ', 'IJ') for value in out))
+        if word.isupper():
+            out = [value.upper() for value in out]
+        elif word[:1].isupper():
+            out = [value[:1].upper() + value[1:] for value in out]
         # A dictionary switch invalidates work that started under the old data.
         if generation == self._generation:
-            self._suggest_cache[key] = tuple(out)
+            self._suggest_cache[word] = tuple(out)
         return list(out)
 
     def misspellings(self, text: str):
