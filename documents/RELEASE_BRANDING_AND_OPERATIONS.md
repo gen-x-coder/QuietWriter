@@ -50,7 +50,7 @@ DEV en PROD kunnen gescheiden QSettings/workspaces/logs/AppUserModelID gebruiken
 Appversie staat in `quietwriter/__init__.py`. Windows numeric file version gebruikt alleen SemVer core; string metadata bevat de volledige RC-versie.
 
 ## RC versus stable
-RC's zijn prereleases. Een permanente `releases/latest/download/QuietWriter-windows-portable.zip` werkt pas betrouwbaar vanaf een gewone stable release.
+RC's worden als prerelease gemarkeerd. De publieke productieversie staat op `main`; de permanente downloadlink `releases/latest/download/QuietWriter-windows-portable.zip` verwijst naar de meest recente stabiele GitHub-release. Controleer vóór publicatie dat tag, broncommit, ZIP en release notes bij dezelfde versie horen.
 
 ## SHA-256
 Iedere publieke ZIP hoort een checksumasset te hebben.

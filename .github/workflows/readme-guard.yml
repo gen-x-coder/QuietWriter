@@ -2,15 +2,9 @@ name: Protect public READMEs
 
 on:
   push:
-    paths:
-      - README.md
-      - README_EN.md
-      - .github/workflows/readme-guard.yml
+    branches: [main]
   pull_request:
-    paths:
-      - README.md
-      - README_EN.md
-      - .github/workflows/readme-guard.yml
+    branches: [main]
   workflow_dispatch:
 
 permissions:
