@@ -41,6 +41,11 @@ jobs:
           if (-not (Test-Path $exe)) { throw "Executable ontbreekt: $exe" }
           $process = Start-Process -FilePath $exe -ArgumentList "--smoke-test" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Smoke test faalde met exitcode $($process.ExitCode)" }
+      - name: Smoke test portable zip
+        shell: pwsh
+        run: |
+          python -c "import zipfile; p='release/QuietWriter-windows-portable.zip'; z=zipfile.ZipFile(p); names={n.replace(chr(92),'/').lower() for n in z.namelist()}; required={'update.exe','current/quietwriter.exe'}; missing=required-names; print('Portable zip OK' if not missing else 'Missing: '+str(sorted(missing))); exit(bool(missing))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload portable ZIP and Velopack release assets
         uses: actions/upload-artifact@v4
         with:

@@ -43,7 +43,7 @@ class WrappedLabel(QLabel):
         inner = max(1, width - margins.left() - margins.right() - 2 * max(0, self.margin()))
         metrics = QFontMetrics(self.font())
         rect = metrics.boundingRect(QRect(0, 0, inner, 1_000_000), Qt.TextWordWrap, self.text())
-        return rect.height() + margins.top() + margins.bottom() + 2 * max(0, self.margin())
+        return rect.height() + margins.top() + margins.bottom() + 2 * max(0, self.margin()) + 2
 
     def reserve_wrapped_height(self) -> None:
         width = self.width()
