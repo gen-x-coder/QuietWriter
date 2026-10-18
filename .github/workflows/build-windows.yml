@@ -10,10 +10,21 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12.10'
+      - name: Install pinned pip and Velopack CLI
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip==26.2.1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $line = Get-Content packaging/requirements-runtime.lock | Where-Object { $_ -match '^velopack==' } | Select-Object -First 1
+          if (-not $line) { throw 'No pinned velopack version in runtime lock' }
+          $version = $line.Substring('velopack=='.Length).Trim()
+          dotnet tool install --global vpk --version $version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
       - name: Enable MSVC build environment
         uses: ilammy/msvc-dev-cmd@v1
       - name: Build clean portable release
@@ -27,11 +38,18 @@ jobs:
         run: |
           $v = (Select-String -Path quietwriter\__init__.py -Pattern '__version__\s*=\s*"(.+)"').Matches[0].Groups[1].Value
           $exe = "release\QuietWriter-$v\QuietWriter.exe"
-          if (-not (Test-Path $exe)) { Write-Error "Executable ontbreekt: $exe"; exit 1 }
+          if (-not (Test-Path $exe)) { throw "Executable ontbreekt: $exe" }
           $process = Start-Process -FilePath $exe -ArgumentList "--smoke-test" -Wait -PassThru
-          if ($process.ExitCode -ne 0) { Write-Error "Smoke test faalde met exitcode $($process.ExitCode)"; exit $process.ExitCode }
-      - name: Upload development build artifact
+          if ($process.ExitCode -ne 0) { throw "Smoke test faalde met exitcode $($process.ExitCode)" }
+      - name: Upload portable ZIP and Velopack release assets
         uses: actions/upload-artifact@v4
         with:
-          name: QuietWriter-development-build
-          path: release/QuietWriter-*-windows-portable.zip
+          name: QuietWriter-1.7.0-release-assets
+          if-no-files-found: error
+          path: |
+            release/QuietWriter-windows-portable.zip
+            release/QuietWriter-windows-portable.zip.sha256
+            release/QuietWriter-*-build-manifest.txt
+            release/velopack/*-full.nupkg
+            release/velopack/releases.pilot.json
+            release/velopack/releases.win.json
