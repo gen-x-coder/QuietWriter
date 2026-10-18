@@ -4,8 +4,12 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-# Dutch display names for common Hunspell locale codes. Unknown but valid locale
-# codes are still shown; QuietWriter no longer filters dictionaries by this list.
+from .i18n import tr
+
+# Dutch display names for common Hunspell locale codes. These are the Dutch
+# defaults; the shown name follows the app language via ``language_name.<code>``
+# and ``country_name.<CC>`` in the locale files (1.7). Unknown but valid locale
+# codes are still shown; QuietWriter does not filter dictionaries by this list.
 LANGUAGE_NAMES = {
     'af': 'Afrikaans', 'am': 'Amhaars', 'ar': 'Arabisch', 'az': 'Azerbeidzjaans',
     'be': 'Wit-Russisch', 'bg': 'Bulgaars', 'bn': 'Bengaals', 'br': 'Bretons',
@@ -63,15 +67,36 @@ def normalize_locale(value: str) -> str:
 def locale_label(locale: str) -> str:
     locale = normalize_locale(locale)
     parts = locale.split('_', 1)
-    language = LANGUAGE_NAMES.get(parts[0])
+    language = tr(f'language_name.{parts[0]}', LANGUAGE_NAMES[parts[0]]) if parts[0] in LANGUAGE_NAMES else None
     if len(parts) == 1:
         return language or locale
-    country = COUNTRY_NAMES.get(parts[1])
+    country = tr(f'country_name.{parts[1]}', COUNTRY_NAMES[parts[1]]) if parts[1] in COUNTRY_NAMES else None
     if not language or not country:
         # Avoid confusing half-translated labels such as "Nederlands - XX".
         # An unknown locale is clearer when shown as one canonical code.
         return locale
     return f'{language} — {country}'
+
+
+SOURCE_ORDER = {'Werkmap': 0, 'ONLYOFFICE': 2, 'LibreOffice': 3, 'OpenOffice': 4, 'Extern': 5}
+
+# Welke woordenboektaal past bij de taal van de app (voor een voorstel).
+APP_LANGUAGE_LOCALES = {'nl': 'nl_NL', 'en': 'en_GB', 'de': 'de_DE', 'fr': 'fr_FR', 'es': 'es_ES'}
+
+
+def source_label(source: str) -> str:
+    """Naam van een woordenboekbron zoals de gebruiker hem ziet."""
+    if source == 'Werkmap':
+        return tr('settings.spelling.source_workspace_170', 'QuietWriter (gedownload of toegevoegd)')
+    return source
+
+
+def ordered_sources(entries) -> list[str]:
+    return sorted({entry.source for entry in entries}, key=lambda s: (SOURCE_ORDER.get(s, 99), s.casefold()))
+
+
+def preferred_locale(app_language: str | None) -> str:
+    return APP_LANGUAGE_LOCALES.get(str(app_language or 'nl')[:2].lower(), 'nl_NL')
 
 
 @dataclass(frozen=True)
@@ -143,16 +168,19 @@ class DictionaryCatalog:
             for dic in dictionaries:
                 if dic.name.lower().startswith('hyph_'):
                     continue
+                # Tijdelijke download- en vorige-mappen (.download-*, .vorige-*)
+                # zijn nooit een bruikbaar woordenboek.
+                if any(part.startswith('.') for part in dic.relative_to(root).parts[:-1]):
+                    continue
                 self._add_dic(dic, source)
         except (OSError, PermissionError):
             return
 
     def scan(self):
         self._entries.clear()
+        # 1.7: QuietWriter levert geen woordenboek meer mee; je downloadt er een
+        # (zie dictionary_download.py) of gebruikt dat van een Office-programma.
         self._scan_root(self.workspace_dir, 'Werkmap')
-        bundled = Path(__file__).resolve().parent.parent / 'dictionaries'
-        if bundled.resolve() != self.workspace_dir.resolve():
-            self._scan_root(bundled, 'Meegeleverd')
 
         roots = self.extra_roots if self.extra_roots is not None else [
             (Path(r'C:/Program Files/ONLYOFFICE/DesktopEditors/dictionaries'), 'ONLYOFFICE'),
@@ -169,7 +197,7 @@ class DictionaryCatalog:
         """Return all discovered dictionaries, optionally for one locale."""
         wanted = normalize_locale(locale) if locale else ''
         values = [entry for entry in self._entries if not wanted or entry.locale == wanted]
-        priority = {'Werkmap': 0, 'Meegeleverd': 1, 'ONLYOFFICE': 2, 'LibreOffice': 3, 'OpenOffice': 4, 'Extern': 5}
+        priority = SOURCE_ORDER
         return sorted(
             values,
             key=lambda e: (e.label.casefold(), priority.get(e.source, 99), e.source.casefold(), str(e.dic).casefold()),
@@ -215,6 +243,8 @@ class DictionaryCatalog:
                 entry.dic.unlink()
             if entry.aff and entry.aff.exists():
                 entry.aff.unlink()
+            from .dictionary_download import remove_extras
+            remove_extras(target_dir, locale)
             # Remove now-empty locale folder, but never the dictionaries root itself.
             if target_dir != workspace and target_dir.exists() and not any(target_dir.iterdir()):
                 target_dir.rmdir()

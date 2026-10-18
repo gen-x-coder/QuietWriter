@@ -69,9 +69,14 @@ def main() -> int:
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o100644 << 16
             zf.writestr(info, (ROOT / path).read_bytes(), compress_type=zipfile.ZIP_DEFLATED)
+        # Lijst van alle bestanden, zodat tools/clean_old_files.py na het
+        # uitpakken over een oude map kan zien wat er niet meer bij hoort.
+        manifest = zipfile.ZipInfo("SOURCE_MANIFEST.txt", date_time=(2020, 1, 1, 0, 0, 0))
+        manifest.external_attr = 0o100644 << 16
+        zf.writestr(manifest, "\n".join(paths) + "\n", compress_type=zipfile.ZIP_DEFLATED)
 
     with zipfile.ZipFile(output) as zf:
-        assert set(zf.namelist()) == set(paths)
+        assert set(zf.namelist()) == set(paths) | {"SOURCE_MANIFEST.txt"}
         assert zf.testzip() is None
     print(f"PASS: {output} ({len(paths)} tracked files)")
     return 0

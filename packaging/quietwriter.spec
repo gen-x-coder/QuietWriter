@@ -4,7 +4,6 @@
 Bouwen (vanuit de projectmap):
 
     python tools/fetch_bundled_fonts.py
-    python tools/fetch_dictionaries.py
     python packaging/make_version_info.py
     pyinstaller --noconfirm --clean packaging/quietwriter.spec
 
@@ -19,7 +18,6 @@ relatieve structuur terechtkomen als in de broncode:
     _internal/quietwriter/resources/...    (icon_theme.app_icon_path)
     _internal/quietwriter/export_templates (exporting/templates.py)
     _internal/resources/fonts/...          (font_catalog.py)
-    _internal/dictionaries/...             (dictionary_catalog.py, 'Meegeleverd')
     _internal/documents/licenses/LICENSE, THIRD_PARTY_LICENSES.md  (ui/about_page.py)
 """
 import sys
@@ -54,7 +52,7 @@ datas += _dir('quietwriter/locales')
 datas += _dir('quietwriter/export_templates')
 datas += [(str(ICON), 'quietwriter/resources')]
 datas += _dir('resources/fonts')
-datas += _dir('dictionaries')  # optioneel: alleen als tools/fetch_dictionaries.py gedraaid is
+# Geen woordenboeken meer meegeleverd (1.7): QuietWriter downloadt ze op verzoek.
 datas += _file('documents/licenses/LICENSE', 'documents/licenses')
 datas += _file('documents/licenses/THIRD_PARTY_LICENSES.md', 'documents/licenses')
 

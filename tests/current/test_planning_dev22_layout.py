@@ -6,8 +6,8 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_scene_fields_visible_and_taller():
     source = (ROOT / 'quietwriter/ui/planning/outline_page.py').read_text(encoding='utf-8')
     assert 'e.setFixedHeight(108)' in source
-    assert 'form.addRow(tr(\'planning.outline.field.goal\'' in source
-    assert 'form.addRow(tr(\'planning.outline.field.notes\'' in source
+    assert 'form.addRow(field_label(tr(\'planning.outline.field.goal\'' in source  # dev15
+    assert 'form.addRow(field_label(tr(\'planning.outline.field.notes\'' in source
 
 
 def test_notes_keep_original_markdown_storage():

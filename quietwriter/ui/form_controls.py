@@ -30,6 +30,9 @@ class QuietSpinBox(_WheelNeedsFocus, QSpinBox):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._init_wheel_focus()
+        # Qt past de linkeropvulling uit het thema niet toe op het tekstveldje
+        # in een QSpinBox; zonder marge plakt het getal tegen de rand.
+        self.lineEdit().setTextMargins(8, 0, 0, 0)
 
 
 class QuietDateEdit(_WheelNeedsFocus, QDateEdit):

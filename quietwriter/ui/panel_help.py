@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QRect, Qt, Signal
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from ..i18n import tr
@@ -31,13 +32,26 @@ class WrappedLabel(QLabel):
         self.setWordWrap(True)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
 
+    def natural_height(self, width: int) -> int:
+        """Benodigde hoogte voor de tekst bij deze breedte.
+
+        Niet via ``heightForWidth``: Qt begrenst die met de huidige minimum- en
+        maximumhoogte. Een label dat ooit smal en dus hoog was, bleef daardoor
+        voor altijd hoog (de oude bug met grote lege uitlegblokken).
+        """
+        margins = self.contentsMargins()
+        inner = max(1, width - margins.left() - margins.right() - 2 * max(0, self.margin()))
+        metrics = QFontMetrics(self.font())
+        rect = metrics.boundingRect(QRect(0, 0, inner, 1_000_000), Qt.TextWordWrap, self.text())
+        return rect.height() + margins.top() + margins.bottom() + 2 * max(0, self.margin())
+
     def reserve_wrapped_height(self) -> None:
         width = self.width()
         if width <= 0:
             return
-        need = self.heightForWidth(width)
-        if need > 0 and self.minimumHeight() != need:
-            self.setMinimumHeight(need)
+        need = self.natural_height(width)
+        if need > 0 and (self.minimumHeight() != need or self.maximumHeight() != need):
+            self.setFixedHeight(need)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -50,6 +64,7 @@ class WrappedLabel(QLabel):
     def setText(self, text: str) -> None:
         super().setText(text)
         self.setMinimumHeight(0)
+        self.setMaximumHeight(16777215)
         self.reserve_wrapped_height()
 
 
@@ -88,7 +103,13 @@ class PanelHelp(QWidget):
         self.toggle.setToolTip(name)
         self.toggle.toggled.connect(self._on_toggled)
         row.addWidget(self.toggle, 0, Qt.AlignTop)
-        root.addLayout(row)
+        # De titelregel groeit nooit mee: extra hoogte gaat naar het uitlegblok,
+        # zodat de paneeltitel overal even hoog staat (dev15/dev17; met een
+        # stretch onderaan werd de uitlegtekst op Windows 2 px te laag).
+        row_host = QWidget()
+        row_host.setLayout(row)
+        row_host.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        root.addWidget(row_host)
 
         self.block = QFrame()
         self.block.setObjectName('softPanel')

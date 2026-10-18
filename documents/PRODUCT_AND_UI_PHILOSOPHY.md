@@ -3,7 +3,7 @@
 ## Productkarakter
 QuietWriter moet tijdens schrijven zo weinig mogelijk als een interface voelen: rustig, voorspelbaar, tekstgericht en terughoudend met automatisering.
 
-De publieke kernzin is: **Rustig schrijven. Eerlijk meelezen.**
+De publieke kernzin is: **Rustig schrijven. Heldere boeken.** (besluit Lucas, 16 oktober 2026; staat ook op het opstartscherm en bij Over).
 
 ## Blijf schrijven
 De primaire productregel is **Blijf schrijven**. Een functie is pas geslaagd als zij de schrijver helpt zonder hem onnodig uit zijn schrijfritme te halen.

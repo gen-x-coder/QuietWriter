@@ -15,6 +15,7 @@ from ...planning_models import Character, Relation
 from ...storage import CorruptSourceError
 from ...planning_validation import FuturePlanningFormatError
 from ...i18n import tr
+from ..page_layout import section_heading
 
 
 RELATION_PAIRS = {
@@ -53,7 +54,7 @@ class CharacterDetail(QWidget):
         self.is_new = False
         outer = QVBoxLayout(self); outer.setContentsMargins(34, 26, 42, 34); outer.setSpacing(12)
         top = QHBoxLayout()
-        self.title = QLabel(tr('planning.characters.character', 'Personage')); self.title.setObjectName('title')
+        self.title = QLabel(tr('planning.characters.character', 'Personage')); self.title.setObjectName('detailTitle')
         self.delete = QPushButton(tr('planning.characters.delete', 'Verwijderen')); self.delete.setObjectName('dangerButton'); self.delete.clicked.connect(self._delete)
         top.addWidget(self.title); top.addStretch(); top.addWidget(self.delete)
         outer.addLayout(top)
@@ -61,10 +62,13 @@ class CharacterDetail(QWidget):
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
         host = QWidget(); self.form = QVBoxLayout(host); self.form.setContentsMargins(0, 0, 12, 20); self.form.setSpacing(12)
         self.name = self._line(tr('planning.characters.name', 'Naam'))
+        self.aliases = self._line(tr('planning.characters.aliases', 'Ook bekend als'))
+        self.aliases.setPlaceholderText(tr('planning.characters.aliases_placeholder', 'Bijnamen of andere namen, met komma ertussen'))
+        aliases_help = QLabel(tr('planning.characters.aliases_help', 'In ‘In dit hoofdstuk’ herkent QuietWriter een personage aan de naam, de voornaam en deze namen. Er wordt niets in je tekst veranderd.'))
+        aliases_help.setObjectName('muted'); aliases_help.setWordWrap(True); self.form.addWidget(aliases_help)
         self.role = self._line(tr('planning.characters.role', 'Rol in het verhaal'))
         self.description = self._text(tr('planning.characters.description', 'Korte beschrijving'), 100)
-        self.form.addSpacing(8)
-        details = QLabel(tr('planning.characters.character_section', 'Karakter')); details.setObjectName('sectionTitle'); self.form.addWidget(details)
+        self.form.addWidget(section_heading(tr('planning.characters.character_section', 'Karakter')))
         self.personality = self._text(tr('planning.characters.personality', 'Persoonlijkheid'))
         self.motivation = self._text(tr('planning.characters.motivation', 'Motivatie'))
         self.goals = self._text(tr('planning.characters.goals', 'Doelen'))
@@ -73,13 +77,11 @@ class CharacterDetail(QWidget):
         self.conflicts = self._text(tr('planning.characters.conflicts', 'Innerlijke / uiterlijke conflicten'))
         self.voice = self._text(tr('planning.characters.voice', 'Manier van spreken'))
         self.under_pressure = self._text(tr('planning.characters.under_pressure', 'Gedrag onder druk'))
-        self.form.addSpacing(8)
-        extra_title = QLabel(tr('planning.characters.section.extra', 'Achtergrond en notities')); extra_title.setObjectName('sectionTitle'); self.form.addWidget(extra_title)
+        self.form.addWidget(section_heading(tr('planning.characters.section.extra', 'Achtergrond en notities')))
         self.background = self._text(tr('planning.characters.background', 'Achtergrond'))
         self.notes = self._text(tr('planning.characters.notes', 'Notities'))
 
-        self.form.addSpacing(8)
-        rel_title = QLabel(tr('planning.characters.relations', 'Relaties')); rel_title.setObjectName('sectionTitle'); self.form.addWidget(rel_title)
+        self.form.addWidget(section_heading(tr('planning.characters.relations', 'Relaties')))
         self.relations_box = QVBoxLayout(); self.relations_box.setSpacing(6); self.form.addLayout(self.relations_box)
         add = QHBoxLayout()
         self.rel_type = QComboBox(); self.rel_type.setEditable(True)
@@ -95,13 +97,20 @@ class CharacterDetail(QWidget):
         save = QPushButton(tr('common.save', 'Opslaan')); save.setObjectName('primaryButton'); save.clicked.connect(self._save)
         outer.addWidget(save, 0, Qt.AlignRight)
 
+    def _field(self, label, edit):
+        # Naam dicht bij zijn veld, meer ruimte tussen de velden (1.7, dev15).
+        box = QWidget(); lay = QVBoxLayout(box); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(5)
+        lab = QLabel(label); lab.setObjectName('settingsFieldLabel')
+        lay.addWidget(lab); lay.addWidget(edit)
+        self.form.addWidget(box)
+        return edit
+
     def _line(self, label):
-        lab = QLabel(label); lab.setObjectName('settingsFieldLabel'); self.form.addWidget(lab)
-        edit = QLineEdit(); self.form.addWidget(edit); return edit
+        return self._field(label, QLineEdit())
 
     def _text(self, label, height=106):
-        lab = QLabel(label); lab.setObjectName('settingsFieldLabel'); self.form.addWidget(lab)
-        edit = QTextEdit(); edit.setAcceptRichText(False); edit.setFixedHeight(height); self.form.addWidget(edit); return edit
+        edit = QTextEdit(); edit.setAcceptRichText(False); edit.setFixedHeight(height)
+        return self._field(label, edit)
 
     def set_character(self, character: Character | None, characters: list[Character], *, is_new: bool = False):
         self.character = character; self.characters = characters; self.is_new = is_new
@@ -116,6 +125,7 @@ class CharacterDetail(QWidget):
             widget.setEnabled(not is_new)
         for widget, value in (
             (self.name, character.name), (self.role, character.role),
+            (self.aliases, getattr(character, 'aliases', '')),
         ): widget.setText(value)
         for widget, value in (
             (self.description, character.description), (self.personality, character.personality),
@@ -155,7 +165,7 @@ class CharacterDetail(QWidget):
         if not self.character:
             return None
         c = copy.deepcopy(self.character)
-        c.name = self.name.text().strip() or tr('planning.characters.untitled', 'Naamloos personage'); c.role = self.role.text().strip()
+        c.name = self.name.text().strip() or tr('planning.characters.untitled', 'Naamloos personage'); c.role = self.role.text().strip(); c.aliases = ', '.join(a.strip() for a in self.aliases.text().replace(';', ',').split(',') if a.strip())
         c.description = self.description.toPlainText().strip(); c.personality = self.personality.toPlainText().strip()
         c.motivation = self.motivation.toPlainText().strip(); c.goals = self.goals.toPlainText().strip()
         c.fears = self.fears.toPlainText().strip(); c.values = self.values.toPlainText().strip()
@@ -183,7 +193,7 @@ class CharactersPage(QWidget):
         super().__init__(); self.owner = planning_page; self.characters: list[Character] = []; self._draft: Character | None = None
         root = QVBoxLayout(self); root.setContentsMargins(28,24,34,30); root.setSpacing(12)
         top = QHBoxLayout()
-        page_title = QLabel(tr('planning.characters.title', 'Personages')); page_title.setObjectName('title')
+        page_title = QLabel(tr('planning.characters.title', 'Personages')); page_title.setObjectName('settingsPageTitle')
         add = QPushButton(tr('planning.characters.new', 'Nieuw personage')); add.setObjectName('primaryButton'); add.clicked.connect(self.add_character)
         top.addWidget(page_title); top.addStretch(); top.addWidget(add)
         root.addLayout(top)
@@ -197,6 +207,10 @@ class CharactersPage(QWidget):
         self.detail = CharacterDetail(); self.detail.saveRequested.connect(self.save_character); self.detail.deleteRequested.connect(self.delete_character); self.detail.relationRequested.connect(self.add_relation); self.detail.relationDeleteRequested.connect(self.delete_relation); self.detail.navigateCharacter.connect(self.select_character)
         self.canvas = CurrentPageStack(); self.canvas.setObjectName('planningCanvas')
         self.blank = QWidget(); self.blank.setObjectName('planningBlankCanvas')
+        # Leeg canvas zegt wat je kunt doen (dev15), in plaats van een leeg vlak.
+        blank_layout = QVBoxLayout(self.blank); blank_layout.setContentsMargins(34, 30, 34, 30)
+        self.blank_hint = QLabel(); self.blank_hint.setObjectName('muted'); self.blank_hint.setWordWrap(True)
+        blank_layout.addWidget(self.blank_hint); blank_layout.addStretch(1)
         self.canvas.addWidget(self.blank); self.canvas.addWidget(self.detail)
         body.addWidget(side); body.addWidget(self.canvas,1)
         body_host=QWidget(); body_host.setMaximumWidth(1320)
@@ -205,6 +219,7 @@ class CharactersPage(QWidget):
         body_row.addWidget(body_host,1); body_row.addStretch(0)
         root.addLayout(body_row,1)
         self.canvas.setCurrentWidget(self.blank)
+        self._update_blank_hint()
 
     def load(self):
         self._draft = None
@@ -225,7 +240,15 @@ class CharactersPage(QWidget):
             self.refresh_list()
             self.close_detail()
 
+    def _update_blank_hint(self):
+        if self.characters:
+            text = tr('planning.characters.choose_hint', 'Kies links een personage om het te bekijken of te bewerken.')
+        else:
+            text = tr('planning.characters.empty_hint', 'Nog geen personages. Kies Nieuw personage om er een toe te voegen.')
+        self.blank_hint.setText(text)
+
     def refresh_list(self, keep_id=None):
+        self._update_blank_hint()
         self.list.blockSignals(True); self.list.clear()
         selected = None
         for c in self.characters:

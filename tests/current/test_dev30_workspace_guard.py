@@ -39,6 +39,17 @@ def test_only_frozen_app_uses_executable_directory(tmp_path):
         assert portable_install_root() == tmp_path
 
 
+def test_velopack_layout_protects_the_whole_app_folder(tmp_path):
+    from quietwriter import workspace_path
+    current = tmp_path / 'current'
+    current.mkdir()
+    (tmp_path / 'Update.exe').write_bytes(b'')
+    with patch.object(workspace_path.sys, 'frozen', True, create=True), patch.object(workspace_path.sys, 'executable', str(current / 'QuietWriter.exe')):
+        assert portable_install_root() == tmp_path
+    with pytest.raises(UnsafeWorkspacePath):
+        require_external_user_directory(tmp_path / 'Boeken', install_root=tmp_path)
+
+
 def test_missing_existing_workspace_is_checked_before_library_creation():
     source = (Path(__file__).resolve().parents[2] / 'quietwriter/ui/workspace_recovery.py').read_text(encoding='utf-8')
     assert "settings.value('first_run_done', False, bool) and not candidate.is_dir()" in source

@@ -40,7 +40,8 @@ def test_bookdetails_goal_and_cover_use_settings_style_section_labels(app, tmp_p
     lib = Library(tmp_path / 'workspace')
     book = lib.create_book('Roman')
     page = BookDetailsPage(lib, settings, book)
-    labels = [w for w in page.findChildren(QLabel) if w.objectName() == 'settingsFieldLabel']
-    texts = {w.text() for w in labels}
-    assert 'Schrijfdoel' in texts
-    assert 'Boekomslag' in texts
+    # 1.7.0-dev15: secties zoals in Instellingen (klein, hoofdletters); velden vetgedrukt links.
+    sections = {w.text() for w in page.findChildren(QLabel) if w.objectName() == 'settingsSectionTitle'}
+    assert {'BOEK', 'PUBLICATIE', 'SCHRIJFDOEL', 'BOEKOMSLAG'} <= sections
+    fields = {w.text() for w in page.findChildren(QLabel) if w.objectName() == 'settingsFieldLabel'}
+    assert {'Titel', 'Woorddoel', 'Omslag'} <= fields

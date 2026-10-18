@@ -15,11 +15,13 @@ def test_first_character_is_selected_when_planning_opens():
 
 
 def test_editor_has_planning_overlay_and_explicit_done_action():
-    source = (ROOT / 'quietwriter' / 'ui' / 'editor_page.py').read_text(encoding='utf-8')
-    assert "class PlanningOverlay(QFrame)" in source
-    assert "planning.overlay.button" in source
-    assert "planning.overlay.mark_written" in source
-    assert "scene.status = 'geschreven'" in source
+    # 1.7.0: de knop Planning (popup) naast Tekstbreedte is weggehaald op verzoek
+    # van Lucas: dubbelop met "In dit hoofdstuk", waar nu ook "✓ Klaar" staat.
+    page = Path('quietwriter/ui/editor_page.py').read_text(encoding='utf-8')
+    panel = Path('quietwriter/ui/chapter_context_panel.py').read_text(encoding='utf-8')
+    assert 'planning_overlay' not in page and 'class PlanningOverlay' not in page
+    assert 'planning.overlay.mark_written' in panel and 'markWritten' in panel
+    assert "scene.status = 'geschreven'" in page
 
 
 def test_ghost_text_includes_scene_status():

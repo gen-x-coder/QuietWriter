@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication, QDialog
 
 from .first_run import should_show_first_run
-from .i18n import set_locale, tr
+from .i18n import set_locale, set_user_translation_dir, tr
 from .icon_theme import set_icon_theme
 from .ollama import OllamaClient
 from .themes import stylesheet
@@ -13,6 +13,8 @@ from .ui.first_run_wizard import FirstRunWizard
 
 
 def apply_saved_appearance(app: QApplication, settings) -> None:
+    workspace = str(settings.value('workspace', '') or '')
+    set_user_translation_dir(Path(workspace) / 'translations' if workspace else None)
     set_locale(str(settings.value('language', 'nl') or 'nl'))
     set_icon_theme(str(settings.value('theme', 'Helder') or 'Helder'))
     app.setStyleSheet(stylesheet(settings.value('theme', 'Helder')))

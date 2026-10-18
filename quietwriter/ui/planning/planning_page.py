@@ -9,6 +9,7 @@ from ...planning_storage import PlanningStore
 from ...revisions import ExternalModificationError, RevisionVerificationError
 from ...migrations import FutureBookFormatError
 from ...i18n import tr
+from ..page_layout import PAGE_MARGINS
 from ...storage import CorruptSourceError
 from ...planning_validation import FuturePlanningFormatError
 from .characters_page import CharactersPage
@@ -30,7 +31,7 @@ class PlanningPage(QWidget):
     def __init__(self, main):
         super().__init__(); self.main=main; self.book=None; self.store=PlanningStore(main.library)
         root=QVBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
-        header=QWidget(); header_layout=QVBoxLayout(header); header_layout.setContentsMargins(32,26,36,14); header_layout.setSpacing(6)
+        header=QWidget(); header_layout=QVBoxLayout(header); header_layout.setContentsMargins(PAGE_MARGINS[0], PAGE_MARGINS[1], PAGE_MARGINS[2], 14); header_layout.setSpacing(6)
         title=QLabel(tr('planning.title', 'Planning')); title.setObjectName('title')
         info=QLabel(tr('planning.info', 'Planning is je werkruimte naast het manuscript. Werk hier personages en scènes uit en koppel scènes aan hoofdstukken. In een leeg hoofdstuk kan QuietWriter die planning als zachte hulptekst tonen; zodra je begint te schrijven verdwijnt die hulp vanzelf.'))
         info.setObjectName('muted'); info.setWordWrap(True)
@@ -304,6 +305,37 @@ class PlanningPage(QWidget):
 
     def persist_characters(self,characters): return self._persist('characters',characters,self.store.save_characters)
     def persist_scenes(self,scenes): return self._persist('scenes',scenes,self.store.save_scenes)
+
+    def add_unplanned_scenes(self, chapter_id, source):
+        """Eén gedeelde actie voor paneel én Outline (1.7, review ChatGPT #1).
+
+        Leest Planning vlak vóór de wijziging opnieuw van schijf, berekent de
+        ongeplande stukken tekst opnieuw en slaat op met de gewone
+        revisiecontrole. Een tweede klik of een verouderd scherm maakt dus
+        nooit dubbele scènes. Geeft (resultaat, aantal) terug.
+        """
+        from ...planning_models import Scene
+        from ...scene_segments import map_scenes, scenes_for_chapter
+        if not self.book or not chapter_id:
+            return 'failed', 0
+        try:
+            scenes = self.store.load_scenes(self.book)
+        except Exception:
+            return 'failed', 0
+        mapping = map_scenes(scenes_for_chapter(scenes, chapter_id), source or '')
+        if not mapping.unplanned:
+            self.outline_page.load()
+            return 'nothing', 0
+        new_scenes = [Scene(chapter_id=chapter_id,
+                            title=segment.excerpt or tr('planning.outline.untitled_scene', 'Naamloze scène'),
+                            status='geschreven')
+                      for segment in mapping.unplanned]
+        positions = [i for i, scene in enumerate(scenes) if scene.chapter_id == chapter_id]
+        at = (positions[-1] + 1) if positions else len(scenes)
+        result = self.persist_scenes(scenes[:at] + new_scenes + scenes[at:])
+        if result in ('mine', 'disk'):
+            self.outline_page.load()
+        return result, (len(new_scenes) if result == 'mine' else 0)
     def persist_notes(self,text): return self._persist('notes',text,self.store.save_notes)
 
     def remove_character_from_scenes(self,cid):

@@ -42,7 +42,7 @@ def render_inline(text: str) -> str:
 
     spans = parse_inline_spans(text)
     if not spans:
-        return html.escape(text)
+        return html.escape(text).replace('\u2028', '<br/>')
 
     marker = [False] * len(text)
     opens: dict[int, list] = {}
@@ -58,11 +58,12 @@ def render_inline(text: str) -> str:
     for index in range(len(text) + 1):
         # Inner spans close first; outer spans open first.
         for span in sorted(closes.get(index, ()), key=lambda item: item.content_start, reverse=True):
-            out.append(_TAGS[span.kind][1])
+            out.append(_TAGS.get(span.kind, ('', ' '))[1] if span.kind != 'footnote' else ')')
         for span in sorted(opens.get(index, ()), key=lambda item: item.content_end, reverse=True):
-            out.append(_TAGS[span.kind][0])
+            # Voetnoten (1.7) zijn hier, in deze oude weergave, tekst tussen haakjes.
+            out.append(_TAGS.get(span.kind, ('', ''))[0] if span.kind != 'footnote' else ' (')
         if index < len(text) and not marker[index]:
-            out.append(html.escape(text[index]))
+            out.append('<br/>' if text[index] == '\u2028' else html.escape(text[index]))
     return ''.join(out)
 
 

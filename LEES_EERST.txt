@@ -1,0 +1,50 @@
+QuietWriter 1.7.0 GitHub staging (dev21)
+
+BELANGRIJK: deze bestanden zijn een voorbereiding, GEEN GitHub-push of release.
+Er worden GEEN tests en GEEN builds uitgevoerd.
+
+1. Kopieer QuietWriter-1.7.0-dev21.zip en sync_quietwriter.py naar dezelfde Windows-map.
+2. Open PowerShell in die map. Pas de onderstaande repositorypaden aan indien nodig.
+
+   git -C "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-dev" switch main
+   git -C "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-dev" pull --ff-only
+   python .\sync_quietwriter.py --target dev --repo "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-dev" --source ".\QuietWriter-1.7.0-dev21.zip"
+   python .\sync_quietwriter.py --target dev --repo "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-dev" --source ".\QuietWriter-1.7.0-dev21.zip" --apply
+   git -C "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-dev" status --short
+   git -C "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-dev" diff --stat
+   git -C "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-dev" diff --check
+
+3. Alleen nadat je de diff hebt bekeken: in de dev-map:
+   git add -A
+   git diff --cached --check
+   git diff --cached --stat
+   git commit -m "Prepare QuietWriter 1.7.0 source"
+   git push origin main
+
+4. Public clone: haal main op, maak een branch en zet de bestanden klaar.
+   git -C "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-public" switch main
+   git -C "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-public" pull --ff-only
+   git -C "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-public" switch -c release/1.7.0
+   python .\sync_quietwriter.py --target public --repo "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-public" --source ".\QuietWriter-1.7.0-dev21.zip" --apply
+   git -C "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-public" status --short
+   git -C "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-public" diff --check
+   git -C "C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-public" diff --stat
+
+5. Controleer expliciet dat de publieke README.md, README_EN.md, branding/ en
+   .github/workflows/ niet zijn gewijzigd. Controleer op geheimen voordat je commit.
+   In public:
+   git add -A
+   git diff --cached --check
+   git diff --cached --stat
+   git commit -m "Prepare QuietWriter 1.7.0 public release"
+   git push -u origin release/1.7.0
+   Open een PR naar main; pas na controles/review mergen.
+
+6. NA merge: tag v1.7.0 op exact de publieke main-commit en maak een
+   pre-release. Laat Lucas lokaal build_exe.cmd draaien. Publiceer in de
+   afgesproken 3 standen: eerst pilotfeed, daarna stable/latest,
+   en pas daarna releases.win.json voor 1-klik-updates.
+
+Let op: dit script laat README's in beide repos ongemoeid; in de publieke
+repo ook branding en GitHub-workflows. Interne documenten onder
+'documents/archive/' en 'documents/review/' worden niet gepubliceerd.

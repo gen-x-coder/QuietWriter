@@ -21,7 +21,7 @@ class HistoryPanel(QWidget):
         self.book = None
         self.rows = []
         lay = QVBoxLayout(self); lay.setContentsMargins(18,18,18,18); lay.setSpacing(10)
-        self.panel_help = PanelHelp(editor_page.main.settings, 'history', tr('history.title', 'Versiegeschiedenis'), tr('panel_help.history', 'Elke dag dat je schrijft, bewaart QuietWriter automatisch een versie van je boek. Maak zelf een versie vóór een grote wijziging en geef belangrijke versies een ster.'))
+        self.panel_help = PanelHelp(editor_page.main.settings, 'history', tr('history.title', 'Versiegeschiedenis'), tr('panel_help.history', 'Elke dag dat je schrijft, bewaart QuietWriter automatisch een versie van je boek. Maak zelf een versie vóór een grote wijziging en geef belangrijke versies een ster. Oude dagversies worden uitgedund; versies met een ster blijven altijd (Instellingen > Back-ups).'))
         self.starred_only = QCheckBox(tr('history.starred_only', 'Alleen versies met ster'))
         self.starred_only.stateChanged.connect(self.refresh)
         self.create_btn = QPushButton(tr('history.create', '+ Nieuwe versie maken')); self.create_btn.setObjectName('primaryButton')

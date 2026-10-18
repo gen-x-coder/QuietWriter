@@ -15,6 +15,7 @@ class InsertPanel(QWidget):
     """Right-side insertion workflow for manuscript block elements."""
 
     sceneBreakRequested = Signal()
+    footnoteRequested = Signal()
     imageInsertRequested = Signal(str, str, str, str, str, bool)
     imageEditRequested = Signal(str, str, str, str, str, bool, bool)
 
@@ -51,6 +52,16 @@ class InsertPanel(QWidget):
         self.scene_break_button.clicked.connect(self.sceneBreakRequested.emit)
         scene_card.layout().addWidget(self.scene_break_button)
 
+        footnote_card = self._choice_card(
+            tr('insert.footnote', 'Voetnoot'),
+            tr('insert.footnote.description_v2', 'Een nummer op deze plek in de tekst; de noot typ je onder aan het blad. Sneltoets: Ctrl+Alt+F.'),
+        )
+        self.footnote_button = QPushButton(tr('insert.add', 'Toevoegen'))
+        self.footnote_button.setObjectName('secondaryButton')
+        self.footnote_button.setToolTip(tr('insert.footnote.tip', 'Voeg een voetnoot toe op de cursorpositie'))
+        self.footnote_button.clicked.connect(self.footnoteRequested.emit)
+        footnote_card.layout().addWidget(self.footnote_button)
+
         image_card = self._choice_card(
             tr('insert.image.title', 'Afbeelding'),
             tr('insert.image.card_description', 'Plaats een JPG- of PNG-afbeelding tussen twee alinea’s.'),
@@ -68,6 +79,7 @@ class InsertPanel(QWidget):
         layout.addWidget(description)
         layout.addSpacing(4)
         layout.addWidget(scene_card)
+        layout.addWidget(footnote_card)
         layout.addWidget(image_card)
         layout.addStretch(1)
 

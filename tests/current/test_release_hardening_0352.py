@@ -14,7 +14,7 @@ VISIBLE_CALLS = {
     'QLabel', 'QPushButton', 'QCheckBox', 'QRadioButton', 'QGroupBox',
     'setText', 'setToolTip', 'setAccessibleName', 'setPlaceholderText', 'setWindowTitle',
 }
-ALLOWED_LITERAL_UI = {'+', '×', 'AI', 'API-key', '/{slug}.jpg', '000-0-00-000000-0'}
+ALLOWED_LITERAL_UI = {'+', '×', '↑', '↓', 'AI', 'API-key', '/{slug}.jpg', '000-0-00-000000-0'}
 
 
 def _literal_tr_keys() -> set[str]:

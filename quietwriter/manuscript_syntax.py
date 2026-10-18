@@ -10,9 +10,12 @@ _INLINE = {
     'underline': ('<u>', '</u>'),
     'strike': ('~~', '~~'),
     'code': ('`', '`'),
+    # 1.7: voetnoot, Pandoc-notatie voor een inline noot. De tekst van de noot
+    # staat op de plek van de verwijzing; nummeren gebeurt pas bij exporteren.
+    'footnote': ('^[', ']'),
 }
 
-_ESCAPABLE_INLINE_CHARS = frozenset('\\*~`<')
+_ESCAPABLE_INLINE_CHARS = frozenset('\\*~`<^]')
 _STRUCTURAL_ESCAPE_LEADS = frozenset('- >#!'.replace(' ', ''))
 
 
@@ -123,6 +126,18 @@ def parse_inline_spans(text: str) -> list[InlineSpan]:
             scene_start, scene_end = scene_ranges[scene_index]
             if scene_start <= i < scene_end:
                 i = scene_end
+                continue
+
+        # Voetnoot: ``^[`` opent, de eerste onge-escapete ``]`` sluit. Een noot
+        # in een noot bestaat niet; een tweede ``^[`` binnen een noot is tekst.
+        if 'code' not in opened:
+            if 'footnote' in opened and text.startswith(']', i) and not _is_escaped(text, i):
+                open_or_close('footnote', i, i + 1)
+                i += 1
+                continue
+            if 'footnote' not in opened and text.startswith('^[', i) and not _is_escaped(text, i):
+                opened['footnote'] = (i, i + 2)
+                i += 2
                 continue
 
         if 'code' in opened:

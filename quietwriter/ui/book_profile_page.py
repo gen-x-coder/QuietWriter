@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 from .dialog_notices import notice_information, notice_warning, notice_critical
 from ..book_profile import SECTIONS, empty_book_profile, parse_book_profile, render_book_profile
 from ..i18n import tr
+from .page_layout import set_page_margins
 from ..field_merge import merge_scalar_fields
 from ..revisions import ExternalModificationError, RevisionVerificationError
 from ..migrations import FutureBookFormatError
@@ -31,7 +32,7 @@ class BookProfilePage(QWidget):
         self._corrupt_source = False
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(32, 26, 36, 30)
+        set_page_margins(outer)
         outer.setSpacing(14)
 
         title = QLabel(tr('book_profile.title', 'Boekprofiel')); title.setObjectName('title')
@@ -45,11 +46,10 @@ class BookProfilePage(QWidget):
         self.path_label = QLabel(); self.path_label.hide()
 
         body = QHBoxLayout(); body.setSpacing(18)
-        nav_host = QFrame(); nav_host.setObjectName('settingsNav')
-        nav_layout = QVBoxLayout(nav_host); nav_layout.setContentsMargins(8, 8, 8, 8); nav_layout.setSpacing(6)
-        nav_title = QLabel(tr('book_profile.sections', 'Onderdelen')); nav_title.setObjectName('sectionTitle')
-        nav_layout.addWidget(nav_title)
-        self.sections = QListWidget(); self.sections.setObjectName('bookProfileSectionList')
+        # 1.7 (dev15): subnavigatie zoals Instellingen en Planning, op de paginakleur.
+        nav_host = QFrame(); nav_host.setObjectName('contextNavHost')
+        nav_layout = QVBoxLayout(nav_host); nav_layout.setContentsMargins(0, 0, 0, 0); nav_layout.setSpacing(0)
+        self.sections = QListWidget(); self.sections.setObjectName('contextSectionList')
         self.sections.setMinimumWidth(230); self.sections.setMaximumWidth(280)
         for section in SECTIONS:
             item = QListWidgetItem(tr(f'book_profile.section.{section.key}.title', section.title))

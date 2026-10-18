@@ -34,6 +34,15 @@ Back-up
 Maak regelmatig een kopie van je volledige QuietWriter-werkmap. Sluit QuietWriter
 bij voorkeur voordat je een handmatige back-up terugzet.
 
+Bijwerken
+---------
+Is er een nieuwe versie, dan meldt QuietWriter dat (als je automatisch
+controleren aan hebt gezet, of via Instellingen > Updates > Nu controleren).
+Kies 'Nu bijwerken': QuietWriter downloadt de update, slaat alles op, sluit af
+en start vanzelf opnieuw. Je boeken en instellingen blijven staan.
+Verplaats QuietWriter na het uitpakken liever niet meer naar een map waar je
+geen schrijfrechten hebt (zoals Program Files); dan kan bijwerken niet.
+
 AI Meelezer en privacy
 ----------------------
 AI is optioneel en staat bij een nieuwe installatie standaard uit. De Meelezer
@@ -92,6 +101,15 @@ Backups
 -------
 Regularly copy the complete QuietWriter workspace. Preferably close QuietWriter
 before restoring a manual backup.
+
+Updating
+--------
+When a new version is available, QuietWriter tells you (if automatic checking
+is on, or via Settings > Updates > Check now). Choose 'Update now': QuietWriter
+downloads the update, saves everything, closes and restarts by itself. Your
+books and settings stay where they are.
+After extracting, avoid moving QuietWriter to a folder you cannot write to
+(such as Program Files); updating would not be possible there.
 
 AI Reader and privacy
 ---------------------

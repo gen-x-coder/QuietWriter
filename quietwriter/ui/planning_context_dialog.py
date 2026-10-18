@@ -45,7 +45,7 @@ class PlanningContextDialog(QDialog):
         self.error_label.setVisible(bool(self.options.error))
         root.addWidget(self.error_label)
 
-        self.notes = QCheckBox(tr('ai.planning_context.notes', 'Planning-notities meenemen'))
+        self.notes = QCheckBox(tr('ai.planning_context.notes', 'Planning-notities meesturen'))
         self.notes.setChecked(selection.include_notes and self.options.notes_available)
         self.notes.setEnabled(self.options.notes_available)
         root.addWidget(self.notes)

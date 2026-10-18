@@ -5,14 +5,14 @@ import re
 from PySide6.QtCore import QMimeData, QPoint, QRect, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QFontMetricsF, QKeySequence, QPainter, QPen,
                            QTextBlockFormat, QTextCharFormat, QTextCursor)
-from PySide6.QtWidgets import QApplication, QMenu, QTextEdit, QToolButton
+from PySide6.QtWidgets import QApplication, QLabel, QMenu, QTextEdit, QToolButton
 
 from .dialog_notices import notice_information
 from ..manuscript_markup import (ManuscriptStyle, apply_block_style, escape_literal_block_structure,
                                  escape_literal_space_prefix, escape_literal_text, escape_literal_typed_char,
                                  escape_ranges, prepare_markdown_insertion, selection_format_states, source_selection_as_markdown,
-                                 smart_double_quote, toggle_inline, unescape_literal_text)
-from ..document_view import (classify_block_line, image_reference_for_block_line,
+                                 smart_double_quote, toggle_inline, typographic_replacement, unescape_literal_text)
+from ..document_view import (classify_block_line, image_reference_for_block_line, parse_block_line,
                              visible_text_for_source_range)
 from ..markdown_io import remove_scene_break
 from ..themes import THEMES
@@ -34,6 +34,8 @@ class ManuscriptEditor(QTextEdit):
     addOpenPointRequested = Signal()
     resolveOpenPointRequested = Signal()
     editOpenPointRequested = Signal()
+    # 1.7: voetnoot n (0-gebaseerd, in hoofdstukvolgorde) openen in de notenstrook.
+    footnoteEditRequested = Signal(int)
 
     IMAGE_BLOCK_HEIGHT = 132
     """Rustige Markdown-editor met manuscriptweergave en lichte opmaaklaag.
@@ -72,6 +74,8 @@ class ManuscriptEditor(QTextEdit):
         self.settings = settings or QSettings('QuietWriter', 'QuietWriter')
         self.typography = WritingTypography.from_settings(self.settings)
         self.manuscript_style = ManuscriptStyle.from_settings(self.settings)
+        # Boektaal voor typografie tijdens typen (aanhalingstekens, streepjes).
+        self.typing_language = 'nl'
 
 
         self._format_timer = QTimer(self)
@@ -101,7 +105,24 @@ class ManuscriptEditor(QTextEdit):
         # gezocht, gespeld, geëxporteerd of door Undo geraakt.
         self._planning_ghost_scenes = ()
         self._planning_ghost_enabled = True
+        # 1.7: alle planningscènes van dit hoofdstuk (ook geschreven) in
+        # outlinevolgorde. Scène n hoort bij het stuk tekst na scènebreuk n.
+        self._planning_scenes = ()
+        # Eén regel onder de tekst (in de ondermarge, buiten het document):
+        # welke geplande scène hoort bij de plek van de cursor.
+        self.scene_hint = QLabel(self)
+        self.scene_hint.setObjectName('sceneHint')
+        self.scene_hint.setTextFormat(Qt.PlainText)
+        self.scene_hint.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        self.scene_hint.hide()
+        self._scene_hint_full = ''
         self.cursorPositionChanged.connect(self._escape_cursor_changed)
+        # Voetnoten (1.7): in de tekst staat alleen een nummer; de cursor springt
+        # over de ingeklapte noottekst heen. Je bewerkt de noot in de notenstrook.
+        self._footnote_cursor_guard = False
+        self._last_footnote_cursor_position = 0
+        self._footnote_number_rects: list[tuple[QRect, int]] = []
+        self.cursorPositionChanged.connect(self._footnote_cursor_changed)
         self.verticalScrollBar().valueChanged.connect(self._schedule_image_layout)
         self.horizontalScrollBar().valueChanged.connect(self._schedule_image_layout)
 
@@ -521,6 +542,106 @@ class ManuscriptEditor(QTextEdit):
             and self.document().isEmpty()
         )
 
+    # ------------------------------------------------------------------ scènes (1.7)
+    def set_planning_scenes(self, scenes):
+        """Alle planningscènes van het hoofdstuk, op volgorde (presentatie)."""
+        self._planning_scenes = tuple(scenes or ())
+        self.viewport().update()
+
+    def scene_break_blocks(self) -> list:
+        blocks = []
+        block = self.document().begin()
+        while block.isValid():
+            if self._block_kind(block.text()) == 'scene':
+                blocks.append(block)
+            block = block.next()
+        return blocks
+
+    def segment_at_cursor(self) -> int:
+        """Aantal scènebreuken vóór de cursor = nummer van het tekstsegment."""
+        current = self.textCursor().block().blockNumber()
+        count = 0
+        block = self.document().begin()
+        while block.isValid() and block.blockNumber() < current:
+            if self._block_kind(block.text()) == 'scene':
+                count += 1
+            block = block.next()
+        return count
+
+    def go_to_segment(self, index: int) -> bool:
+        """Zet de cursor aan het begin van tekstsegment ``index``."""
+        if index < 0:
+            return False
+        if index == 0:
+            block = self.document().begin()
+        else:
+            breaks = self.scene_break_blocks()
+            if index > len(breaks):
+                return False
+            block = breaks[index - 1].next()
+            if not block.isValid():
+                block = breaks[index - 1]
+        # Sla lege regels direct na de breuk over.
+        probe = block
+        while probe.isValid() and not probe.text().strip() and probe.next().isValid() \
+                and self._block_kind(probe.next().text()) != 'scene':
+            probe = probe.next()
+        if probe.isValid() and probe.text().strip():
+            block = probe
+        cursor = QTextCursor(block)
+        self.setTextCursor(cursor)
+        self.ensureCursorVisible()
+        # Toon het begin van de scène bovenin, niet onderaan het venster.
+        bar = self.verticalScrollBar()
+        rect = self.cursorRect(cursor)
+        bar.setValue(bar.value() + rect.top() - 24)
+        self.setFocus()
+        return True
+
+    def _tail_ghost_scenes(self):
+        """Nog te schrijven scènes onder de laatste scènebreuk.
+
+        Alleen als het hoofdstuk niet leeg is, eindigt op een scènebreuk (met
+        hooguit lege regels erna) en Planning meer scènes heeft dan er stukken
+        tekst zijn. Geschreven scènes worden niet als ‘nog te doen’ getoond.
+        """
+        if not (self._planning_ghost_enabled and self._planning_scenes) or self.isReadOnly():
+            return None, ()
+        if self.document().isEmpty():
+            return None, ()
+        block = self.document().lastBlock()
+        while block.isValid() and not block.text().strip():
+            block = block.previous()
+        if not block.isValid() or self._block_kind(block.text()) != 'scene':
+            return None, ()
+        index = len(self.scene_break_blocks())
+        scenes = tuple(scene for scene in self._planning_scenes[index:]
+                       if str(getattr(scene, 'status', '') or 'idee') != 'geschreven')
+        return block, scenes
+
+    def set_scene_hint(self, text: str):
+        self._scene_hint_full = str(text or '')
+        self.scene_hint.setToolTip(self._scene_hint_full)
+        self._layout_scene_hint()
+
+    def _layout_scene_hint(self):
+        text = self._scene_hint_full
+        if not text:
+            self.scene_hint.hide()
+            return
+        side = max(self.min_side_margin, (max(0, self.width()) - self.max_text_width) // 2)
+        width = max(60, self.width() - 2 * side)
+        # Klein en cursief, los van de (grote) schrijfletter van de editor.
+        font = QFont(QApplication.font())
+        font.setItalic(True)
+        font.setPointSizeF(max(8.0, QApplication.font().pointSizeF() - 0.5))
+        self.scene_hint.setFont(font)
+        metrics = QFontMetrics(font)
+        self.scene_hint.setText(metrics.elidedText(text, Qt.ElideRight, width))
+        self.scene_hint.setGeometry(side, self.height() - 34, width, metrics.height() + 4)
+        self.scene_hint.show()
+        self.scene_hint.raise_()
+
     @staticmethod
     def _ghost_detail_lines(scene):
         lines = []
@@ -547,18 +668,28 @@ class ManuscriptEditor(QTextEdit):
         return lines
 
     def _paint_planning_ghosts(self, painter: QPainter, theme: dict):
-        if not self.planning_ghosts_visible():
+        if self.planning_ghosts_visible():
+            self._paint_ghost_list(painter, theme, self._planning_ghost_scenes, 24)
             return
+        block, scenes = self._tail_ghost_scenes()
+        if block is None or not scenes:
+            return
+        rect = self.cursorRect(QTextCursor(block))
+        top = rect.bottom() + 28
+        if top > self.viewport().height() - 60:
+            return  # geen ruimte; de regel onder de tekst noemt de volgende scène
+        self._paint_ghost_list(painter, theme, scenes, top, header=tr('planning.ghost.next_from_planning', 'Volgende in Planning'))
 
+    def _paint_ghost_list(self, painter: QPainter, theme: dict, scenes, top: int, header: str | None = None):
         viewport = self.viewport().rect()
         if viewport.width() < 180 or viewport.height() < 100:
             return
         left = 18
         right = max(left + 80, viewport.width() - 18)
         width = right - left
-        y = 24
+        y = max(0, int(top))
         bottom = viewport.height() - 20
-        scene_bottom = bottom - 24 if len(self._planning_ghost_scenes) > 1 else bottom
+        scene_bottom = bottom - 24 if len(scenes) > 1 else bottom
 
         base = QFont(self.font())
         muted = QColor(theme['muted'])
@@ -575,10 +706,9 @@ class ManuscriptEditor(QTextEdit):
         painter.setPen(accent)
         header_h = QFontMetrics(header_font).height() + 2
         painter.drawText(QRect(left, y, width, header_h), Qt.AlignLeft | Qt.AlignVCenter,
-                         tr('planning.ghost.from_planning', 'Uit Planning'))
+                         header or tr('planning.ghost.from_planning', 'Uit Planning'))
         y += header_h + 12
 
-        scenes = self._planning_ghost_scenes
         shown = 0
         for scene in scenes:
             if y >= scene_bottom - 38:
@@ -675,7 +805,28 @@ class ManuscriptEditor(QTextEdit):
 
     def _update_margins(self):
         side = max(self.min_side_margin, (max(0, self.width()) - self.max_text_width) // 2)
-        self.setViewportMargins(side, 30, side, 42)
+        # Voetnoten (1.7) staan onder aan het blad, tussen de tekst en de scèneregel.
+        strip = getattr(self, 'footnote_strip', None)
+        strip_height = 0
+        if strip is not None and not strip.isHidden():
+            strip_height = min(strip.desired_height(), max(90, self.height() // 3))
+        # Ruimte tussen widgetrand en viewport die niet uit de marges komt (rand, padding).
+        before = self.viewport().geometry()
+        extra_bottom = self.height() - (before.bottom() + 1) - self.viewportMargins().bottom()
+        self.setViewportMargins(side, 30, side, 42 + strip_height)
+        if strip is not None and strip_height:
+            # Direct onder het witte blad, even breed: de strook hoort bij de pagina.
+            top = self.height() - extra_bottom - 42 - strip_height
+            strip.setGeometry(before.left(), top, before.width(), strip_height)
+            strip.raise_()
+        if hasattr(self, 'scene_hint'):
+            self._layout_scene_hint()
+
+    def attach_footnote_strip(self, strip):
+        """Zet de notenstrook onder aan het blad van deze editor (1.7)."""
+        self.footnote_strip = strip
+        strip.setParent(self)
+        self._update_margins()
 
 
     def _finish_typing_run(self):
@@ -1045,6 +1196,9 @@ class ManuscriptEditor(QTextEdit):
             event.accept(); return
 
         if key in (Qt.Key_Backspace, Qt.Key_Delete):
+            if self._delete_adjacent_footnote(key):
+                event.accept()
+                return
             self._perform_literal_delete(key)
             event.accept()
             return
@@ -1120,6 +1274,12 @@ class ManuscriptEditor(QTextEdit):
             event.accept()
             return
 
+        if (event.key() == Qt.Key_F and modifiers & Qt.ControlModifier and modifiers & Qt.AltModifier
+                and not self.isReadOnly()):
+            # Ctrl+Alt+F, net als in Word: voetnoot invoegen (1.7).
+            self.insert_footnote()
+            event.accept()
+            return
         if modifiers & Qt.ControlModifier and self.textCursor().hasSelection():
             shortcuts = {Qt.Key_B: 'bold', Qt.Key_I: 'italic', Qt.Key_U: 'underline'}
             if event.key() in shortcuts and not (modifiers & (Qt.AltModifier | Qt.MetaModifier)):
@@ -1128,17 +1288,27 @@ class ManuscriptEditor(QTextEdit):
             if event.key() == Qt.Key_S and modifiers & Qt.ShiftModifier:
                 cursor = self.textCursor(); self._selection_range = (cursor.selectionStart(), cursor.selectionEnd())
                 self.apply_format_action('strike'); return
-        if (self.manuscript_style.smart_quotes and event.text() == '"'
+        if (self.manuscript_style.smart_quotes and len(event.text()) == 1
                 and not (event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))):
+            typed = event.text()
             cursor = self.textCursor()
-            if cursor.hasSelection():
-                cursor.removeSelectedText()
-            quote = smart_double_quote(self.source_text(), cursor.position())
-            cursor.insertText(quote)
-            self.setTextCursor(cursor)
-            self._typing_run_end = None
-            self._typing_idle_timer.stop()
-            return
+            if not cursor.hasSelection() or typed in ('"', "'"):
+                if cursor.hasSelection():
+                    cursor.removeSelectedText()
+                prefix = cursor.block().text()[:cursor.positionInBlock()]
+                replacement = typographic_replacement(prefix, typed, getattr(self, 'typing_language', 'nl'))
+                if replacement is not None:
+                    remove, text = replacement
+                    cursor.beginEditBlock()
+                    if remove:
+                        cursor.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor, remove)
+                    cursor.insertText(text)
+                    cursor.endEditBlock()
+                    self.setTextCursor(cursor)
+                    self._typing_run_end = None
+                    self._typing_idle_timer.stop()
+                    event.accept()
+                    return
 
         # Direct typing is prose. The edit is committed as one transaction and
         # the resulting block is checked for accidental structure. Explicit
@@ -1302,6 +1472,7 @@ class ManuscriptEditor(QTextEdit):
                 ('underline', tr('format.underline', 'Onderstrepen')),
                 ('strike', tr('format.strike', 'Doorhalen')),
                 ('code', 'Code'),
+                ('footnote', tr('format.footnote', 'Voetnoot')),
             )
             for action_name, label in inline:
                 action = QAction(label, formatting)
@@ -1338,6 +1509,173 @@ class ManuscriptEditor(QTextEdit):
         menu.exec(event.globalPos())
         menu.deleteLater()
 
+    # --- voetnoten (1.7) -------------------------------------------------------------
+
+    def footnote_spans(self) -> list[tuple[int, int, int, int]]:
+        """Alle voetnoten van dit hoofdstuk als (open, inhoud-begin, inhoud-eind, sluit-eind)."""
+        spans = []
+        block = self.document().begin()
+        while block.isValid():
+            text = block.text()
+            if '^[' in text:
+                base = block.position()
+                for span in parse_block_line(text).inline_spans:
+                    if span.kind == 'footnote':
+                        spans.append((base + span.open_start, base + span.content_start,
+                                      base + span.content_end, base + span.close_end))
+            block = block.next()
+        return spans
+
+    def footnote_index_at(self, position: int) -> int | None:
+        """Index van de noot waar *position* binnen valt (tussen begin en eind)."""
+        for index, (start, _cs, _ce, end) in enumerate(self.footnote_spans()):
+            if start < position < end:
+                return index
+        return None
+
+    def footnote_source(self, index: int) -> str:
+        spans = self.footnote_spans()
+        if not 0 <= index < len(spans):
+            return ''
+        _start, content_start, content_end, _end = spans[index]
+        return self.source_text()[content_start:content_end]
+
+    def replace_footnote_content(self, index: int, content_source: str) -> bool:
+        """Schrijf nieuwe noottekst (bron, al ge-escapet) terug in het manuscript."""
+        spans = self.footnote_spans()
+        if self.isReadOnly() or not 0 <= index < len(spans):
+            return False
+        _start, content_start, content_end, _end = spans[index]
+        content_source = (content_source or '').replace('\n', ' ').replace('\u2029', ' ')
+        if self.source_text()[content_start:content_end] == content_source:
+            return False
+        cursor = QTextCursor(self.document())
+        cursor.beginEditBlock()
+        cursor.setPosition(content_start)
+        cursor.setPosition(content_end, QTextCursor.KeepAnchor)
+        cursor.insertText(content_source)
+        cursor.endEditBlock()
+        return True
+
+    def move_after_footnote(self, index: int):
+        spans = self.footnote_spans()
+        if not 0 <= index < len(spans):
+            return
+        cursor = self.textCursor()
+        self._footnote_cursor_guard = True
+        try:
+            cursor.setPosition(spans[index][3])
+            self.setTextCursor(cursor)
+        finally:
+            self._footnote_cursor_guard = False
+        self._last_footnote_cursor_position = spans[index][3]
+        self.setFocus()
+
+    def _footnote_cursor_changed(self):
+        if self._footnote_cursor_guard:
+            return
+        cursor = self.textCursor()
+        current = cursor.position()
+        if cursor.hasSelection() or '^[' not in cursor.block().text():
+            self._last_footnote_cursor_position = current
+            return
+        for start, _cs, _ce, end in self.footnote_spans():
+            if start < current < end:
+                target = start if self._last_footnote_cursor_position >= end else end
+                self._footnote_cursor_guard = True
+                try:
+                    cursor.setPosition(target)
+                    self.setTextCursor(cursor)
+                finally:
+                    self._footnote_cursor_guard = False
+                current = target
+                break
+        self._last_footnote_cursor_position = current
+
+    def _delete_adjacent_footnote(self, key) -> bool:
+        """Backspace net na een noot (of Delete ervoor) haalt de hele noot weg."""
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            return False
+        pos = cursor.position()
+        for start, _cs, _ce, end in self.footnote_spans():
+            if (key == Qt.Key_Backspace and pos == end) or (key == Qt.Key_Delete and pos == start):
+                cursor.beginEditBlock()
+                cursor.setPosition(start)
+                cursor.setPosition(end, QTextCursor.KeepAnchor)
+                cursor.removeSelectedText()
+                cursor.endEditBlock()
+                self.setTextCursor(cursor)
+                return True
+        return False
+
+    def insert_footnote(self):
+        """Voetnoot invoegen op de cursor, of de selectie een voetnoot maken (1.7).
+
+        In de tekst komt een nummer; de noot zelf typ je in de notenstrook onder
+        de tekst (``footnoteEditRequested``), zoals in een tekstverwerker.
+        """
+        if self.isReadOnly():
+            return
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            start = min(cursor.selectionStart(), cursor.selectionEnd())
+            self._selection_range = (cursor.selectionStart(), cursor.selectionEnd())
+            self.apply_format_action('footnote')
+            spans = self.footnote_spans()
+            index = next((i for i, span in enumerate(spans) if span[0] >= start - 1), None)
+            if index is not None:
+                self.footnoteEditRequested.emit(index)
+            return
+        block = cursor.block()
+        if classify_block_line(block.text()) in {'image', 'scene'}:
+            return
+        pos = cursor.positionInBlock()
+        for other in parse_block_line(block.text()).inline_spans:
+            if other.kind == 'code' and other.content_start <= pos <= other.content_end:
+                return
+        position = cursor.position()
+        cursor.beginEditBlock()
+        cursor.insertText('^[]')
+        cursor.endEditBlock()
+        self._footnote_cursor_guard = True
+        try:
+            cursor.setPosition(position + 3)
+            self.setTextCursor(cursor)
+        finally:
+            self._footnote_cursor_guard = False
+        self._last_footnote_cursor_position = position + 3
+        self.presentation_highlighter.rehighlight()
+        self.schedule_formatting(immediate=True, join_previous=True)
+        index = sum(1 for span in self.footnote_spans() if span[0] < position)
+        self.footnoteEditRequested.emit(index)
+
+    def _paint_footnote_numbers(self, painter: QPainter, theme: dict):
+        """Superscript-nummers op de plek van elke voetnoot (alleen tekenen)."""
+        self._footnote_number_rects = []
+        spans = self.footnote_spans()
+        if not spans:
+            return
+        font = QFont(self.font())
+        font.setPointSizeF(max(6.0, float(self.typography.point_size) * 0.62))
+        font.setBold(True)
+        painter.save()
+        painter.setFont(font)
+        painter.setPen(QColor(theme.get('accent', theme['muted'])))
+        metrics = QFontMetrics(font)
+        visible = self.viewport().rect()
+        for index, (start, *_rest) in enumerate(spans):
+            cursor = QTextCursor(self.document())
+            cursor.setPosition(start)
+            rect = self.cursorRect(cursor)
+            if rect.bottom() < 0 or rect.top() > visible.bottom():
+                continue
+            label = str(index + 1)
+            box = QRect(rect.left() + 1, rect.top() - 1, metrics.horizontalAdvance(label) + 3, metrics.height())
+            painter.drawText(box, Qt.AlignLeft | Qt.AlignTop, label)
+            self._footnote_number_rects.append((box.adjusted(-3, -3, 3, 3), index))
+        painter.restore()
+
     def apply_format_action(self, action: str):
         if not self._selection_range or self.isReadOnly():
             self.hide_selection_toolbar(); return
@@ -1353,7 +1691,7 @@ class ManuscriptEditor(QTextEdit):
         selection = self._normalise_selection_around_escapes(self.textCursor())
         start, end = sorted((selection.selectionStart(), selection.selectionEnd()))
         self._selection_range = (start, end)
-        if action in {'bold', 'italic', 'underline', 'strike', 'code'}:
+        if action in {'bold', 'italic', 'underline', 'strike', 'code', 'footnote'}:
             new, new_start, new_end = toggle_inline(old, start, end, action)
         elif action in {'paragraph', 'heading', 'bullet', 'numbered', 'quote'}:
             new, new_start, new_end = apply_block_style(old, start, end, action)
@@ -1567,6 +1905,17 @@ class ManuscriptEditor(QTextEdit):
         self.scene_delete_button.hide()
         self.viewport().setCursor(Qt.IBeamCursor)
 
+    def mousePressEvent(self, event):
+        # Klik op een voetnootnummer: open die noot in de notenstrook.
+        if event.button() == Qt.LeftButton:
+            pos = event.position().toPoint() if hasattr(event, 'position') else event.pos()
+            for rect, index in self._footnote_number_rects:
+                if rect.contains(pos):
+                    self.footnoteEditRequested.emit(index)
+                    event.accept()
+                    return
+        super().mousePressEvent(event)
+
     def mouseMoveEvent(self, event):
         self._update_scene_break_hover(event.position().toPoint())
         super().mouseMoveEvent(event)
@@ -1617,6 +1966,7 @@ class ManuscriptEditor(QTextEdit):
         # Scene breaks are stored as literal *** but rendered as a quiet divider.
         painter = QPainter(self.viewport())
         self._paint_planning_ghosts(painter, theme)
+        self._paint_footnote_numbers(painter, theme)
         color = QColor(theme['muted'])
         color.setAlpha(145)
         pen = QPen(color)

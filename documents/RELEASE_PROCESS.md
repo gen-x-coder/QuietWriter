@@ -1,374 +1,112 @@
-> **Dev.32 (13 oktober 2026):** Alle hierna beschreven stappen die externe
-> Authenticode-ondertekening of certificaatgoedkeuring veronderstellen zijn
-> **vervallen**. Niet uitvoeren. Nieuwe releasevereisten staan in
-> `CODE_SIGNING_POLICY.md`. GitHub handmatige release blijft leidend.
+# QuietWriter — releaseproces (vanaf 1.5.1)
+
+Dit is de werkinstructie voor het uitbrengen van een QuietWriter-versie. De oude versie, met de afgeblazen SignPath-route, staat in Git en in `archive/`.
 
-# QuietWriter — releaseproces
+## Uitgangspunten
 
-Dit document is de canonieke werkinstructie voor het publiceren van een QuietWriter-release.
+- **Eenvoudig, niet technisch, portable.** Gebruikers downloaden één zip, pakken die uit en starten `QuietWriter.exe`. Geen installer en geen beheerdersrechten.
+- **Bijwerken via Velopack.** Een portable kopie vanaf 1.5.1 werkt zichzelf bij na de keuze **Nu bijwerken**. Velopack vervangt alleen de programmamap; boeken (werkmap), instellingen (register) en logs (`%LOCALAPPDATA%`) staan daarbuiten.
+- **Eerst zelf testen, dan pas voor iedereen (vanaf 1.6.1).** Of gebruikers met één klik kunnen bijwerken, beslis je per release **op GitHub**: wel of geen `releases.win.json`. Jouw testkopie leest `releases.pilot.json` en ziet ook pre-releases. Achtergrond: `research/UPDATE_UITROL_ONDERZOEK.md`.
+- **Twee repositories.** `gen-x-coder/QuietWriter-dev` (privé, werkplaats) en `gen-x-coder/QuietWriter` (publiek, releases). De app kijkt voor updates alleen naar releases van de publieke repository.
+- **Unsigned.** Er is geen Authenticode-certificaat. Windows kan "onbekende uitgever" tonen. Zie `../CODE_SIGNING_POLICY.md`.
+- `quietwriter/__init__.py` is de enige bron voor het versienummer. De tag is `v<versie>`, bijvoorbeeld `v1.5.1`.
 
-Doel: een toekomstige maintainer — mens of AI — moet een release kunnen uitvoeren zonder de oude chatgeschiedenis nodig te hebben.
+## Eenmalig op de bouwcomputer
 
-## 1. Repositorymodel
+1. Python **3.12.10** en pip **26.2.1** (`build_exe.cmd` controleert dat).
+2. Visual Studio Build Tools met "Desktop development with C++" (de PyInstaller-bootloader wordt uit bron gebouwd).
+3. .NET SDK 8 of nieuwer, en daarna de Velopack-CLI:
+   ```cmd
+   dotnet tool install -g vpk --version <versie van velopack in packaging\requirements-runtime.lock>
+   ```
+   Bestaat precies die versie niet als `vpk`, neem dan de dichtstbijzijnde; het buildscript waarschuwt bij een verschil. Velopack raadt aan de CLI en de app-bibliotheek gelijk te houden.
 
-QuietWriter gebruikt twee repositories:
+## Per release
 
-- `gen-x-coder/QuietWriter-dev` — private ontwikkelrepository.
-- `gen-x-coder/QuietWriter` — publieke open-source- en releaserepository.
+### 1. Bron klaarzetten
+- [ ] Versie in `quietwriter/__init__.py` gezet (bijvoorbeeld `1.5.2`).
+- [ ] `documents/CHANGELOG.md` bovenaan bijgewerkt (`## 1.5.2 — …`).
+- [ ] `python -m pytest` groen; `python tools/check_locales.py` en `python tools/check_undefined_names.py` groen.
+- [ ] Review afgerond (zie `../AGENTS.md`, werkwijze).
+- [ ] Geen secrets, lokale instellingen of gebruikersdata in de bron.
 
-De private repository is de werkplaats. De publieke repository is de autoritatieve bron voor officiële releases, publieke CI, release-tags en code signing.
+### 2. Bouwen
+```cmd
+build_exe.cmd
+```
+Het script maakt een schone staging (allowlist), bouwt met PyInstaller (onedir), controleert de releasehygiëne en draait daarna `vpk pack`. Uitkomst:
 
-Een officiële release mag daarom **niet rechtstreeks vanuit QuietWriter-dev worden gepubliceerd**.
+| Bestand | Waarvoor |
+|---|---|
+| `release\QuietWriter-<versie>\QuietWriter.exe` | lokale test en smoke-test |
+| `release\QuietWriter-windows-portable.zip` (+ `.sha256`) | download voor nieuwe gebruikers (= Velopack-`Portable.zip`) |
+| `release\velopack\releases.pilot.json` | testfeed; alleen testkopieën lezen dit (stand 1) |
+| `release\velopack\releases.win.json` | feed voor iedereen; pas uploaden in stand 3 |
+| `release\velopack\LucasBonsel.QuietWriter-<versie>-full.nupkg` | het eigenlijke updatepakket |
+| `release\velopack\*-Setup.exe` | wordt meegemaakt, maar **niet publiceren** (we blijven portable) |
+| `release\QuietWriter-<versie>-build-manifest.txt` | bewijs: buildomgeving en hashes |
 
-## 2. Huidige uitgangssituatie
+Alternatief: de workflow `windows-build` (handmatig starten, alleen in de publieke repository) doet hetzelfde en levert de bestanden als artifact.
 
-Sinds 6 oktober 2026 is de publieke repository ingericht als GPLv3-open-sourceproject.
+### 3. Lokaal controleren (Windows)
+- [ ] `release\QuietWriter-<versie>\QuietWriter.exe --smoke-test` sluit af met exitcode 0.
+- [ ] Pak `QuietWriter-windows-portable.zip` uit in een **lege testmap**, start, open een bestaand boek, typ, sluit af en start opnieuw.
+- [ ] Instellingen → Updates → **Nu controleren** zegt "nieuwste versie" (de nieuwe release staat nog niet online).
 
-De publieke `main` bevat:
+### 4. Publiceren in drie standen
 
-- de volledige QuietWriter-bron;
-- GPLv3;
-- publieke tests;
-- Windows- en Ubuntu-CI;
-- Windows-buildworkflow;
-- privacybeleid;
-- downloadinformatie;
-- security- en contribution-documentatie;
-- code-signing policy.
+Zet eerst de geteste bron op `QuietWriter-dev` en daarna op `QuietWriter/main`. **Neem `documents/archive/` niet mee naar de publieke repository**: die bevat interne reviews met beveiligingsdetails.
 
-De testworkflow draait automatisch op `main` en pull requests en gebruikt GitHub-hosted Windows- en Ubuntu-runners.
+Upload de bestanden met de hand via de GitHub-website (release bewerken → bestanden erin slepen). Gebruik **niet** `vpk upload github`: dat zet `releases.win.json` meteen online, en dan sla je stand 1 en 2 over.
 
-### Historische uitzondering: 1.1.0
+| Stand | Wat je doet op GitHub | 1.4.0 en ouder | Vanaf 1.5.1 | Jouw testkopie |
+|---|---|---|---|---|
+| **1. Test** | Nieuwe release `v<versie>`, vink **pre-release** aan. Upload `QuietWriter-windows-portable.zip` (+ `.sha256`), `LucasBonsel.QuietWriter-<versie>-full.nupkg` en `releases.pilot.json`. | ziet niets | ziet niets | **Nu bijwerken** |
+| **2. Uitgebracht** | Release bewerken, **pre-release uitvinken**. Release-notities erbij. | melding + downloadpagina | melding + downloadpagina ("nog niet vrijgegeven") | — |
+| **3. Bijwerken open** | `releases.win.json` uploaden bij deze (nieuwste) release. | melding + downloadpagina | **Nu bijwerken** | — |
 
-Release `v1.1.0` bestond al voordat de broncode in de publieke repository werd gepubliceerd.
+- Stand 2 mag een paar releases duren. Upload `releases.win.json` pas als je overtuigd bent; dan geldt het voor iedereen vanaf 1.5.1, zonder nieuwe versie.
+- Upload `releases.win.json` alleen bij de **nieuwste** release. Velopack kijkt naar de laatste 10 releases en neemt de hoogste versie die het vindt.
+- Het pre-releasevinkje verandert niets aan de bestanden: gebruikers krijgen exact wat jij in stand 1 hebt getest.
 
-De bestaande `v1.1.0`-tag wordt **niet verplaatst of herschreven**.
+### 5. Testkopie en updatepad controleren (stand 1)
+**Eenmalig een testkopie maken:** pak een portable zip (vanaf 1.6.1) uit in een eigen map, bijvoorbeeld `C:\Temp\QW-Test\`. Zet daar een leeg bestand **`.quietwriter-update-pilot`** naast `QuietWriter.exe` en `Update.exe` (Kladblok → Opslaan als → bestandstype *Alle bestanden*). Instellingen → Updates toont dan "Testkopie". Het bestand blijft bij elke update staan.
 
-Vanaf de eerstvolgende release moet de tag exact wijzen naar de publieke broncommit die daadwerkelijk is gebouwd en ondertekend.
+- [ ] Start de testkopie. Instellingen → Updates → **Nu controleren** → **Nu bijwerken**.
+- [ ] Verwacht: voortgang, QuietWriter sluit, Velopack werkt bij, QuietWriter start opnieuw met de nieuwe versie (zie Over).
+- [ ] Boeken, instellingen, thema en Meelezer-instellingen zijn onveranderd.
+- [ ] Een gewone kopie (zonder pilotbestand) ziet bij **Nu controleren** géén nieuwe versie.
+- [ ] Na stand 2: de vaste link `https://github.com/gen-x-coder/QuietWriter/releases/latest/download/QuietWriter-windows-portable.zip` levert de nieuwe zip.
+- [ ] Na stand 3: een gewone kopie vanaf 1.5.1 biedt **Nu bijwerken** aan.
 
-## 3. Releaseprincipes
+Gaat er in stand 1 iets mis: verwijder de pre-release. Geen gebruiker heeft hem gezien.
 
-Voor iedere officiële release gelden deze regels:
+## Bijwerken testen zonder GitHub
 
-1. De te releasen bron is eerst getest in de ontwikkelomgeving.
-2. De volledige releasebron staat vóór tagging op `gen-x-coder/QuietWriter/main`.
-3. De versie in `quietwriter/__init__.py` is de bron van waarheid.
-4. Publieke Windows- en Ubuntu-tests moeten groen zijn.
-5. De officiële Windows-build ontstaat uit de publieke repository.
-6. De release-tag wordt pas gezet nadat de publieke bron en CI correct zijn.
-7. Na activering van voormalige externe ondertekeningsdienst (VERVALLEN) wordt alleen het door voormalige externe ondertekeningsdienst (VERVALLEN) ondertekende artifact gepubliceerd als officiële Windows-release.
-8. Release-assets krijgen een SHA-256-bestand.
-9. Tags en gepubliceerde releases worden niet achteraf stil herschreven.
-10. Bij twijfel of inconsistente build/signing: stop de release en maak een nieuwe versie of release candidate.
+Met de omgevingsvariabele `QUIETWRITER_UPDATE_SOURCE` kijkt QuietWriter niet op GitHub maar in een lokale map met `vpk pack`-uitvoer. Een testkopie leest daar `releases.pilot.json`, een gewone kopie `releases.win.json`; het buildscript maakt ze allebei.
 
-## 4. Voorbereiding in QuietWriter-dev
+1. Bouw versie A (bijvoorbeeld 1.6.1) en pak `release\QuietWriter-windows-portable.zip` uit in `C:\Temp\QW-A\`.
+2. Zet in `quietwriter\__init__.py` tijdelijk een hogere versie, bijvoorbeeld `1.6.2`, en bouw opnieuw. `release\velopack\` bevat nu de feed voor 1.6.2.
+3. Start A met de lokale bron:
+   ```cmd
+   set QUIETWRITER_UPDATE_SOURCE=C:\Users\lucas\OneDrive\Desktop\Projects\QuietWriter-dev\release\velopack
+   C:\Temp\QW-A\QuietWriter.exe
+   ```
+4. Instellingen → Updates → **Nu controleren** → **Nu bijwerken**. Verwacht: voortgang, QuietWriter sluit, werkt bij en start als 1.6.2. Boeken en instellingen zijn onveranderd.
+5. Zet `__version__` terug en verwijder de testmap.
 
-Ontwikkeling en functionele validatie gebeuren eerst in `QuietWriter-dev`.
+De variabele werkt alleen in het venster waarin je hem zet; gewone gebruikers merken er niets van. Een GitHub-adres mag ook (`https://github.com/<eigenaar>/<repo>`).
 
-Voor release:
+## Overstap van oudere versies (eenmalig)
 
-- alle geplande wijzigingen zijn afgerond;
-- Claude/testsuite of andere afgesproken review is groen;
-- noodzakelijke visuele Windows-tests zijn uitgevoerd;
-- er zijn geen bekende dataverlies- of releaseblokkerende bugs;
-- `documents/CHANGELOG.md` is bijgewerkt;
-- release notes zijn aanwezig indien gewenst;
-- versie is correct in `quietwriter/__init__.py`;
-- build- en packagingbestanden horen bij dezelfde versie.
+Kopieën van vóór 1.5.1 en de bronversie kunnen zichzelf niet bijwerken. Ze melden de nieuwe versie en openen GitHub. De gebruiker pakt de nieuwe zip uit in een nieuwe map en start die. Boeken en instellingen staan buiten de programmamap en worden gewoon gevonden. De oude map mag daarna weg.
 
-Gebruik bij voorkeur een expliciete releasecommit in de dev-repository.
+## Als het misgaat
 
-Maak **geen officiële release-tag in QuietWriter-dev**.
+- **Fout vóór publicatie:** niets publiceren, oorzaak oplossen, opnieuw bouwen.
+- **Fout in stand 1:** pre-release verwijderen, oplossen, opnieuw bouwen. Niemand heeft hem gezien.
+- **Fout in stand 2 of 3:** de tag niet verplaatsen. Verwijder `releases.win.json` uit de release (één klik bijwerken stopt meteen) en maak een nieuwe patchversie. Gebruikers die al bijgewerkt zijn, krijgen die patchversie. QuietWriter zet nooit een lagere versie terug.
 
-## 5. Bron naar de publieke repository brengen
+## Linux
 
-De publieke repository moet vóór de release exact de bron bevatten die gebruikers kunnen controleren.
-
-Aanbevolen proces:
-
-1. Werk de private dev-branch af.
-2. Controleer dat er geen secrets, lokale instellingen, API-sleutels, caches of gebruikersdata in de bron zitten.
-3. Breng de volledige geteste bron naar `gen-x-coder/QuietWriter/main`.
-4. Behoud de publieke repositorydocumentatie en publieke CI-configuratie.
-5. Push de publieke bron.
-6. Wacht op de automatische publieke CI.
-
-Bij grote versieovergangen is een tijdelijke lokale clone/branch veilig omdat daarmee de private en publieke histories niet onbedoeld worden vermengd.
-
-## 6. Publieke CI-gate
-
-De workflow `.github/workflows/tests.yml` draait:
-
-- op pushes naar `main`;
-- op pull requests naar `main`;
-- handmatig via `workflow_dispatch`.
-
-De matrix bevat:
-
-- `ubuntu-latest`;
-- `windows-latest`.
-
-Belangrijke stappen:
-
-- Python 3.12;
-- testdependencies installeren;
-- fonts ophalen;
-- undefined-name check;
-- volledige pytest-suite;
-- Qt-testsubset.
-
-Een release mag pas verder wanneer beide platforms groen zijn.
-
-### CI-fouten
-
-Maak onderscheid tussen:
-
-- echte productregressie;
-- platformafhankelijke test;
-- verouderde release-test;
-- CI-/runnerprobleem;
-- cleanup/resource-lock.
-
-Verzwak een test niet alleen om CI groen te maken. Herstel de test zodat hij de oorspronkelijke functionele bedoeling platformonafhankelijk controleert.
-
-## 7. Windows build
-
-De workflow `.github/workflows/build-windows.yml` bouwt op `windows-latest`.
-
-De build gebruikt:
-
-- Python 3.12;
-- MSVC build environment;
-- `build_exe.cmd`;
-- schone allowlist-stage via `tools/prepare_release.py`;
-- PyInstaller onedir;
-- executable smoke test;
-- SHA-256 van de portable ZIP.
-
-De distributie bevat geen tests, Git-metadata, ontwikkelrapporten, caches of interne DEV/PROD-launchers.
-
-## 8. Tagging
-
-Versievoorbeeld: `1.2.13`.
-
-De officiële tag is:
-
-`v1.2.13`
-
-Voor tagging controleren:
-
-- publieke `main` bevat exact versie `1.2.13`;
-- Windows CI groen;
-- Ubuntu CI groen;
-- changelog/release notes correct;
-- geen onbeoordeelde commits na de releasecandidate;
-- voormalige externe ondertekeningsdienst (VERVALLEN)-configuratie actief als signing verplicht is.
-
-Daarna wordt de tag op de juiste publieke commit geplaatst.
-
-De buildworkflow controleert dat:
-
-`tag == "v" + quietwriter.__version__`
-
-Bij mismatch moet de build stoppen.
-
-## 9. voormalige externe ondertekeningsdienst (VERVALLEN) — status vóór goedkeuring
-
-QuietWriter heeft een aanvraag ingediend voor voormalige externe ondertekeningsdienst (VERVALLEN) Foundation Open Source Code Signing.
-
-Tot de aanvraag is goedgekeurd:
-
-- geen self-signed certificaat gebruiken voor officiële releases;
-- geen commercieel certificaat aanvragen alleen om deze flow te omzeilen;
-- de publieke buildworkflow mag unsigned artifacts maken;
-- nieuwe officiële signed releases wachten op de Foundation-configuratie wanneer signing als release-eis is afgesproken.
-
-De publieke repository bevat:
-
-- `CODE_SIGNING_POLICY.md`;
-- `DOWNLOAD.md`;
-- `PRIVACY.md`;
-- de verplichte voormalige externe ondertekeningsdienst (VERVALLEN) Foundation-vermelding.
-
-## 10. voormalige externe ondertekeningsdienst (VERVALLEN) — definitieve flow na goedkeuring
-
-Na goedkeuring moeten deze gegevens in voormalige externe ondertekeningsdienst (VERVALLEN) worden vastgelegd en daarna in dit document worden ingevuld:
-
-- voormalige externe ondertekeningsdienst (VERVALLEN) organization ID;
-- project slug;
-- artifact-configuration slug;
-- signing-policy slug;
-- naam van het toegewezen voormalige externe ondertekeningsdienst (VERVALLEN) Foundation-certificaat;
-- GitHub trusted build system;
-- eventueel benodigde GitHub secretnaam voor de voormalige externe ondertekeningsdienst (VERVALLEN) API-token.
-
-**Deze waarden niet raden.** Ze worden pas ingevuld nadat voormalige externe ondertekeningsdienst (VERVALLEN) ze daadwerkelijk heeft toegewezen.
-
-### Verwachte technische flow
-
-1. GitHub Actions checkt de publieke releasecommit uit.
-2. Windows-build produceert het unsigned portable artifact.
-3. `actions/upload-artifact` bewaart het unsigned buildartifact in dezelfde workflow.
-4. De officiële voormalige externe ondertekeningsdienst (VERVALLEN) GitHub Action dient een signing request in.
-5. voormalige externe ondertekeningsdienst (VERVALLEN) controleert de oorsprong via GitHub/Origin Verification.
-6. voormalige externe ondertekeningsdienst (VERVALLEN) ondertekent `QuietWriter.exe` in het artifact volgens de artifact configuration.
-7. De workflow downloadt/ontvangt het signed artifact.
-8. De signed ZIP wordt de officiële GitHub Release-asset.
-9. SHA-256 wordt berekend over het artifact dat daadwerkelijk wordt gepubliceerd.
-10. Alleen als signing en alle verificaties groen zijn, wordt de release gepubliceerd.
-
-De eerder voorbereide artifactconfiguratie moet overeenkomen met de werkelijke ZIP-layout. Controleer dat opnieuw wanneer voormalige externe ondertekeningsdienst (VERVALLEN) wordt geactiveerd.
-
-## 11. GitHub secrets na voormalige externe ondertekeningsdienst (VERVALLEN)-goedkeuring
-
-De voormalige externe ondertekeningsdienst (VERVALLEN) API-token mag nooit in broncode, workflowtekst, documentatie of release notes staan.
-
-Gebruik uitsluitend GitHub Actions Secrets.
-
-De precieze secretnaam wordt na goedkeuring vastgelegd. Verwacht bijvoorbeeld een naam als:
-
-`SIGNPATH_API_TOKEN`
-
-Maar gebruik alleen de naam die de definitieve workflow daadwerkelijk verwacht.
-
-## 12. Publiceren van de GitHub Release
-
-Een stable release bevat minimaal:
-
-- `QuietWriter-windows-portable.zip`;
-- `QuietWriter-windows-portable.zip.sha256`.
-
-Na voormalige externe ondertekeningsdienst (VERVALLEN)-activering is de ZIP de **signed** build.
-
-De vaste stable-downloadnaam blijft:
-
-`QuietWriter-windows-portable.zip`
-
-Daarmee blijft deze URL bruikbaar:
-
-`https://github.com/gen-x-coder/QuietWriter/releases/latest/download/QuietWriter-windows-portable.zip`
-
-Een release candidate wordt als prerelease gemarkeerd en mag niet onbedoeld de stable `latest` vervangen.
-
-## 13. Release controleren
-
-Na publicatie:
-
-- download de ZIP vanaf GitHub alsof je een gewone gebruiker bent;
-- controleer SHA-256;
-- pak de ZIP uit naar een schone map;
-- start QuietWriter zonder Python-ontwikkelomgeving;
-- controleer first-run indien relevant;
-- open een bestaand boek;
-- typ en sla op;
-- test minimaal één export;
-- test afsluiten/herstart;
-- controleer bij signed releases de digitale handtekening van `QuietWriter.exe`;
-- controleer dat de releasepagina de juiste versie en assets toont;
-- controleer de vaste `latest/download`-link bij stable releases.
-
-## 14. Praktijktest vóór een belangrijke stable release
-
-Voor een grotere stable release blijven de bestaande QuietWriter-praktijktests relevant:
-
-- schone Windows-machine;
-- DPI/schaal;
-- groot boek;
-- oudere echte boeken;
-- Ollama;
-- OpenRouter;
-- sync-/conflictscenario's;
-- first-run;
-- updatecontrole;
-- export;
-- geen dataverlies bij afsluiten of fouten.
-
-Geautomatiseerde CI vervangt deze praktijkvalidatie niet.
-
-## 15. Linux
-
-De publieke CI draait de Python/PySide6-bron ook op Ubuntu.
-
-Dat betekent **niet automatisch** dat QuietWriter een officiële Linux-distributie heeft.
-
-Een Linux-release mag pas worden toegevoegd nadat:
-
-- een afzonderlijke Linux-buildworkflow bestaat;
-- een Linux PyInstaller/package-artifact reproduceerbaar wordt gebouwd;
-- een smoke test op het Linux-artifact slaagt;
-- GUI/praktijktests op een echte Linux-desktop zijn uitgevoerd;
-- download- en supportdocumentatie is bijgewerkt.
-
-Tot dat moment is Windows het officiële distributieplatform.
-
-## 16. Fout- en rollbackbeleid
-
-Als een releaseflow faalt vóór publicatie:
-
-- publiceer niets;
-- herstel oorzaak;
-- herhaal CI/build/signing.
-
-Als een fout wordt ontdekt nadat een tag is gepubliceerd maar vóór brede distributie:
-
-- verplaats de bestaande tag niet stil;
-- maak zo nodig een nieuwe patchversie of release candidate.
-
-Als een signing credential of releasekanaal mogelijk gecompromitteerd is:
-
-- stop releases onmiddellijk;
-- trek/roteer credentials volgens GitHub/voormalige externe ondertekeningsdienst (VERVALLEN)-procedure;
-- onderzoek welke artifacts geraakt kunnen zijn;
-- hervat pas na expliciete verificatie.
-
-## 17. Checklist per release
-
-### Bron
-
-- [ ] Versie in `quietwriter/__init__.py` klopt.
-- [ ] Changelog bijgewerkt.
-- [ ] Release notes gereed indien nodig.
-- [ ] Geen secrets of gebruikersdata.
-- [ ] Dev-tests/review groen.
-- [ ] Volledige releasebron staat op publieke `main`.
-
-### Publieke CI
-
-- [ ] Windows groen.
-- [ ] Ubuntu groen.
-- [ ] Geen releaseblokkerende warnings/failures.
-
-### Release
-
-- [ ] Juiste publieke commit geselecteerd.
-- [ ] Tag `v<versie>` klopt exact.
-- [ ] Windows-build groen.
-- [ ] Smoke test groen.
-- [ ] Release hygiene groen.
-- [ ] voormalige externe ondertekeningsdienst (VERVALLEN) signing groen (na activering).
-- [ ] SHA-256 hoort bij het gepubliceerde artifact.
-- [ ] Stable/prerelease-status klopt.
-
-### Na publicatie
-
-- [ ] Download vanaf GitHub getest.
-- [ ] ZIP uitpakken/starten getest.
-- [ ] Digitale handtekening gecontroleerd (na activering).
-- [ ] `latest/download` gecontroleerd bij stable.
-- [ ] Releasepagina en notes gecontroleerd.
-
-## 18. Onderhoud van dit document
-
-Werk dit document bij zodra de daadwerkelijke voormalige externe ondertekeningsdienst (VERVALLEN) Foundation-configuratie beschikbaar is.
-
-Vervang dan de openstaande generieke voormalige externe ondertekeningsdienst (VERVALLEN)-beschrijving door de echte:
-
-- organization/project identifiers;
-- signing policy;
-- artifact configuration;
-- secretnamen;
-- workflowstappen;
-- goedkeuringsmodel;
-- eventuele handmatige voormalige externe ondertekeningsdienst (VERVALLEN)-stappen.
-
-De GitHub-workflows zijn uiteindelijk uitvoerbare waarheid; dit document legt uit **waarom** en **hoe** de flow hoort te werken.
+De tests draaien ook op Ubuntu, maar Windows is het enige officiële platform. Een Linux-build (Velopack kan een AppImage maken) komt pas na een eigen praktijktest.

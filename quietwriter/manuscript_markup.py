@@ -21,7 +21,9 @@ def escape_literal_typed_char(ch: str, line_before_cursor: str) -> str:
     """
     if len(ch) != 1:
         return ch
-    if ch in {'*', '~', '`', '<', '\\'}:
+    # ``^`` en ``]`` (1.7): getypt kunnen ze nooit per ongeluk een voetnoot
+    # openen of een bestaande voetnoot te vroeg sluiten.
+    if ch in {'*', '~', '`', '<', '\\', '^', ']'}:
         return '\\' + ch
     return ch
 
@@ -861,6 +863,94 @@ def smart_double_quote(text: str, position: int) -> str:
     if not prev or prev.isspace() or prev in '([{<—–-\n':
         return '“'
     return '”'
+
+
+# Typografie tijdens typen, per boektaal. Alleen tekens die in Markdown geen
+# betekenis hebben worden ingevoegd, dus de bron blijft geldig Markdown.
+TYPING_TYPOGRAPHY = {
+    'nl': {'dq': ('“', '”'), 'sq': ('‘', '’'), 'dash': '–'},
+    'en': {'dq': ('“', '”'), 'sq': ('‘', '’'), 'dash': '—'},
+    'de': {'dq': ('„', '“'), 'sq': ('‚', '‘'), 'dash': '–'},
+    'fr': {'dq': ('«\u00a0', '\u00a0»'), 'sq': ('‘', '’'), 'dash': '–'},
+    'es': {'dq': ('«', '»'), 'sq': ('‘', '’'), 'dash': '—'},
+}
+_OPENING_CONTEXT = '([{<—–-\u2028\u00a0„“«‘‚'
+_DUTCH_ELISIONS = 'stnkrm'   # ’s avonds, ’t, ’n, ’k, ’r, ’m
+
+
+def _typing_rules(language: str | None) -> dict:
+    code = str(language or 'nl').strip().lower().replace('_', '-').split('-', 1)[0]
+    return TYPING_TYPOGRAPHY.get(code, TYPING_TYPOGRAPHY['nl'])
+
+
+def _escaped(prefix: str, index_from_end: int) -> bool:
+    """Is het teken op positie -index_from_end door een backslash ge-escaped?"""
+    pos = len(prefix) - index_from_end
+    return pos > 0 and prefix[pos - 1] == '\\'
+
+
+def typographic_replacement(prefix: str, typed: str, language: str | None = 'nl') -> tuple[int, str] | None:
+    """Bepaal of ``typed`` na ``prefix`` (tekst vóór de cursor in deze alinea)
+    een typografisch teken moet worden.
+
+    Geeft ``(aantal tekens vóór de cursor om te vervangen, in te voegen tekst)``
+    of ``None`` als het gewone typpad verder moet gaan.
+
+    - ``"`` → openend of sluitend aanhalingsteken volgens de taal;
+    - ``'`` → apostrof (’) binnen een woord, anders openend/sluitend enkel teken;
+    - ``--`` → gedachtestreepje (nl/de/fr: –, en/es: —), niet aan het begin van
+      een regel (daar kan Markdown-structuur bedoeld zijn);
+    - ``...`` → beletselteken (…);
+    - Nederlands: ‘s/‘t/‘n/‘k… aan het begin van een woord wordt ’s enz. zodra
+      er een spatie of streepje volgt; ‘90 wordt ’90.
+    """
+    if len(typed) != 1:
+        return None
+    rules = _typing_rules(language)
+    prev = prefix[-1] if prefix else ''
+    opening = not prev or prev.isspace() or prev in _OPENING_CONTEXT
+
+    if rules is TYPING_TYPOGRAPHY['nl'] and typed in (' ', '-'):
+        # ’s-Hertogenbosch, ’s avonds, ’t is, ’n keer
+        if len(prefix) >= 2 and prefix[-2] == '‘' and prefix[-1] in _DUTCH_ELISIONS:
+            head = prefix[:-2]
+            if not head or head[-1].isspace() or head[-1] in '([{\u2028':
+                return (2, '’' + prefix[-1] + typed)
+
+    if typed == '"':
+        open_q, close_q = rules['dq']
+        if close_q.startswith('\u00a0') and prev == ' ' and prefix.count(open_q.strip()) > prefix.count(close_q.strip()):
+            return (1, close_q)     # « Bonjour » : sluiten na een spatie
+        if opening:
+            return (0, open_q)
+        if close_q.startswith('\u00a0') and prev == ' ':
+            return (1, close_q)
+        return (0, close_q)
+
+    if typed == "'":
+        open_q, close_q = rules['sq']
+        if prev and (prev.isalnum() or prev in '.,!?;:’'):
+            return (0, '’')
+        return (0, open_q if opening else close_q)
+
+    if typed == '-':
+        if prev == '-' and not _escaped(prefix, 1):
+            before = prefix[:-1]
+            if before.strip() and not before.endswith(('-', '–', '—')):
+                return (1, rules['dash'])
+        return None
+
+    if typed == '.':
+        if prefix.endswith('..') and not _escaped(prefix, 2) and not prefix.endswith('...'):
+            return (2, '…')
+        return None
+
+    open_sq = rules['sq'][0]
+    if typed.isdigit() and prev == open_sq:
+        head = prefix[:-1]
+        if not head or head[-1].isspace() or head[-1] in '([{\u2028':
+            return (1, '’' + typed)     # ’90, ’s Jaren-’80
+    return None
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,6 @@
 # QuietWriter — geschiedenis en blijvende lessen
 
-Dit document vervangt de tientallen chronologische reviewrapporten. Het changelog bevat versies; hier staan de probleemklassen die de huidige architectuur hebben gevormd.
+Dit document vervangt de tientallen chronologische reviewrapporten. Het changelog bevat versies; hier staan de probleemklassen die de huidige architectuur hebben gevormd. De originele rapporten staan in `archive/` (index: `archive/README.md`); zoek daar op versienummer als je de details nodig hebt.
 
 ## Externe sync en stale state
 Meerdere pagina's hielden ooit verschillende Book/revisionstates vast. Een externe wijziging kon daardoor pas laat worden ontdekt of stale data laten schrijven. Les: sync is een concurrency/stateprobleem, geen Dropboxprobleem. Centrale revisions en één live Book-state zijn verplicht.
@@ -95,6 +95,46 @@ Alleen ontbreken van een setting was geen betrouwbare 'nieuwe gebruiker'-trigger
 ## Release uit een rommelige ontwikkelmap
 Handmatig zippen was te foutgevoelig. Build gebruikt allowlist staging, hygiene en smoke. Publieke RC1 bevatte nog DEV/PROD launchers; daarna zijn die expliciet verboden.
 
+# Lessen uit 1.4 en de 1.5.0-ontwikkellijn
+
+## Een eigen updater bouwen was de verkeerde investering (1.5.0-dev.5 – dev.63)
+We bouwden een eigen, ondertekende updater: Ed25519-manifesten, veilige extractie, mapwissel met journaal, health-check van de nieuwe exe, rollback, versiemappen met pointerbestanden en een aparte starter. Na ongeveer dertig ontwikkelversies was het nog steeds een lab ("production NO-GO") en had het bijna de hele 1.5-lijn gekost. In 1.5.1 is het vervangen door Velopack. Les: infrastructuur die niet over schrijven gaat (installeren, bijwerken, signeren) nemen we van een onderhouden standaardtool. Zelf bouwen doen we alleen als niets bestaands past bij "eenvoudig, niet technisch, portable". De eisen uit dat werk blijven wel gelden:
+- gebruikersdata staat nooit in de programmamap (`workspace_path.py`, sinds dev.30);
+- bijwerken gebeurt pas na een keuze van de gebruiker en loopt via het normale afsluitpad, zodat alles eerst wordt opgeslagen;
+- alleen officiële HTTPS-releases, geen stille downgrade;
+- een lokaal inventarisbestand bewijst nooit de herkomst van software.
+Details: `archive/dev-overdrachten/` (UPDATE_*, UPDATER_*, DEV30 – DEV32, CLAUDE_REVIEW_UPDATER_DEV29) en de 1.5.0-dev-regels in de oude changelog.
+
+## Een ontbrekend hoofdstuk is niet leeg (dev.33 – dev.34)
+Dropbox/OneDrive kunnen `book.json` eerder leveren dan de hoofdstukbestanden. Een ontbrekend bestand werd als lege tekst getoond en kon zo worden opgeslagen. Nu geeft het `ChapterNotAvailableError`: de editor gaat op alleen-lezen, autosave stopt en woordtelling, AI-context, dupliceren en conflictversies weigeren of tonen een neutrale plaatshouder.
+
+## Synchronisatiestatus kun je niet betrouwbaar weten (dev.35 – dev.36)
+Er is geen algemene "Dropbox is klaar"-API. QuietWriter claimt daarom nooit dat synchronisatie klaar is. De boekenkast ververst alleen zolang hij zichtbaar is (F5, elke 8 s een metadatacheck). Conflictkopieën worden alleen gesignaleerd, nooit opgeruimd. De praktijktest met twee echte computers staat nog open.
+
+## "Alles vervangen" over meerdere bestanden is geen transactie (dev.37 – dev.40)
+Eerst wordt de hele set gecontroleerd. Daarna worden de originelen met een journaal (`pending`/`committed`/`recovered`) en SHA-256 bewaard, en volgt per bestand een atomische vervanging. Herstel zet alleen terug wat nog exact onze eigen geschreven bytes bevat; een intussen extern gewijzigd bestand wordt niet overschreven. Herstelmappen worden nooit automatisch verwijderd en zijn alleen-lezen te bekijken en vergelijken op Integriteit & herstel. Claim nooit volledige ACID-atomiciteit.
+
+## Back-ups: eerst controleren, dan publiceren (1.4.0-dev.3 – dev.37)
+Op Windows heeft fsync een schrijfbare handle nodig; met een alleen-lezen handle blokkeerde het (dev.4 → dev.5). Een back-up krijgt pas zijn definitieve naam na verificatie. Retentie draait pas na een geslaagde back-up. Handmatige back-ups en veiligheidskopieën worden nooit automatisch opgeruimd. Verborgen `.partial`-mappen horen nooit in een back-up, en één onvolledige versie mag de andere versies niet verbergen.
+
+## Wat een AI-model zegt, is niet wat QuietWriter deed (dev.51 – dev.53, dev.58)
+Modellen beweren soms dat ze iets "hebben opgeslagen". Alleen QuietWriter bevestigt opslag, na herlezen van de schijf. De knop **Onthouden** is de betrouwbare route. AI-tekst wordt als platte tekst of veilige Markdown getoond, zonder ruwe HTML. Links openen alleen na bevestiging en alleen via HTTPS.
+
+## Bronmateriaal is data, geen instructie (dev.59 – dev.60)
+Manuscript, profielen, Boekgeheugen en Planning gaan als apart, afgebakend gebruikersmateriaal naar het model, niet in de systeemprompt. Interne geheugenmarkeringen in geciteerde tekst worden geneutraliseerd.
+
+## Geen stille terugval bij inloggegevens (dev.46 – dev.48, dev.61)
+OpenRouter heeft twee verbindingsmethoden: browserlogin of API-sleutel. De gekozen methode wordt gebruikt, zonder stille terugval op de andere. Het API-endpoint ligt vast op `https://openrouter.ai/api/v1`, zodat een gemanipuleerde instelling het token niet naar een ander adres kan sturen. Bij verplichte reasoning schakelt QuietWriter niet zelf om en probeert het niet automatisch opnieuw (dev.55).
+
+## Eerst gedrag afspreken, dan bouwen (dev.41 – dev.42)
+De focusmodus werd gebouwd en één versie later op verzoek weer verwijderd. Bespreek bij UI-functies eerst het gewenste gedrag met de gebruiker.
+
+## Versie-administratie liep uit de pas
+Zipnamen (bijvoorbeeld "dev.41") en `__version__` (nog "dev.28") liepen weken uiteen, en de zip "1.6" bevatte 1.5.0-dev.63. Regel: `quietwriter/__init__.py` is de enige bron, elke bouwronde zet hem goed, en de zipnaam volgt hem.
+
+## "Volledige suite niet gedraaid" mag geen gewoonte worden
+Veel overdrachten meldden dat de volledige Qt-suite niet kon draaien, omdat PySide6 in de bouwomgeving ontbrak. Vanaf 1.5.1 draait de bouwer de volledige suite offscreen vóór de overdracht. Windows-specifieke gevallen (symlinks met WinError 1314, codepage, SQLite-handles, credentials op de host) blijven Lucas' Windows-test.
+
 ## Overkoepelende regels
 - data boven gemak;
 - één waarheid per concept;
@@ -102,4 +142,5 @@ Handmatig zippen was te foutgevoelig. Build gebruikt allowlist staging, hygiene 
 - privacy zichtbaar maken;
 - test de laag waar de bug leeft;
 - rust is een productfeature;
-- een bestaande feature mag worden verwijderd als ze de productidentiteit verzwakt.
+- een bestaande feature mag worden verwijderd als ze de productidentiteit verzwakt;
+- bouw geen infrastructuur die een onderhouden standaardtool al levert.

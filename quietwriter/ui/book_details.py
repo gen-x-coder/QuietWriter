@@ -15,6 +15,10 @@ from ..field_merge import merge_scalar_fields
 from ..revisions import ExternalModificationError
 from .dialogs import confirm
 from .form_controls import QuietComboBox, QuietDateEdit, QuietSpinBox
+from .generated_cover import cover_seed, cover_spec, generated_cover_pixmap
+from .page_layout import FORM_MAX_WIDTH, SHORT_FIELD_WIDTH, field_label, section_heading, set_page_margins
+from .progress_strip import ProgressStrip, strip_summary
+from ..writing_progress import WritingProgressStore
 
 class BookDetailsPage(QWidget):
     saved = Signal(object)
@@ -31,13 +35,18 @@ class BookDetailsPage(QWidget):
         self.pending_cover = None
         self._baseline_title = book.title
         self._baseline_metadata = copy.deepcopy(book.metadata or {})
-        root = QVBoxLayout(self); root.setContentsMargins(42, 34, 42, 34); root.setSpacing(12)
+        root = QVBoxLayout(self); set_page_margins(root); root.setSpacing(12)
         title = QLabel(tr('book_details.title', 'Boekdetails')); title.setObjectName('title')
         intro = QLabel(tr('book_details.intro', 'Deze gegevens horen bij het boek en worden gebruikt bij publicatie en export.'))
         intro.setObjectName('muted'); intro.setWordWrap(True)
         root.addWidget(title); root.addWidget(intro); root.addSpacing(8)
 
         form = QFormLayout()
+        # 1.7 (dev15): zelfde vorm als Instellingen; vetgedrukte namen links,
+        # korte velden niet schermbreed, gegroepeerd in Boek en Publicatie.
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
+        form.setHorizontalSpacing(24); form.setVerticalSpacing(10)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         self.title_edit = QLineEdit(book.title)
         self.slug_edit = QLineEdit(book.slug)
         slug_box = QWidget(); sh = QHBoxLayout(slug_box); sh.setContentsMargins(0,0,0,0)
@@ -59,22 +68,26 @@ class BookDetailsPage(QWidget):
         published_canonical = 'Yes' if published_value in {'yes', 'ja', 'true', '1'} else 'No'
         self.published.setCurrentIndex(max(0, self.published.findData(published_canonical)))
         self.synopsis = QTextEdit(md.get('synopsis','')); self.synopsis.setMaximumHeight(82)
-        form.addRow(tr('book_details.field.title', 'Titel'), self.title_edit)
-        form.addRow(tr('book_details.field.date', 'Datum'), self.date_edit)
-        form.addRow(tr('book_details.field.slug', 'Slug'), slug_box)
-        form.addRow(tr('book_details.field.description', 'Korte beschrijving'), self.description)
-        form.addRow(tr('book_details.field.intro', 'Intro boven het verhaal'), self.intro_text)
-        form.addRow(tr('book_details.field.meta', 'Meta / SEO-beschrijving'), self.meta)
-        form.addRow(tr('book_details.field.image_alt', 'Beschrijving afbeelding'), self.image_alt)
-        form.addRow(tr('book_details.field.author', 'Auteur'), self.author)
-        form.addRow(tr('book_details.field.language', 'Boektaal'), self.language)
-        form.addRow(tr('book_details.field.tags', 'Tags'), self.tags)
-        form.addRow(tr('book_details.field.published', 'Gepubliceerd'), self.published)
-        form.addRow(tr('book_details.field.synopsis', 'Synopsis'), self.synopsis)
+        for short in (self.language, self.published, self.date_edit):
+            short.setMaximumWidth(SHORT_FIELD_WIDTH)
+        form.addRow(section_heading(tr('book_details.section.book', 'Boek'), first=True))
+        form.addRow(field_label(tr('book_details.field.title', 'Titel')), self.title_edit)
+        form.addRow(field_label(tr('book_details.field.author', 'Auteur')), self.author)
+        form.addRow(field_label(tr('book_details.field.language', 'Boektaal')), self.language)
+        form.addRow(field_label(tr('book_details.field.tags', 'Tags')), self.tags)
+        form.addRow(field_label(tr('book_details.field.description', 'Korte beschrijving')), self.description)
+        form.addRow(field_label(tr('book_details.field.synopsis', 'Synopsis')), self.synopsis)
+        form.addRow(section_heading(tr('book_details.section.publication', 'Publicatie')))
+        form.addRow(field_label(tr('book_details.field.date', 'Datum')), self.date_edit)
+        form.addRow(field_label(tr('book_details.field.slug', 'Slug')), slug_box)
+        form.addRow(field_label(tr('book_details.field.intro', 'Intro boven het verhaal')), self.intro_text)
+        form.addRow(field_label(tr('book_details.field.meta', 'Meta / SEO-beschrijving')), self.meta)
+        form.addRow(field_label(tr('book_details.field.image_alt', 'Beschrijving afbeelding')), self.image_alt)
+        form.addRow(field_label(tr('book_details.field.published', 'Gepubliceerd')), self.published)
 
         # Schrijfdoel en Boekomslag gebruiken hetzelfde formulierpatroon als de rest
         # van Boekdetails: rustige sectiekop + uitleg, daarna labels links en bediening rechts.
-        self.word_goal = QuietSpinBox(); self.word_goal.setRange(0, 10_000_000); self.word_goal.setSingleStep(1000); self.word_goal.setSpecialValueText(tr('writing_goal.none', 'Geen doel'))
+        self.word_goal = QuietSpinBox(); self.word_goal.setRange(0, 10_000_000); self.word_goal.setSingleStep(1000); self.word_goal.setSpecialValueText(tr('writing_goal.none', 'Geen doel')); self.word_goal.setMaximumWidth(210)
         self.word_goal.setValue(max(0, int(md.get('writing_goal_words', 0) or 0)))
         self.goal_date = QuietDateEdit(); self.goal_date.setObjectName('quietDateEdit'); self.goal_date.setCalendarPopup(True); self.goal_date.setDisplayFormat('dd-MM-yyyy')
         self.goal_date.setDate(QDate.currentDate()); self.goal_date.setMinimumWidth(150); self.goal_date.setMaximumWidth(180)
@@ -94,17 +107,26 @@ class BookDetailsPage(QWidget):
             tr('writing_goal.intro', 'Stel een woorddoel in en kies eventueel een gewenste einddatum.'),
         )
         form.addRow(goal_heading)
-        form.addRow(tr('writing_goal.words', 'Woorddoel'), self.word_goal)
-        form.addRow(tr('writing_goal.date', 'Gewenst klaar op'), date_control)
-        form.addRow(tr('writing_goal.progress', 'Voortgang'), self.goal_summary)
+        form.addRow(field_label(tr('writing_goal.words', 'Woorddoel')), self.word_goal)
+        form.addRow(field_label(tr('writing_goal.date', 'Gewenst klaar op')), date_control)
+        form.addRow(field_label(tr('writing_goal.progress', 'Voortgang')), self.goal_summary)
+        # Laatste 30 dagen (1.7): staafjes uit de opt-in dagtelling.
+        self.progress_box = QWidget()
+        progress_lay = QVBoxLayout(self.progress_box); progress_lay.setContentsMargins(0, 4, 0, 0); progress_lay.setSpacing(6)
+        self.progress_strip = ProgressStrip(settings)
+        self.progress_summary = QLabel(''); self.progress_summary.setObjectName('muted'); self.progress_summary.setWordWrap(True)
+        progress_lay.addWidget(self.progress_strip); progress_lay.addWidget(self.progress_summary)
+        form.addRow(field_label(tr('writing_progress.strip_label', 'Laatste 30 dagen')), self.progress_box)
+        self._details_form = form
         self.word_goal.valueChanged.connect(self._update_goal_state)
         self.goal_date.dateChanged.connect(self._update_goal_state)
         self.goal_date_mode.currentIndexChanged.connect(self._update_goal_state)
         self._update_goal_state()
+        self._refresh_progress_strip()
 
         cover_heading = self._details_section_heading(
             tr('book_details.cover.title', 'Boekomslag'),
-            tr('book_details.cover.requirements', 'Verhouding 1:1,6 · lange zijde minimaal 1024 px.'),
+            tr('book_details.cover.requirements_170', 'Verhouding 1:1,6, lange zijde minimaal 1024 px.'),
         )
         form.addRow(cover_heading)
         cover_control = QWidget(); cb = QHBoxLayout(cover_control); cb.setContentsMargins(0,0,0,0); cb.setSpacing(14)
@@ -117,11 +139,11 @@ class BookDetailsPage(QWidget):
         cover_buttons = QHBoxLayout(); cover_buttons.setContentsMargins(0,0,0,0); cover_buttons.addWidget(choose); cover_buttons.addWidget(self.remove_cover_button); cover_buttons.addStretch()
         cover_right.addWidget(self.cover_name); cover_right.addLayout(cover_buttons); cover_right.addWidget(self.header_path); cover_right.addStretch()
         cb.addWidget(self.cover_preview); cb.addLayout(cover_right,1)
-        form.addRow(tr('book_details.cover.field', 'Omslag'), cover_control)
+        form.addRow(field_label(tr('book_details.cover.field', 'Omslag')), cover_control)
 
         # Metadata groeit mee met toekomstige frontmattervelden; houd de acties
         # onderaan altijd bereikbaar door het inhoudsdeel scrollbaar te maken.
-        details_widget = QWidget()
+        details_widget = QWidget(); details_widget.setMaximumWidth(FORM_MAX_WIDTH)
         details_layout = QVBoxLayout(details_widget); details_layout.setContentsMargins(0,0,0,0)
         details_layout.addLayout(form); details_layout.addStretch()
         details_scroll = QScrollArea(); details_scroll.setWidgetResizable(True); details_scroll.setFrameShape(QFrame.NoFrame)
@@ -139,11 +161,7 @@ class BookDetailsPage(QWidget):
 
     @staticmethod
     def _details_section_heading(title: str, help_text: str) -> QWidget:
-        box = QWidget(); box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        layout = QVBoxLayout(box); layout.setContentsMargins(0, 18, 0, 6); layout.setSpacing(4)
-        label = QLabel(title); label.setObjectName('settingsFieldLabel'); layout.addWidget(label)
-        detail = QLabel(help_text); detail.setObjectName('muted'); detail.setWordWrap(True); layout.addWidget(detail)
-        return box
+        return section_heading(title, help_text)
 
     def _goal_date_iso(self) -> str:
         if self.word_goal.value() <= 0 or not bool(self.goal_date_mode.currentData()):
@@ -167,6 +185,42 @@ class BookDetailsPage(QWidget):
                 except Exception:
                     pass
         return total
+
+    def _refresh_progress_strip(self):
+        """Lees de lokale dagtelling opnieuw.
+
+        De regel staat er altijd, zodat je weet dat hij bestaat (dev14, na
+        Windows-test Lucas): uit = korte verwijzing naar Instellingen, aan maar
+        nog leeg = alleen grijze streepjes en een rustige zin.
+        """
+        enabled = bool(self.settings.value('writing_progress_enabled', False, bool))
+        days = []
+        if enabled and getattr(self.book, 'id', ''):
+            try:
+                days = WritingProgressStore(self.library.root).recent_days(self.book.id, 30)
+            except Exception:
+                days = []
+        if not enabled:
+            self.progress_strip.set_days([])
+            self.progress_strip.hide()
+            self.progress_summary.setText(tr(
+                'writing_progress.strip_off',
+                'Bijhouden staat uit. Zet het aan bij Instellingen → Algemeen → Vandaag geschreven bijhouden; daarna telt QuietWriter wat je in de editor schrijft.'))
+        elif not any(count > 0 for _day, count in days):
+            self.progress_strip.set_days(days)
+            self.progress_strip.show()
+            self.progress_summary.setText(tr(
+                'writing_progress.strip_empty',
+                'Nog geen woorden geteld in de laatste 30 dagen. Wat je in de editor schrijft en opslaat, verschijnt hier.'))
+        else:
+            self.progress_strip.set_days(days)
+            self.progress_strip.show()
+            self.progress_summary.setText(strip_summary(days))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # De editor telt door terwijl deze pagina bestaat; bij terugkomen bijwerken.
+        self._refresh_progress_strip()
 
     def _update_goal_state(self, *_):
         enabled = self.word_goal.value() > 0
@@ -357,13 +411,28 @@ class BookDetailsPage(QWidget):
         path = self._cover_candidate()
         has_own_cover = bool(path and Path(path).exists())
         self.remove_cover_button.setEnabled(has_own_cover)
-        self.cover_name.setText(str(path) if has_own_cover else tr('book_details.cover.none_found', 'Geen eigen omslag gekozen.'))
+        self.cover_name.setText(str(path) if has_own_cover else tr(
+            'book_details.cover.generated',
+            'Geen eigen omslag. De Boekenkast toont een patroon dat bij dit boek hoort; dat gaat niet mee bij exporteren.'))
+        # Binnenmaat van het voorbeeldvak (rand en opvulling eraf), anders valt
+        # de onderkant van de omslag weg.
+        self.cover_preview.ensurePolished()
+        inner = self.cover_preview.contentsRect().size()
+        if inner.width() < 10 or inner.height() < 10:
+            inner = self.cover_preview.size()
         if has_own_cover:
             pix = QPixmap(str(path))
-            self.cover_preview.setPixmap(pix.scaled(self.cover_preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.cover_preview.setPixmap(pix.scaled(inner, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             self.cover_preview.setText('')
         else:
-            self.cover_preview.clear(); self.cover_preview.setText(tr('book_details.cover.none_short', 'Geen\nomslag'))
+            # Zelfde patroon als in de Boekenkast (alleen weergave, wordt nergens opgeslagen).
+            height = min(inner.height(), round(inner.width() * 1.6))
+            width = min(inner.width(), round(height / 1.6))
+            self.cover_preview.setText('')
+            self.cover_preview.setPixmap(generated_cover_pixmap(
+                cover_spec(cover_seed(self.book)), width, height,
+                title=str(self.book.title or ''), device_pixel_ratio=self.cover_preview.devicePixelRatioF(),
+            ))
 
     def _current_cover_for_metadata(self):
         """Return the cover represented by the current UI state.
@@ -518,7 +587,7 @@ class BookDetailsPage(QWidget):
     def delete_book(self):
         if not confirm(
             self, tr('book_details.trash_title', 'Boek naar prullenbak'),
-            tr('book_details.trash_confirm', 'Wil je “{title}” naar de prullenbak verplaatsen?\n\nJe kunt het boek later herstellen of definitief verwijderen vanaf de prullenbakpagina.', title=self.book.title)
+            tr('book_details.trash_confirm', 'Wil je “{title}” naar de prullenbak verplaatsen?\n\nJe kunt het boek later terugzetten of definitief verwijderen vanaf de prullenbakpagina.', title=self.book.title)
         ):
             return
         if self.before_delete is not None and self.before_delete(self.book) is False:

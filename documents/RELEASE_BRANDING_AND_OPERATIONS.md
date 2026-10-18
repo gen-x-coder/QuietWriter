@@ -50,16 +50,16 @@ DEV en PROD kunnen gescheiden QSettings/workspaces/logs/AppUserModelID gebruiken
 Appversie staat in `quietwriter/__init__.py`. Windows numeric file version gebruikt alleen SemVer core; string metadata bevat de volledige RC-versie.
 
 ## RC versus stable
-RC's worden als prerelease gemarkeerd. De publieke productieversie staat op `main`; de permanente downloadlink `releases/latest/download/QuietWriter-windows-portable.zip` verwijst naar de meest recente stabiele GitHub-release. Controleer vóór publicatie dat tag, broncommit, ZIP en release notes bij dezelfde versie horen.
+RC's zijn prereleases. Een permanente `releases/latest/download/QuietWriter-windows-portable.zip` werkt pas betrouwbaar vanaf een gewone stable release.
 
 ## SHA-256
 Iedere publieke ZIP hoort een checksumasset te hebben.
 
 ## SmartScreen en signing
-Zonder code signing kan SmartScreen waarschuwen. Dat is een bekende distributiefrictie. Code signing is een mogelijke post-1.0 keuze als kosten, beheer en CI-secretmodel acceptabel zijn.
+Zonder code signing kan SmartScreen waarschuwen. Dat is een bekende distributiefrictie. Code signing is een mogelijke latere keuze als kosten, beheer en CI-secretmodel acceptabel zijn; Velopack kan dan meesigneren.
 
-## Installer/updater
-Niet nodig voor eerste stable. Pas toevoegen met expliciet ontwerp voor install/upgrade/uninstall, signing, rollback en user consent.
+## Updater
+Vanaf 1.5.1 werkt de portable build zichzelf bij via Velopack (`vpk pack` in `build_exe.cmd`, `quietwriter/self_update.py` in de app). Geen installer, geen beheerdersrechten. Bouwen en publiceren: `RELEASE_PROCESS.md`. Waarom geen eigen updater meer: `HISTORY_AND_LESSONS.md`.
 
 ## Stable 1.0 checklist
 - tests/Qt groen op Windows + Ubuntu;

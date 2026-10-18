@@ -6,7 +6,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from .markup import inline_to_xhtml
+from .markup import NoteCollector, inline_to_xhtml
 from ..document_view import content_inline_runs, iter_content_blocks
 from .models import ExportDocument, ExportItem
 
@@ -158,6 +158,9 @@ li { margin-bottom: 3px; }
 .contents-section { font-weight: bold; margin-top: 10px; }
 .page-section { }
 .page-break { page-break-before: always; }
+sup.noteref { font-size: 7pt; }
+hr.footnotes-rule { width: 30%; margin: 18px 0 6px 0; }
+p.footnote { font-size: 8.5pt; line-height: 125%; text-indent: 0; text-align: left; margin: 0 0 3px 0; }
 table.image-box { border-collapse: collapse; }
 table.image-box td { padding: 0; }
 '''
@@ -207,12 +210,13 @@ def _markdown_to_pdf_html(markdown: str, image_urls: dict[str, str], body_width_
     list_kind: str | None = None
     list_items: list[tuple[str, tuple]] = []
     after_break_or_heading = True
+    notes = NoteCollector(links=False)   # voetnoten: nummer in de tekst, noten onder het hoofdstuk
 
     def flush_list():
         nonlocal list_kind, list_items
         if list_kind and list_items:
             tag = 'ol' if list_kind == 'ol' else 'ul'
-            blocks.append(f'<{tag}>' + ''.join(f'<li>{inline_to_xhtml(item, runs)}</li>' for item, runs in list_items) + f'</{tag}>')
+            blocks.append(f'<{tag}>' + ''.join(f'<li>{inline_to_xhtml(item, runs, notes)}</li>' for item, runs in list_items) + f'</{tag}>')
         list_kind = None
         list_items = []
 
@@ -241,12 +245,12 @@ def _markdown_to_pdf_html(markdown: str, image_urls: dict[str, str], body_width_
         runs = content_inline_runs(block)
         if block.kind == 'heading':
             flush_list()
-            blocks.append(f'<h2>{inline_to_xhtml(content, runs)}</h2>')
+            blocks.append(f'<h2>{inline_to_xhtml(content, runs, notes)}</h2>')
             after_break_or_heading = True
             continue
         if block.kind == 'quote':
             flush_list()
-            blocks.append(f'<blockquote><p>{inline_to_xhtml(content, runs)}</p></blockquote>')
+            blocks.append(f'<blockquote><p>{inline_to_xhtml(content, runs, notes)}</p></blockquote>')
             after_break_or_heading = True
             continue
         if block.kind in {'bullet', 'numbered'}:
@@ -260,10 +264,11 @@ def _markdown_to_pdf_html(markdown: str, image_urls: dict[str, str], body_width_
 
         flush_list()
         klass = '' if after_break_or_heading else ' class="indent"'
-        blocks.append(f'<p{klass}>{inline_to_xhtml(content, runs)}</p>')
+        blocks.append(f'<p{klass}>{inline_to_xhtml(content, runs, notes)}</p>')
         after_break_or_heading = False
 
     flush_list()
+    blocks.append(notes.section())
     return ''.join(blocks)
 
 

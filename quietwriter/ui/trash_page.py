@@ -4,12 +4,13 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
-    QVBoxLayout, QWidget,
+    QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from .dialog_notices import notice_information, notice_warning
 from .dialogs import confirm
 from ..i18n import tr
+from .page_layout import set_page_margins
 
 
 class TrashPage(QWidget):
@@ -17,11 +18,11 @@ class TrashPage(QWidget):
         super().__init__()
         self.main = main
         root = QVBoxLayout(self)
-        root.setContentsMargins(42, 34, 42, 34)
+        set_page_margins(root)
         top = QHBoxLayout()
         title = QLabel(tr('trash.title', 'Prullenbak'))
         title.setObjectName('title')
-        self.restore_btn = QPushButton(tr('trash.restore', 'Herstellen'))
+        self.restore_btn = QPushButton(tr('trash.restore', 'Terugzetten'))
         self.restore_btn.setObjectName('primaryButton')
         self.restore_btn.clicked.connect(self.restore_selected)
         self.delete_btn = QPushButton(tr('trash.delete_selected', 'Selectie definitief verwijderen'))
@@ -40,19 +41,23 @@ class TrashPage(QWidget):
             'trash.info',
             'Selecteer één of meer boeken, hoofdstukken of fragmenten. Definitief verwijderen kan niet ongedaan worden gemaakt.',
         ))
-        info.setObjectName('muted')
+        info.setObjectName('muted'); info.setWordWrap(True)
         self.list = QListWidget()
         self.list.setSelectionMode(QListWidget.ExtendedSelection)
         self.list.itemSelectionChanged.connect(self._update_actions)
         self.list.itemActivated.connect(lambda _item: self.restore_selected())
         self.empty = QLabel(tr('trash.empty', 'De prullenbak is leeg.'))
         self.empty.setObjectName('muted')
-        self.empty.setAlignment(Qt.AlignCenter)
+        self.empty.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        # Lege prullenbak: melding bovenaan, de uitleg blijft onder de titel staan (dev15).
+        self._empty_spacer = QWidget()
+        self._empty_spacer.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         root.addLayout(top)
         root.addWidget(info)
         root.addSpacing(10)
         root.addWidget(self.empty)
         root.addWidget(self.list, 1)
+        root.addWidget(self._empty_spacer, 1)
         self.refresh()
 
     def refresh(self):
@@ -110,6 +115,7 @@ class TrashPage(QWidget):
 
         self.empty.setVisible(not rows)
         self.list.setVisible(bool(rows))
+        self._empty_spacer.setVisible(not rows)
         self.empty_btn.setEnabled(bool(rows))
         self._update_actions()
 
@@ -166,8 +172,8 @@ class TrashPage(QWidget):
         if errors:
             notice_warning(
                 self,
-                tr('trash.restore_error_title', 'Herstellen'),
-                tr('trash.partial_restore_error', 'Niet alles kon worden hersteld:\n{errors}', errors='\n'.join(errors)),
+                tr('trash.restore_error_title', 'Terugzetten'),
+                tr('trash.partial_restore_error', 'Niet alles kon worden teruggezet:\n{errors}', errors='\n'.join(errors)),
             )
 
     def delete_selected(self):

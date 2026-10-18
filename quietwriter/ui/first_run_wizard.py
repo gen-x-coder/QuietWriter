@@ -8,12 +8,12 @@ from PySide6.QtWidgets import (
     QLineEdit, QMessageBox, QPushButton, QRadioButton, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from ..dictionary_catalog import DictionaryCatalog
+from ..dictionary_catalog import DictionaryCatalog, ordered_sources, preferred_locale, source_label
 from .dialog_notices import _notice as _translated_notice
 from ..i18n import set_locale, tr
 from ..icon_theme import set_icon_theme
 from ..themes import THEMES, stylesheet
-from ..workspace_path import normalize_workspace_path, require_external_user_directory, UnsafeWorkspacePath
+from ..workspace_path import normalize_workspace_path, require_external_user_directory, require_writable_directory, UnsafeWorkspacePath, WorkspaceNotWritable
 
 
 class FirstRunWizard(QDialog):
@@ -62,13 +62,16 @@ class FirstRunWizard(QDialog):
 
         self.spell_enabled = self._button(QCheckBox(), 'first_run.spelling_enable', 'Spellingscontrole inschakelen')
         self.spell_enabled.setChecked(settings.value('spell_enabled', True, bool))
+        # 1.7: eerst het woordenboek (gevonden of gedownload), dan de taal daarin.
+        self.spell_source = QComboBox()
         self.spell_language = QComboBox()
-        self._populate_dictionaries()
-        spell_locale = str(settings.value('spell_language', 'nl_NL') or 'nl_NL')
-        spell_index = self.spell_language.findData(spell_locale)
-        if spell_index >= 0:
-            self.spell_language.setCurrentIndex(spell_index)
-        self.pages.addWidget(self._page_spelling())
+        self._dictionary_entries = []
+        self.spell_source.currentIndexChanged.connect(self._spell_source_changed)
+        self.spelling_page = self._page_spelling()
+        self._populate_dictionaries(str(settings.value('spell_language', '') or ''),
+                                    str(settings.value('spell_dictionary_source', '') or ''))
+        self.pages.addWidget(self.spelling_page)
+        self.pages.currentChanged.connect(self._page_changed)
 
         self.ai_none = self._button(QRadioButton(), 'first_run.ai_none', 'Geen AI gebruiken')
         self.ai_ollama = self._button(QRadioButton(), 'first_run.ai_ollama', 'Lokale AI via Ollama')
@@ -132,6 +135,10 @@ class FirstRunWizard(QDialog):
     def _language_changed(self, *_args) -> None:
         set_locale(str(self.language.currentData() or 'nl'))
         self._retranslate_ui()
+        # Taal- en landnamen van woordenboeken volgen de taal van de app.
+        if hasattr(self, 'spell_source'):
+            self._populate_dictionaries(str(self.spell_language.currentData() or ''),
+                                        str(self.spell_source.currentData() or ''))
 
     def _theme_changed(self, theme: str) -> None:
         theme = str(theme or 'Helder')
@@ -228,12 +235,45 @@ class FirstRunWizard(QDialog):
     def _page_spelling(self) -> QWidget:
         page, lay = self._shell(
             'first_run.spelling_title', 'Spelling',
-            'first_run.spelling_text', 'QuietWriter gebruikt Hunspell-woordenboeken. De portable build bevat standaard Nederlands; gevonden systeemwoordenboeken worden ook getoond.',
+            'first_run.spelling_text_171', 'QuietWriter controleert je spelling met een woordenboek. Kies er een dat al op deze computer staat, bijvoorbeeld van ONLYOFFICE of LibreOffice, of download er een.',
         )
         lay.addWidget(self.spell_enabled)
-        lay.addWidget(self._row('settings.spelling.language', 'Taal', self.spell_language))
+        self.spell_found = QWidget()
+        found = QVBoxLayout(self.spell_found); found.setContentsMargins(0, 0, 0, 0); found.setSpacing(0)
+        found.addWidget(self._row('settings.spelling.dictionary_choice', 'Woordenboek', self.spell_source))
+        found.addWidget(self._row('settings.spelling.language', 'Taal', self.spell_language))
+        lay.addWidget(self.spell_found)
+        self.spell_none = self._label('first_run.spelling_none', 'Er staat nog geen woordenboek op deze computer. Download er hieronder een, of doe dat later bij Instellingen → Spelling.')
+        self.spell_none.setWordWrap(True)
+        self.spell_none.setObjectName('muted')
+        lay.addWidget(self.spell_none)
+        download_row = QHBoxLayout()
+        self.spell_download_label = download_label = self._label('first_run.spelling_or_download', 'Of download een woordenboek:')
+        self.download_dictionary = self._button(QPushButton(), 'first_run.download_dictionary', 'Woordenboek downloaden…')
+        self.download_dictionary.setObjectName('secondaryButton')
+        self.download_dictionary.clicked.connect(self._download_dictionary)
+        download_row.addWidget(download_label); download_row.addWidget(self.download_dictionary); download_row.addStretch(1)
+        lay.addLayout(download_row)
         lay.addStretch(1)
         return page
+
+    def _workspace_path(self) -> Path:
+        return Path(self.workspace.text().strip() or str(self.default_workspace))
+
+    def _page_changed(self, *_args) -> None:
+        # De werkmap kan net gekozen zijn: daar kunnen al gedownloade woordenboeken staan.
+        if self.pages.currentWidget() is self.spelling_page:
+            self._populate_dictionaries(str(self.spell_language.currentData() or ''),
+                                        str(self.spell_source.currentData() or ''))
+
+    def _download_dictionary(self) -> None:
+        from .dictionary_download_dialog import DictionaryDownloadDialog
+        dialog = DictionaryDownloadDialog(self._workspace_path() / 'dictionaries', self,
+                                          preselect=preferred_locale(self.language.currentData()))
+        dialog.exec()
+        if dialog.installed_locale:
+            self._populate_dictionaries(dialog.installed_locale, 'Werkmap')
+            self.spell_enabled.setChecked(True)
 
     def _page_ai(self) -> QWidget:
         page, lay = self._shell(
@@ -242,6 +282,11 @@ class FirstRunWizard(QDialog):
         )
         lay.addWidget(self.ai_none)
         lay.addWidget(self.ai_ollama)
+        ollama_hint = self._label('first_run.ai_ollama_hint',
+                                  'Heb je Ollama nog niet? Na deze stappen helpt Instellingen → AI Meelezer je met installeren en een passend model.')
+        ollama_hint.setWordWrap(True); ollama_hint.setObjectName('settingsFieldHelp')
+        ollama_hint.setContentsMargins(26, 0, 0, 6)
+        lay.addWidget(ollama_hint)
         lay.addWidget(self.ai_openrouter)
         lay.addStretch(1)
         return page
@@ -315,22 +360,50 @@ class FirstRunWizard(QDialog):
         lay.addStretch(1)
         return page
 
-    def _populate_dictionaries(self) -> None:
+    def _populate_dictionaries(self, locale: str = '', source: str = '') -> None:
         """Offer only real spelling dictionaries, using the same catalog as Settings."""
-        workspace = Path(self.workspace.text().strip() or str(self.default_workspace))
-        catalog = DictionaryCatalog(workspace / 'dictionaries', create=False)
+        catalog = DictionaryCatalog(self._workspace_path() / 'dictionaries', create=False)
+        # Alleen echte spellingwoordenboeken: een .dic zonder .aff telt niet mee.
+        self._dictionary_entries = [entry for entry in catalog.entries() if not (entry.aff is None)]
+        sources = ordered_sources(self._dictionary_entries)
+        self.spell_source.blockSignals(True)
+        self.spell_source.clear()
+        for name in sources:
+            self.spell_source.addItem(source_label(name), name)
+        wanted = locale or preferred_locale(self.language.currentData())
+        if source not in sources:
+            source = next((s for s in sources if any(e.source == s and e.locale == wanted for e in self._dictionary_entries)),
+                          sources[0] if sources else '')
+        self.spell_source.setCurrentIndex(max(0, self.spell_source.findData(source)))
+        self.spell_source.blockSignals(False)
+        self._fill_spell_languages(wanted)
+        found = bool(sources)
+        self.spell_found.setVisible(found)
+        self.spell_none.setVisible(not found)
+        self.spell_download_label.setVisible(found)
+        if not found:
+            self.spell_enabled.setChecked(False)
+        elif not self.spell_enabled.isEnabled():
+            self.spell_enabled.setChecked(True)   # net een woordenboek gekregen
+        self.spell_enabled.setEnabled(found)
+
+    def _spell_source_changed(self, *_args) -> None:
+        self._fill_spell_languages(str(self.spell_language.currentData() or ''))
+
+    def _fill_spell_languages(self, wanted: str) -> None:
+        source = self.spell_source.currentData()
+        self.spell_language.clear()
         seen = set()
-        for entry in catalog.entries():
-            if entry.locale in seen or entry.aff is None:
+        for entry in self._dictionary_entries:
+            if entry.source != source or entry.locale in seen:
                 continue
             seen.add(entry.locale)
             self.spell_language.addItem(entry.label, entry.locale)
-        idx = self.spell_language.findData('nl_NL')
-        if idx >= 0:
-            self.spell_language.setCurrentIndex(idx)
-        if not seen:
-            self.spell_enabled.setChecked(False)
-            self.spell_enabled.setEnabled(False)
+        for value in (wanted, preferred_locale(self.language.currentData())):
+            idx = self.spell_language.findData(value)
+            if idx >= 0:
+                self.spell_language.setCurrentIndex(idx)
+                break
 
     def _choose_workspace(self) -> None:
         chosen = QFileDialog.getExistingDirectory(
@@ -377,6 +450,10 @@ class FirstRunWizard(QDialog):
         workspace = str(normalize_workspace_path(self.workspace.text(), self.default_workspace))
         try:
             require_external_user_directory(workspace)
+            require_writable_directory(workspace)
+        except WorkspaceNotWritable as exc:
+            _translated_notice(QMessageBox.Warning, self, tr('first_run.workspace_title', 'Werkmap'), str(exc))
+            return False
         except UnsafeWorkspacePath as exc:
             _translated_notice(QMessageBox.Warning, self, tr('first_run.workspace_title', 'Werkmap'), tr('first_run.workspace_unsafe', str(exc)))
             return False
@@ -386,6 +463,7 @@ class FirstRunWizard(QDialog):
         self.settings.setValue('workspace', workspace)
         self.settings.setValue('spell_enabled', bool(self.spell_enabled.isChecked()))
         self.settings.setValue('spell_language', str(self.spell_language.currentData() or 'nl_NL'))
+        self.settings.setValue('spell_dictionary_source', str(self.spell_source.currentData() or ''))
         self.settings.setValue('auto_update_check', bool(self.auto_update_check.isChecked()))
         if self.ai_ollama.isChecked():
             self.settings.setValue('ai_enabled', True)

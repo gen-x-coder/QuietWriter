@@ -12,9 +12,9 @@ from PySide6.QtWidgets import (
 
 from .dialog_notices import notice_warning
 from .dialogs import prompt_text
+from .generated_cover import cover_seed, cover_spec, generated_cover_pixmap
 from ..i18n import tr
 from ..manuscript_text import count_words
-from ..themes import THEMES
 from ..typography import typography_from_values
 
 
@@ -150,7 +150,7 @@ class EditableShelfTitle(QWidget):
 
 
 class BookCover(QWidget):
-    """Boekomslag met foto als achtergrond en dynamische titel als echte UI-tekst."""
+    """Boekomslag: eigen foto met titelband, of een rustig patroon uit de boek-ID."""
 
     def __init__(self, library, book, settings=None, parent=None):
         super().__init__(parent)
@@ -162,6 +162,8 @@ class BookCover(QWidget):
         # repeatedly, but a refresh creates new cover widgets when art changes.
         self._cached_cover_path = None
         self._cached_cover_pixmap = None
+        self._cached_generated_key = None
+        self._cached_generated_pixmap = None
 
     def _cover_pixmap(self, path):
         key = str(path) if path else None
@@ -176,24 +178,39 @@ class BookCover(QWidget):
                     )
         return self._cached_cover_pixmap
 
+    def _title_font(self, size: int):
+        return typography_from_values(self.settings.value('editor_font', 'Merriweather'), size).body_font()
+
+    def _generated_pixmap(self):
+        """Gegenereerde omslag, één keer per widget getekend (de rail-animatie hertekent vaak)."""
+        title = str(getattr(self.book, 'title', '') or '')
+        author = str(((getattr(self.book, 'metadata', None) or {}).get('author') or '')).strip()
+        font = self._title_font(11)
+        ratio = self.devicePixelRatioF()
+        key = (cover_seed(self.book), title, author, font.family(), ratio)
+        if key != self._cached_generated_key:
+            self._cached_generated_key = key
+            self._cached_generated_pixmap = generated_cover_pixmap(
+                cover_spec(key[0]), self.width(), self.height(),
+                title=title, author=author, font=font, device_pixel_ratio=ratio,
+            )
+        return self._cached_generated_pixmap
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
         target = self.rect()
         path = self.library.cover_path(self.book) or self.library.default_cover_path()
         pix = self._cover_pixmap(path)
-        if pix is not None:
-            painter.drawPixmap((target.width() - pix.width()) // 2, (target.height() - pix.height()) // 2, pix)
-        else:
-            theme = THEMES.get(str(self.settings.value('theme', 'Helder')), THEMES['Helder'])
-            painter.fillRect(target, QColor(theme['cover1']))
-            painter.fillRect(0, 0, target.width(), target.height() // 3, QColor(theme['cover2']))
-            painter.fillRect(0, target.height() // 3, target.width(), target.height() // 3, QColor(theme['cover3']))
+        if pix is None:
+            painter.drawPixmap(0, 0, self._generated_pixmap())
+            return
+        painter.drawPixmap((target.width() - pix.width()) // 2, (target.height() - pix.height()) // 2, pix)
 
         band_h = 78
         painter.fillRect(0, target.height() - band_h, target.width(), band_h, QColor(0, 0, 0, 118))
         painter.setPen(QColor('white'))
-        font = typography_from_values(self.settings.value('editor_font', 'Merriweather'), 11).body_font()
+        font = self._title_font(11)
         font.setBold(True)
         painter.setFont(font)
         painter.drawText(
@@ -206,6 +223,8 @@ class BookCover(QWidget):
 class BookCard(QFrame):
     opened = Signal(object)
     move_requested = Signal(object, str)
+    duplicate_requested = Signal(object)
+    export_requested = Signal(object)
 
     def __init__(self, library, book, shelves=(), current_shelf_id: str = '', words: int | None = None, settings=None, parent=None):
         super().__init__(parent)
@@ -277,6 +296,11 @@ class BookCard(QFrame):
             action.setChecked(shelf.id == current_shelf_id)
             action.setEnabled(shelf.id != current_shelf_id)
             action.triggered.connect(lambda checked=False, sid=shelf.id: self.move_requested.emit(self.book, sid))
+        menu.addSeparator()
+        export_action = menu.addAction(tr('bookshelf.book.export', 'Exporteren…'))
+        export_action.triggered.connect(lambda: self.export_requested.emit(self.book))
+        duplicate_action = menu.addAction(tr('bookshelf.book.duplicate', 'Dupliceren'))
+        duplicate_action.triggered.connect(lambda: self.duplicate_requested.emit(self.book))
         actions_btn.setMenu(menu)
 
         lay.addWidget(cover, 0, Qt.AlignHCenter)
@@ -331,6 +355,8 @@ class ShelfSection(QFrame):
     delete_requested = Signal(str)
     book_opened = Signal(object)
     book_move_requested = Signal(object, str)
+    book_duplicate_requested = Signal(object)
+    book_export_requested = Signal(object)
     new_book = Signal()
     import_book = Signal()
 
@@ -380,12 +406,16 @@ class ShelfSection(QFrame):
             card = BookCard(library, book, shelves=shelves, current_shelf_id=shelf.id, words=word_count(book), settings=settings)
             card.opened.connect(self.book_opened.emit)
             card.move_requested.connect(self.book_move_requested.emit)
+            card.duplicate_requested.connect(self.book_duplicate_requested.emit)
+            card.export_requested.connect(self.book_export_requested.emit)
             cards.append(card)
         outer.addWidget(_WrappingCardHost(cards))
 
 
 class StartPage(QWidget):
     open_book = Signal(object)
+    duplicate_book = Signal(object)
+    export_book = Signal(object)
     new_book = Signal()
     import_book = Signal()
     demo_mode_changed = Signal(bool)
@@ -471,7 +501,7 @@ class StartPage(QWidget):
         notice_lay.setContentsMargins(14, 8, 14, 8)
         self.notice_text = QLabel()
         self.notice_text.setWordWrap(True)
-        self.notice_restore = QPushButton(tr('bookshelf.recovery.restore', 'Indeling herstellen'))
+        self.notice_restore = QPushButton(tr('bookshelf.recovery.restore', 'Indeling terugzetten'))
         self.notice_reset = QPushButton(tr('bookshelf.recovery.reset', 'Opnieuw beginnen'))
         self.notice_restore.clicked.connect(self._restore_shelves)
         self.notice_reset.clicked.connect(self._reset_shelves)
@@ -854,6 +884,8 @@ class StartPage(QWidget):
             section.delete_requested.connect(self._delete_shelf)
             section.book_opened.connect(self.open_book.emit)
             section.book_move_requested.connect(self._move_book)
+            section.book_duplicate_requested.connect(self.duplicate_book.emit)
+            section.book_export_requested.connect(self.export_book.emit)
             section.new_book.connect(self.new_book.emit)
             section.import_book.connect(self.import_book.emit)
             self.shelves_layout.addWidget(section)

@@ -9,11 +9,43 @@ from ..spell_engine import WORD_RE
 class ManuscriptHighlighter(QSyntaxHighlighter):
     """Compose manuscript Markdown styles without changing the source text."""
 
-    def __init__(self, editor):
+    def __init__(self, editor, spelling_source=None):
         super().__init__(editor.document())
         self.editor = editor
-        self.dictionary = None
-        self.spell_active = False
+        self._dictionary = None
+        self._spell_active = False
+        # Notenstrook (1.7): een noot volgt woordenboek en aan/uit van de hoofdtekst.
+        self.spelling_source = spelling_source
+        self._followers = []
+
+    @property
+    def dictionary(self):
+        return self.spelling_source.dictionary if self.spelling_source is not None else self._dictionary
+
+    @dictionary.setter
+    def dictionary(self, value):
+        self._dictionary = value
+
+    @property
+    def spell_active(self):
+        return self.spelling_source.spell_active if self.spelling_source is not None else self._spell_active
+
+    @spell_active.setter
+    def spell_active(self, value):
+        self._spell_active = bool(value)
+
+    def add_follower(self, callback):
+        """Wordt aangeroepen na elke rehighlight (bijvoorbeeld een nieuw woord in het woordenboek)."""
+        self._followers.append(callback)
+
+    def rehighlight(self):
+        super().rehighlight()
+        for callback in list(self._followers):
+            try:
+                callback()
+            except RuntimeError:
+                # De strook is al opgeruimd.
+                self._followers.remove(callback)
 
     def set_dictionary(self, dictionary):
         self.dictionary = dictionary
@@ -79,6 +111,40 @@ class ManuscriptHighlighter(QSyntaxHighlighter):
             fmt.setFontFamilies(['Consolas', 'Courier New'])
             fmt.setBackground(QColor(self.editor._theme()['panel2']))
         return fmt
+
+    def _footnote_number_format(self) -> QTextCharFormat:
+        """``^[`` wordt een lege ruimte waar de editor het nootnummer tekent."""
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(self.editor._theme()['editor']))
+        font = QFont(self.editor.font())
+        font.setPointSizeF(1.0)
+        fmt.setFont(font)
+        number_font = QFont(self.editor.font())
+        number_font.setPointSizeF(max(6.0, float(self.editor.typography.point_size) * 0.62))
+        number_font.setBold(True)
+        try:
+            wanted = float(QFontMetricsF(number_font).horizontalAdvance('88')) + 4.0
+            own = float(QFontMetricsF(font).averageCharWidth())
+            fmt.setFontLetterSpacingType(QFont.SpacingType.AbsoluteSpacing)
+            fmt.setFontLetterSpacing(max(0.0, wanted / 2.0 - own))
+        except Exception:
+            pass
+        return fmt
+
+    def _collapse_footnotes(self, text: str, offset: int, spans, marker_ranges: list[tuple[int, int]]):
+        """Klap de noottekst in: in de tekst staat alleen het nummer (1.7)."""
+        if not getattr(self.editor, 'collapse_footnotes', True):
+            return
+        collapsed = self._hidden_todo_marker_format()
+        number = None
+        for span in spans:
+            if span.kind != 'footnote':
+                continue
+            if number is None:
+                number = self._footnote_number_format()
+            self.setFormat(offset + span.open_start, span.open_end - span.open_start, number)
+            self.setFormat(offset + span.content_start, span.close_end - span.content_start, collapsed)
+            marker_ranges.append((offset + span.open_start, offset + span.close_end))
 
     def _apply_inline(self, text: str, offset: int, base: QTextCharFormat, marker_ranges: list[tuple[int, int]], spans=None):
         spans = list(spans if spans is not None else parse_block_line(text).inline_spans)
@@ -210,4 +276,5 @@ class ManuscriptHighlighter(QSyntaxHighlighter):
                 close_start=span.close_start-prefix_len, close_end=span.close_end-prefix_len,
             ))
         self._apply_inline(visible_text, prefix_len, base, marker_ranges, inline_spans)
+        self._collapse_footnotes(visible_text, prefix_len, inline_spans, marker_ranges)
         self._apply_spelling(text_for_language_tools(text), marker_ranges)

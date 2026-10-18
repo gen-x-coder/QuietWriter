@@ -66,7 +66,6 @@ set PYINSTALLER_COMPILE_BOOTLOADER=1
 python -m pip install --disable-pip-version-check --force-reinstall --no-deps --no-binary pyinstaller -r packaging\requirements-build.lock || exit /b 1
 
 python tools\fetch_bundled_fonts.py || exit /b 1
-python tools\fetch_dictionaries.py || exit /b 1
 python packaging\make_version_info.py || exit /b 1
 python tools\render_release_readme.py --template documents\LEESMIJ.txt --version-file quietwriter\__init__.py --out documents\LEESMIJ.txt || exit /b 1
 
@@ -97,16 +96,37 @@ if exist "!OUT!\QuietWriter DEV.cmd" (echo FOUT: interne DEV-launcher staat in d
 if exist "!OUT!\QuietWriter PROD.cmd" (echo FOUT: interne PROD-launcher staat in de release. & exit /b 1)
 for /r "!OUT!" %%f in (REVIEW_NOTES_* QUIETWRITER_REVIEW_FINDINGS_* TUSSENTIJDS_RAPPORT_*) do if exist "%%f" (echo FOUT: ontwikkelrapport in release: %%f & exit /b 1)
 
-rem 6. Distributie-zip + hash maken naast de schone releasemap.
+rem 6. Velopack: portable zip + updatefeed maken.
+rem    vpk is een .NET-tool: eenmalig "dotnet tool install -g vpk" (versie gelijk aan velopack in requirements).
+rem    Velopack vervangt bij een update alleen de programmamap; boeken, instellingen en logs staan daarbuiten.
 cd /d "%~dp0"
-set ZIP=release\QuietWriter-!VER!-windows-portable.zip
-if exist "!ZIP!" del /q "!ZIP!"
-python tools\create_portable_zip.py --source "release\QuietWriter-!VER!" --output "!ZIP!" || exit /b 1
-powershell -NoProfile -Command "$h=(Get-FileHash '!ZIP!' -Algorithm SHA256).Hash.ToLower(); ($h + '  QuietWriter-!VER!-windows-portable.zip') | Out-File -Encoding ascii '!ZIP!.sha256'" || exit /b 1
+where vpk >nul 2>&1 || (echo FOUT: vpk ontbreekt. Installeer met: dotnet tool install -g vpk & exit /b 1)
+for /f "tokens=2 delims==" %%v in ('findstr /b /c:"velopack==" packaging\requirements-runtime.lock') do set VELOPACK_VER=%%v
+for /f "tokens=2" %%v in ('dotnet tool list -g ^| findstr /i /b /c:"vpk "') do set VPK_VER=%%v
+echo velopack (Python): !VELOPACK_VER!   vpk: !VPK_VER!
+if not "!VPK_VER!"=="!VELOPACK_VER!" (
+    echo FOUT: vpk !VPK_VER! hoort gelijk te zijn aan velopack !VELOPACK_VER! uit packaging\requirements-runtime.lock.
+    echo Los op met: dotnet tool update -g vpk --version !VELOPACK_VER!
+    exit /b 1
+)
+set VPK_OUT=release\velopack
+if exist "!VPK_OUT!" rmdir /s /q "!VPK_OUT!"
+vpk pack --packId LucasBonsel.QuietWriter --packVersion !VER! --packDir "release\QuietWriter-!VER!" --mainExe QuietWriter.exe --packTitle QuietWriter --packAuthors "Lucas Bonsel" --icon quietwriter\resources\quietwriter.ico --outputDir "!VPK_OUT!" || exit /b 1
 
-rem 7. Vaste assetnamen voor /releases/latest/download/... links.
-copy /y "!ZIP!" "release\QuietWriter-windows-portable.zip" >nul || exit /b 1
-powershell -NoProfile -Command "$h=(Get-FileHash 'release\QuietWriter-windows-portable.zip' -Algorithm SHA256).Hash.ToLower(); ($h + '  QuietWriter-windows-portable.zip') | Out-File -Encoding ascii 'release\QuietWriter-windows-portable.zip.sha256'" || exit /b 1
+set PORTABLE=
+for %%f in ("!VPK_OUT!\*Portable.zip") do set "PORTABLE=%%f"
+if not defined PORTABLE (echo FOUT: Velopack heeft geen Portable.zip gemaakt. & exit /b 1)
+if not exist "!VPK_OUT!\releases.win.json" (echo FOUT: updatefeed releases.win.json ontbreekt. & exit /b 1)
+rem Testfeed: dezelfde inhoud onder de naam die alleen testkopieen lezen
+rem (.quietwriter-update-pilot). Zie documents\RELEASE_PROCESS.md, drie standen.
+copy /y "!VPK_OUT!\releases.win.json" "!VPK_OUT!\releases.pilot.json" >nul || exit /b 1
+if not exist "!VPK_OUT!\releases.pilot.json" (echo FOUT: testfeed releases.pilot.json ontbreekt. & exit /b 1)
+python -c "import sys,zipfile; n={i.replace(chr(92),chr(47)).lower() for i in zipfile.ZipFile(sys.argv[1]).namelist()}; need=['update.exe','current/quietwriter.exe']; miss=[x for x in need if x not in n]; print('Portable.zip-inhoud OK' if not miss else 'FOUT: ontbreekt in Portable.zip: '+', '.join(miss)); sys.exit(1 if miss else 0)" "!PORTABLE!" || exit /b 1
+
+rem 7. Vaste assetnaam voor de downloadlink op dutchscrum.nl en GitHub (/releases/latest/download/...).
+set ZIP=release\QuietWriter-windows-portable.zip
+copy /y "!PORTABLE!" "!ZIP!" >nul || exit /b 1
+powershell -NoProfile -Command "$h=(Get-FileHash '!ZIP!' -Algorithm SHA256).Hash.ToLower(); ($h + '  QuietWriter-windows-portable.zip') | Out-File -Encoding ascii 'release\QuietWriter-windows-portable.zip.sha256'" || exit /b 1
 
 rem 8. Bewijsbestand met exacte buildomgeving + beide hashes.
 python "release\stage\tools\write_build_manifest.py" --version "!VER!" --source-commit "!SOURCE_COMMIT!" --exe "release\QuietWriter-!VER!\QuietWriter.exe" --zip "!ZIP!" --output "release\QuietWriter-!VER!-build-manifest.txt" || exit /b 1
@@ -114,8 +134,13 @@ python "release\stage\tools\write_build_manifest.py" --version "!VER!" --source-
 echo.
 echo Klaar.
 echo EXE: release\QuietWriter-!VER!\QuietWriter.exe
-echo ZIP: !ZIP!
+echo PORTABLE ZIP: !ZIP!
 echo MANIFEST: release\QuietWriter-!VER!-build-manifest.txt
-echo VASTE ZIP: release\QuietWriter-windows-portable.zip
-echo Deze RC-binaries niet opnieuw bouwen na reputatietesten; publiceer exact dezelfde bytes.
+echo.
+echo Publiceren op GitHub-release v!VER! in drie standen (zie documents\RELEASE_PROCESS.md):
+echo   1. Test (pre-release):   !ZIP!, !VPK_OUT!\*-full.nupkg en !VPK_OUT!\releases.pilot.json
+echo   2. Uitgebracht:          pre-release uitvinken (gebruikers: melding + downloadpagina)
+echo   3. Bijwerken open:       !VPK_OUT!\releases.win.json erbij uploaden (een klik bijwerken voor iedereen)
+echo   Gebruik hier NIET "vpk upload github": die zet releases.win.json meteen online.
+echo Deze binaries niet opnieuw bouwen na reputatietesten; publiceer exact dezelfde bytes.
 endlocal

@@ -24,6 +24,8 @@ class ImportInlineRun:
 
     text: str
     styles: frozenset[str] = frozenset()
+    # 1.7: een voetnoot op deze plek; *text* is dan leeg en *note* bevat de noottekst.
+    note: tuple['ImportInlineRun', ...] = ()
 
 
 @dataclass(frozen=True)
@@ -70,8 +72,16 @@ def serialize_import_block(block: ImportBlock, image_refs: dict[str, str] | None
         if not reference:
             return None
         return build_image_markdown(reference, alt=block.alt, caption=block.caption)
-    inline = ''.join(serialize_inline_text(run.text, run.styles) for run in block.runs)
+    inline = ''.join(_serialize_run(run) for run in block.runs)
     return serialize_block_source(block.kind, inline, number=block.number)
+
+
+def _serialize_run(run: ImportInlineRun) -> str:
+    if run.note:
+        # Een noot is één regel in QuietWriter: regeleinden worden spaties.
+        body = ''.join(serialize_inline_text(part.text.replace('\n', ' '), part.styles) for part in run.note)
+        return f'^[{body.strip()}]'
+    return serialize_inline_text(run.text, run.styles)
 
 
 def serialize_import_chapter(chapter: ImportChapter, image_refs: dict[str, str] | None = None) -> str:

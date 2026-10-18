@@ -146,13 +146,20 @@ def split_book_body(body: str, fallback_title: str) -> list[tuple[str | None, li
 
 def _import_inline_runs(text: str):
     """Convert the supported Markdown inline subset to neutral semantic runs."""
-    from .document_view import inline_runs
+    from .document_view import inline_runs, note_groups
     from .import_document import ImportInlineRun
 
     runs = inline_runs(text or '')
     if not runs:
         return (ImportInlineRun(text or ''),) if text else ()
-    return tuple(ImportInlineRun(run.text, run.styles) for run in runs)
+    out = []
+    # 1.7: voetnoten ^[...] blijven voetnoten (ze vielen eerder weg bij import).
+    for kind, value in note_groups(runs):
+        if kind == 'text':
+            out.append(ImportInlineRun(value.text, value.styles))
+        else:
+            out.append(ImportInlineRun('', note=tuple(ImportInlineRun(r.text, r.styles) for r in value)))
+    return tuple(out)
 
 
 def _import_blocks(text: str):

@@ -15,6 +15,6 @@ def test_scene_fields_are_always_visible_and_grouped():
     assert "planning.outline.section.main" in text
     assert "planning.outline.section.depth" in text
     for field in ('goal', 'conflict', 'outcome', 'notes'):
-        assert f"form.addRow(tr('planning.outline.field.{field}'" in text
+        assert f"form.addRow(field_label(tr('planning.outline.field.{field}'" in text  # dev15: field_label
     assert 'details_toggle' not in text
     assert 'self.form_scroll.setWidget(form_host)' in text
