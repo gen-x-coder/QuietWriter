@@ -1,11 +1,28 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 import uuid
 
 
 def new_id() -> str:
     return str(uuid.uuid4())
+
+
+def _unknown_keys(cls, data: dict) -> dict:
+    """Velden die een nieuwere QuietWriter heeft toegevoegd: ongewijzigd bewaren.
+
+    Zo raakt een volgende versie geen gegevens kwijt als iemand tussendoor met
+    deze versie Planning opslaat.
+    """
+    known = {f.name for f in fields(cls)} - {'extra'}
+    return {k: v for k, v in data.items() if k not in known}
+
+
+def _with_extra(row: dict) -> dict:
+    extra = row.pop('extra', None) or {}
+    merged = dict(extra)
+    merged.update(row)
+    return merged
 
 
 @dataclass
@@ -44,21 +61,25 @@ class Character:
     under_pressure: str = ''
     notes: str = ''
     relations: list[Relation] = field(default_factory=list)
+    # Sinds 1.7: bijnamen/andere namen, met komma's gescheiden ("An, Annie").
+    aliases: str = ''
+    extra: dict = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
     def from_dict(cls, data: dict) -> 'Character':
         kwargs = {k: data.get(k, '') for k in (
             'name', 'role', 'description', 'personality', 'motivation', 'goals', 'fears',
-            'values', 'conflicts', 'background', 'voice', 'under_pressure', 'notes'
+            'values', 'conflicts', 'background', 'voice', 'under_pressure', 'notes', 'aliases'
         )}
         return cls(
             id=str(data.get('id') or new_id()),
             relations=[Relation.from_dict(x) for x in data.get('relations', []) if isinstance(x, dict)],
+            extra=_unknown_keys(cls, data),
             **{k: str(v or '') for k, v in kwargs.items()},
         )
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        return _with_extra(asdict(self))
 
 
 @dataclass
@@ -74,6 +95,7 @@ class Scene:
     outcome: str = ''
     status: str = 'idee'
     notes: str = ''
+    extra: dict = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
     def from_dict(cls, data: dict) -> 'Scene':
@@ -89,7 +111,8 @@ class Scene:
             outcome=str(data.get('outcome') or ''),
             status=str(data.get('status') or 'idee'),
             notes=str(data.get('notes') or ''),
+            extra=_unknown_keys(cls, data),
         )
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        return _with_extra(asdict(self))

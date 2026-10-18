@@ -187,9 +187,15 @@ class Library:
         # crash can never leave a stale workspace lock behind.
         self._tracked_revisions: dict[str, BookRevision] = {}
         self._blocked_book_ids: set[str] = set()
+        self._adopted_external: dict[str, set[str]] = {}
+        # Prullenbakkopie van het laatst verwijderde hoofdstuk (voor 'Ongedaan maken').
+        self.last_deleted_chapter_trash: Path | None = None
         self._shelves = None
         self._shelf_metadata_warnings: list[str] = []
         self.last_list_errors: list[dict] = []
+        # Dagversies uitdunnen (Instellingen > Back-ups). De app zet dit vanuit
+        # QSettings; zonder app (tests, scripts) staat het uit.
+        self.thin_daily_versions = False
         for d in [self.books_dir, self.covers_dir, self.archive_dir, self.trash_dir,
                   self.persona_dir, self.dict_dir, self.cache_dir]:
             d.mkdir(parents=True, exist_ok=True)
@@ -754,6 +760,7 @@ class Library:
                 # A transient sync/file lock may leave an unreferenced UUID file
                 # behind, but never causes content loss or a broken manifest.
                 pass
+        self.last_deleted_chapter_trash = trash_copy
         self._refresh_if_tracked(book)
         return True
 
@@ -778,10 +785,12 @@ class Library:
         chapter_path = book.path / chapter.file
         if not chapter_path.is_file():
             raise ChapterNotAvailableError(chapter_path)
-        # Verify the complete currently tracked book before the logical save.
-        # The manuscript file is authoritative; updating ``last_used`` in the
-        # manifest is bookkeeping and may fail transiently under sync/file locks.
-        self.verify_book_unchanged(book)
+        # Verify the tracked book before the logical save. Changes that arrived
+        # from elsewhere (Dropbox, a second computer) in *other* chapter files
+        # are adopted silently: nothing in QuietWriter holds those chapters
+        # unsaved. Anything else (this chapter, book.json, Planning, profiles)
+        # still raises ExternalModificationError.
+        self._verify_for_chapter_save(book, chapter)
         try:
             self.ensure_daily_archive(book)
         except (OSError, shutil.Error):
@@ -802,6 +811,145 @@ class Library:
             # book.json could not be touched. Otherwise the next save reports
             # our own text as an external modification.
             self._refresh_if_tracked(book)
+
+    @staticmethod
+    def _is_chapter_file(name: str) -> bool:
+        return name.startswith('chapters/') and name.endswith('.md')
+
+    def _accept_external_files(self, book: Book, names, expected: BookRevision, current: BookRevision) -> None:
+        """Neem alleen de genoemde externe wijzigingen op in de bewaakte stand."""
+        files = dict(expected.files)
+        for name in names:
+            files[name] = current.files.get(name)
+        self._tracked_revisions[book.id] = BookRevision(files)
+
+    def adopt_external_chapter_text(self, book: Book, chapter: Chapter) -> str | None:
+        """Is het open (niet-gewijzigde) hoofdstuk van buiten bijgewerkt?
+
+        Geeft dan de nieuwe tekst en neemt alleen dít bestand op in de bewaakte
+        stand. Anders ``None``. Raakt geen andere bestanden aan.
+        """
+        expected = self._tracked_revisions.get(book.id)
+        if expected is None:
+            return None
+        own = Path(chapter.file).as_posix()
+        path = book.path / chapter.file
+        current = file_revision(path)
+        if current is None or expected.files.get(own) == current:
+            return None
+        _guard_existing_utf8(path)
+        text = path.read_text(encoding='utf-8')
+        files = dict(expected.files)
+        files[own] = current
+        self._tracked_revisions[book.id] = BookRevision(files)
+        return text
+
+    def pop_adopted_external_chapters(self, book: Book) -> list[str]:
+        """Hoofdstukbestanden die bij de laatste opslag van buiten zijn overgenomen."""
+        return list(self._adopted_external.pop(book.id, ()))
+
+    def _verify_for_chapter_save(self, book: Book, chapter: Chapter) -> None:
+        if book.id in self._blocked_book_ids:
+            self.verify_book_unchanged(book)  # raises BookBlockedError
+        expected = self._tracked_revisions.get(book.id)
+        if expected is None:
+            return
+        current = self.capture_revision(book)
+        changed = expected.changed_files(current)
+        if not changed:
+            return
+        own = Path(chapter.file).as_posix()
+        if own not in changed and all(self._is_chapter_file(name) for name in changed):
+            self._accept_external_files(book, changed, expected, current)
+            self._adopted_external.setdefault(book.id, set()).update(changed)
+            return
+        raise ExternalModificationError(book.id, changed, expected, current)
+
+    def external_change_is_same_chapter_only(self, book: Book, chapter: Chapter, exc: ExternalModificationError) -> bool:
+        """Kan dit conflict opgelost worden door beide versies te bewaren?
+
+        Alleen als uitsluitend hoofdstukbestanden veranderden (dus geen
+        book.json, Planning of profielen) en dit hoofdstuk daarbij hoort.
+        """
+        names = list(exc.changed_files)
+        own = Path(chapter.file).as_posix()
+        return own in names and all(self._is_chapter_file(name) for name in names)
+
+    def save_chapter_keep_both(self, book: Book, chapter: Chapter, local_text: str) -> Chapter:
+        """Hetzelfde hoofdstuk is hier én elders gewijzigd: bewaar beide.
+
+        Volgorde (elke tussenstand na een crash of stroomuitval verliest niets):
+        1. veiligheidsversie ``conflict_local`` met de lokale tekst;
+        2. nieuw hoofdstukbestand met de versie van schijf (nog nergens naar
+           verwezen: hooguit een los bestand);
+        3. ``book.json`` met dat hoofdstuk direct ná dit hoofdstuk (nu staat de
+           externe tekst er twee keer; de lokale staat in stap 1);
+        4. de lokale tekst in dit hoofdstuk.
+
+        Mislukt stap 2, 3 of 4 met een fout, dan wordt alles behalve de
+        veiligheidsversie teruggedraaid: ``book.json`` krijgt zijn oude bytes,
+        het nieuwe bestand verdwijnt, model en bewaakte stand zijn als vooraf.
+        De fout gaat daarna door naar de aanroeper (de editor valt terug op de
+        gewone conflictkeuze). Er wordt niets overschreven of weggegooid.
+        """
+        own = Path(chapter.file).as_posix()
+        own_path = book.path / chapter.file
+        expected = self._tracked_revisions.get(book.id)
+        if expected is None:
+            raise ValueError('Boek wordt niet bewaakt.')
+        current = self.capture_revision(book)
+        changed = expected.changed_files(current)
+        if own not in changed or not all(self._is_chapter_file(name) for name in changed):
+            raise ExternalModificationError(book.id, changed, expected, current)
+        if not own_path.is_file():
+            raise ChapterNotAvailableError(own_path)
+        section = next((s for s in book.sections if chapter in s.chapters), None)
+        if section is None:
+            raise ValueError('Hoofdstuk niet gevonden in het boek.')
+        _guard_existing_utf8(own_path)
+        external_text = own_path.read_text(encoding='utf-8')
+        manifest_before = book.manifest_path.read_text(encoding='utf-8')
+        self.create_version_from_state(book, {own: local_text}, kind='conflict_local')
+
+        other = None
+        manifest_written = False
+        try:
+            self._accept_external_files(book, changed, expected, current)
+            title = tr('conflict.other_version_title', '{title} (andere computer, {time})',
+                       title=chapter.title, time=datetime.now().strftime('%H:%M'))
+            other = self.add_chapter(book, section, title, persist=False)
+            _safe_atomic_write_text(book.path / other.file, external_text)
+            section.chapters.insert(section.chapters.index(chapter) + 1, other)
+            self._write_manifest_unchecked(book)
+            manifest_written = True
+            _safe_atomic_write_text(own_path, local_text)
+        except BaseException:
+            self._rollback_keep_both(book, section, other, manifest_before, manifest_written, expected)
+            raise
+        self._refresh_if_tracked(book)
+        return other
+
+    def _rollback_keep_both(self, book: Book, section, other, manifest_before: str,
+                            manifest_written: bool, expected: BookRevision) -> None:
+        """Best effort, elke stap los: een mislukte stap mag de rest niet tegenhouden."""
+        if other is not None and other in section.chapters:
+            section.chapters.remove(other)
+        if manifest_written:
+            try:
+                _safe_atomic_write_text(book.manifest_path, manifest_before)
+            except Exception:
+                # Dan verwijst book.json naar het extra hoofdstuk, dat de externe
+                # tekst bevat: dubbel, maar niets kwijt. Het bestand laten staan.
+                import logging
+                logging.getLogger(__name__).warning('Beide versies bewaren: book.json kon niet worden teruggezet.', exc_info=True)
+                self._tracked_revisions[book.id] = expected
+                return
+        if other is not None:
+            try:
+                (book.path / other.file).unlink(missing_ok=True)
+            except OSError:
+                pass  # een los, niet-verwezen bestand is onschadelijk
+        self._tracked_revisions[book.id] = expected
 
     def recover_interrupted_replacements(self) -> list[str]:
         """Restore crash-interrupted batches, never overwriting sync changes.
@@ -925,6 +1073,78 @@ class Library:
             shutil.rmtree(partial, ignore_errors=True)
             raise
         self._register_version(book, target.name, target, kind='daily', created_at=datetime.fromtimestamp(newest).isoformat(timespec='seconds'))
+        if self.thin_daily_versions:
+            try:
+                self.thin_daily_history(book)
+            except OSError:
+                # Uitdunnen is onderhoud; het mag opslaan nooit laten mislukken.
+                pass
+
+    # Bewaarbeleid voor automatische dagversies. Alleen soort 'daily' zonder
+    # ster komt hiervoor in aanmerking. Handmatige versies, versies met een
+    # ster, en alle veiligheidsversies (voor herstel, bij conflicten, voor
+    # migraties, bij verwijderen) blijven altijd bewaard.
+    DAILY_KEEP_ALL_DAYS = 30
+    DAILY_KEEP_WEEKLY_DAYS = 180
+
+    def daily_versions_to_thin(self, rows: list[dict], now: datetime | None = None) -> list[str]:
+        """Welke dagversies vallen buiten het bewaarbeleid?
+
+        - jonger dan 30 dagen: alles bewaren;
+        - 30 tot 180 dagen: de nieuwste per kalenderweek;
+        - ouder dan 180 dagen: de nieuwste per maand.
+        Pure functie: verwijdert niets.
+        """
+        now = now or datetime.now()
+        keep: dict[tuple, tuple[str, str]] = {}
+        candidates: list[tuple[str, str, tuple]] = []
+        for row in rows:
+            if row.get('kind') != 'daily' or row.get('starred') or row.get('incomplete'):
+                continue
+            try:
+                created = datetime.fromisoformat(str(row.get('created_at')))
+            except ValueError:
+                continue
+            age = (now - created).days
+            if age < self.DAILY_KEEP_ALL_DAYS:
+                continue
+            if age < self.DAILY_KEEP_WEEKLY_DAYS:
+                year, week, _ = created.isocalendar()
+                bucket = ('week', year, week)
+            else:
+                bucket = ('month', created.year, created.month)
+            stamp = created.isoformat()
+            candidates.append((row['id'], stamp, bucket))
+            best = keep.get(bucket)
+            if best is None or stamp > best[1]:
+                keep[bucket] = (row['id'], stamp)
+        kept_ids = {value[0] for value in keep.values()}
+        return sorted(version_id for version_id, _, _ in candidates if version_id not in kept_ids)
+
+    def thin_daily_history(self, book: Book, now: datetime | None = None) -> list[str]:
+        """Verwijder dagversies die buiten het bewaarbeleid vallen."""
+        rows = self.list_versions(book)
+        doomed = self.daily_versions_to_thin(rows, now)
+        if not doomed:
+            return []
+        root = self._history_root(book)
+        index = self._load_history_index(book)
+        removed = []
+        for version_id in doomed:
+            folder = root / version_id
+            try:
+                if folder.is_symlink() or (hasattr(folder, 'is_junction') and folder.is_junction()):
+                    continue
+                if folder.parent.resolve() != root.resolve():
+                    continue
+                shutil.rmtree(folder)
+            except OSError:
+                continue
+            index.get('versions', {}).pop(version_id, None)
+            removed.append(version_id)
+        if removed:
+            self._save_history_index(book, index)
+        return removed
 
     def _history_root(self, book: Book) -> Path:
         root = self.archive_dir / book.id
@@ -1674,6 +1894,50 @@ class Library:
         os.replace(book.path, final_path)
         book.path = final_path
         return book
+
+    def duplicate_book(self, book: Book, title: str | None = None) -> Book:
+        """Maak een volledige kopie van een boek als nieuw, los boek.
+
+        Leest van schijf: de UI moet openstaande wijzigingen eerst opslaan.
+        Mee: manuscript, Planning, profielen, Boekgeheugen, media en omslag.
+        Niet mee: versiegeschiedenis (staat buiten het boek) en lokale
+        AI-gesprekken (``.quietwriter/``). Het origineel wordt niet aangeraakt.
+        De kopie wordt verborgen voorbereid en pas in één keer zichtbaar.
+        """
+        source = self.load_book(Path(book.path))
+        missing = [c.file for s in source.sections for c in s.chapters if not (source.path / c.file).is_file()]
+        if missing:
+            raise ChapterNotAvailableError(source.path / missing[0])
+        new_id = str(uuid.uuid4())
+        new_title = (title or tr('storage.duplicate_title', '{title} (kopie)', title=source.title)).strip() or source.title
+        final_path = self.books_dir / f'{slugify(new_title)}-{new_id[:8]}'
+        stage_path = self.books_dir / f'.import-{new_id}'
+        try:
+            shutil.copytree(
+                source.path, stage_path,
+                ignore=shutil.ignore_patterns('.quietwriter', '*.tmp', '.*.partial', '.partial*'),
+            )
+            staged = self.load_book(stage_path)
+            staged.id = new_id
+            staged.title = new_title
+            staged.metadata = dict(staged.metadata or {})
+            staged.metadata['slug'] = slugify(new_title)
+            staged.metadata['date'] = datetime.now().isoformat(timespec='minutes')
+            staged.metadata['last_used'] = datetime.now().timestamp()
+            self._write_manifest_unchecked(staged)
+            published = self._publish_staged_import(staged, final_path)
+        except Exception:
+            shutil.rmtree(stage_path, ignore_errors=True)
+            raise
+
+        def place_on_same_shelf():
+            original_shelf = self.shelves.state().shelf_for_book(source.id)
+            self.shelves.assign_new(new_id)
+            if original_shelf is not None:
+                self.shelves.move_book(new_id, original_shelf.id)
+
+        self._best_effort_shelf_update('Boek gedupliceerd; plankindeling kon niet worden bijgewerkt', place_on_same_shelf)
+        return self.load_book(published.path)
 
     def _import_neutral_document(self, imported, source: Path):
         """Stage and atomically publish one neutral ImportDocument."""

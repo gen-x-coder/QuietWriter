@@ -1,19 +1,73 @@
 # QuietWriter — roadmap en ideeën
 
 **Status:** canonieke roadmap vanaf QuietWriter 1.2.13  
-**Laatste actualisatie:** 8 oktober 2026
+**Laatste actualisatie:** 15 oktober 2026 (1.5.1)
 
-Deze roadmap beschrijft alleen de actuele productrichting. Uitgebreide oude 1.0/v2-ontwerpen zijn bewaard in `ROADMAP_HISTORY_TO_1_2_13.md`.
+Deze roadmap beschrijft alleen de actuele productrichting. Uitgebreide oude 1.0/v2-ontwerpen zijn bewaard in `archive/research/ROADMAP_HISTORY_TO_1_2_13.md`.
 
-## 1. Waar we nu staan
+## 1. Waar we nu staan en wat er komt
 
-**QuietWriter 1.3.1** is de huidige publieke stabiele release. De actieve ontwikkellijn is **1.4.0-dev.39**. QuietWriter 1.3.0 is uitgebracht; nieuwe functies komen in 1.4.0.
+**1.5.1** is de basis. De eigen updater is vervangen door Velopack: de portable build werkt zichzelf bij. De projectmap is opgeschoond; de geschiedenis staat in `archive/`. Werkwijze vanaf nu: Claude bouwt, ChatGPT reviewt, Lucas test op Windows (`../AGENTS.md`).
 
-**dev.24–dev.28:** Planning, schrijfdoelen en kerneditor zijn afgerond en breed gereviewd. **dev.29:** Windows- en kleine-scherm-hardening op basis van echte laptoptests: boeklaadfeedback, undo bij menselijke typesnelheid, responsieve geometrie, expliciete Integriteit en rustigere technische UI.
+Het plan hieronder volgt uit de vergelijking met NEO (`research/NEO_VERGELIJKING_QW_1_6_CLAUDE.md`, §6). Het gekozen tempo: kleine patchversies binnen 1.5.x. De vroegere voorstellen "1.7" en "1.8" uit dat document heten hier 1.6 en 1.7 (nummering nog door Lucas te bevestigen).
 
-De grote manuscriptarchitectuurverbouwing is afgerond. Daarna is in 1.3 de **Boekenkast** gebouwd met meerdere planken, privéplanken, Presentatiemodus, snelle woordtellingcache en uitgebreide privacy-/recovery-hardening. De Windows-acceptatietest van de Boekenkast is afgerond zonder resterende blocker.
+### 1.5.x — kleine winst, weinig risico
+- [x] **1.5.1** Updater vervangen door Velopack (portable); documentatie opgeschoond; `AGENTS.md`.
+- [x] **1.5.2** Reviewbevindingen updater verwerkt; melding "nieuwere versie dan GitHub".
+- [x] **1.5.2** Boektitel in de venstertitel, behalve voor boeken op een verborgen plank.
+- [x] **1.5.2** Sneltoetsenoverzicht (Ctrl+/ of F1), met de tip dat andere software een sneltoets kan afpakken.
+- [x] **1.5.2** Typografie tijdens het typen, per taal: `’` als apostrof, `‘…’`, gedachtestreepje (`--`), `…` (`...`). Met tests voor dialoog na een streep. Geen automatische hoofdletters (breekt op *'s avonds*).
+- [x] **1.5.2** Boek dupliceren en exporteren vanaf de boekenkast (menu Boekacties).
+- [x] **1.5.2** Schrijftest en een begrijpelijke melding bij Windows *Controlled Folder Access* bij het kiezen van de werkmap.
+- [x] Echte bijwerkproef op Windows, lokaal via `QUIETWRITER_UPDATE_SOURCE` (15 oktober 2026, Lucas).
+- [x] **1.6.1** Bijwerken eerst zelf testen: testkopie met pilotbestand, drie standen per release op GitHub (`research/UPDATE_UITROL_ONDERZOEK.md`).
+- [ ] Echte bijwerkproef via GitHub met een pre-release (stand 1). **Vóór de 1.7-functies.**
 
-Vanaf **1.3.0-dev.11** zijn **schrijfdoelen en rustige voortgang** toegevoegd. Dagactiviteit is volledig opt-in; zonder expliciete keuze wordt niets bijgehouden. In **1.3.0-dev.18** startte de volgende productlaag: Planning dichter bij het schrijven, met strikt presentation-only Planninghulp in lege hoofdstukken. **dev.19** polijst de sceneweergave en meldt expliciet wanneer niet alle scènes in de beschikbare editorruimte passen.
+### 1.6 — data en rust
+- [x] **1.6.0** Retentie voor dagversies (instelbaar). *Geen* delta-opslag: alle lezers (Geschiedenis, herstel, `.qwbook`, Integriteit) verwachten complete versiemappen, en hardlinks zijn onbetrouwbaar in Dropbox/OneDrive. De retentie lost de onbegrensde groei op.
+- [x] **1.6.0** Conflicten per hoofdstuk en niet-modaal; beide versies bewaren bij een echte botsing; open hoofdstuk herladen bij terugkeer.
+- [x] **1.6.0** "Ongedaan maken" na hoofdstuk verwijderen. (Verplaatsen niet: dat zie je direct en sleep je terug.)
+- [x] ~~Spellingsuggesties in een apart proces~~: vervallen na meting (zie backlog punt 6).
+- [x] Praktijkproef met twee computers via Dropbox: Lucas, 18 oktober 2026 (1.7.0-dev16), geen Dropbox-fouten.
+
+### 1.7 — planning dichter bij het verhaal
+- [x] **1.7.0** Scènes in de tekst: besluit *geen* scène-ID in het manuscript; scène *n* = stuk na scènebreuk *n* (`design/SCENES_IN_TEXT_DESIGN.md`).
+- [x] **1.7.0** Meelopende scènehulp (regel onder de tekst + "Volgende in Planning" na de laatste breuk); "ongeplande scènes" met **Toevoegen aan Planning** (omgekeerd plannen).
+- [x] **1.7.0** Personages per hoofdstuk herkennen (naam, voornaam, *Ook bekend als*), met "voor het eerst"; niets hernoemen.
+- [x] **1.7.0** Exportdoel "Inzenden" (standaard manuscriptopmaak, ook anoniem).
+- [ ] Na praktijkgebruik: is de volgorde-koppeling genoeg, of is een anker in Planning nodig (optie B in het ontwerp)?
+
+- [x] **1.7.0** Zoekresultaten leesbaar: stukje rond de treffer binnen de alinea, treffer vet, hoofdstuk alleen bij een nieuw hoofdstuk, geen horizontale balk.
+
+### Backlog, in de volgorde van Lucas (15 oktober 2026)
+Nieuw werk hangt onder 1.7.0 tot Lucas vindt dat 1.7.0 genoeg bevat. Pas dan volgen de bijwerkproef via GitHub (pre-release) en de proef met twee computers.
+1. ~~Hulp voor vertalers.~~ **1.7.0:** Instellingen → Vertalingen (vergelijken, invullen, opslaan, exporteren en importeren) + `tools/merge_translation.py` + `TRANSLATING.md`. Meervoudsvormen bewust nog niet.
+2. ~~Woordenboeken installeren zonder handwerk.~~ **1.7.0:** vaste, gecontroleerde lijst (12 talen, LibreOffice-woordenboeken op één commit, SHA-256 per bestand), downloaden vanuit Instellingen en de eerste start. **dev14:** 35 talen en bijwerken (vergelijking met de controlesom, nooit online kijken).
+3. ~~Voetnoten.~~ **1.7.0:** `^[tekst]` op de plek in de tekst, Ctrl+Alt+F; echte Word-voetnoten in DOCX en Inzenden, noten per hoofdstuk in EPUB en PDF, DOCX-import leest Word-voetnoten. Zie `documents/design/FOOTNOTES_DESIGN.md`.
+4. ~~Omslagen op basis van een seed.~~ **1.7.0:** boeken zonder eigen omslag krijgen in de Boekenkast een rustig patroon en kleur uit de boek-ID, met titel en auteur. Alleen weergave, niets opgeslagen of geëxporteerd.
+5. ~~Een rustige grafiek van de afgelopen 30 dagen.~~ **1.7.0 (dev13):** Boekdetails → Schrijfdoel → *Laatste 30 dagen*, alleen bij de opt-in dagtelling. Ontwerp: `design/RUSTIGE_GRAFIEK_VOORSTEL.md`.
+6. ~~Spellingsuggesties in een apart proces.~~ **Vervallen (Lucas, 16 oktober 2026):** gemeten in dev12, de interface haperde hooguit ±30 ms; een apart proces kost ±230 MB extra en maakt de voorstellen niet beter.
+7. ~~In- en uitzoomen van de hele interface.~~ **1.7.0:** Instellingen → Uiterlijk → Interfacegrootte (80–175%), na herstart. Live zoomen (Ctrl +/−) kan Qt niet voor de hele interface.
+8. ~~Paperback-PDF met woordafbreking~~, 9. ~~`inbox.md`~~, 10. ~~Voorlezen~~: **voorlopig niet** (Lucas, 16 oktober 2026). Paperback: opmaken kan na export in Word of een ander programma; QuietWriter wordt geen publicatieprogramma. `inbox.md`: past niet in de filosofie. Voorlezen: offline stemmen klinken blikkerig, en online stemmen willen we niet.
+
+### Volgorde vanaf dev14 (Lucas, 16 oktober 2026)
+1. ~~Spellingcontrole in de notenstrook.~~ **dev14.**
+2. ~~Woordenboeken bijwerken en meer talen in de downloadlijst.~~ **dev14.**
+3. ~~De opmaak van oudere formulieren gelijktrekken (6.2).~~ **dev15:** `ui/page_layout.py`, zie `UI_REFERENCE.md` → Eén paginavorm.
+4. ~~Planning bijschaven: scènes verplaatsen, hoofdstukgroepen inklappen (6.4).~~ **dev15:** slepen (ook naar een ander hoofdstuk), *Verplaatsen naar*, ↑/↓, ingeklapte groepen per boek onthouden, *Alles in-/uitklappen*.
+5. ~~Controle per pagina en paneel op designtaal en foutjes.~~ **dev15** (zie CHANGELOG). Tagline: "Rustig schrijven. Heldere boeken." (besluit Lucas; documenten gelijkgetrokken).
+
+Daarna, ter afsluiting van 1.7.0: ~~ChatGPT-review van deel E en F~~ (verwerkt in dev16, herreview akkoord), ~~de proef met twee computers via Dropbox~~ (18 oktober, geen fouten), en als laatste **de bijwerkproef via GitHub met een pre-release** (stand 1).
+
+### Naar voren gehaald uit 1.8.0 (Lucas, 18 oktober 2026)
+- ~~Een echt voorbeeld van de export vóór je exporteert.~~ **1.7.0 (dev18):** *Voorbeeld bekijken* op de exportpagina en in de wizard; tijdelijke map, niets onthouden.
+- ~~De Ollama-installatie eenvoudiger maken.~~ **1.7.0 (dev18):** *Ollama instellen* in Instellingen → AI Meelezer: zoeken, downloadlink, korte modellenlijst naar werkgeheugen, downloaden via Ollama. De modellenlijst staat in `ai/ollama_setup.py` (`RECOMMENDED_MODELS`) en moet bij een release nagekeken worden.
+
+### 1.8.0
+- Nog leeg.
+
+### Historische status (tot 1.5.0-dev.63)
+QuietWriter 1.3.x en 1.4.0 zijn publiek uitgebracht. De 1.5.0-ontwikkellijn (dev.1–dev.63) bracht synchronisatieveiligheid en de vernieuwde Meelezer, maar is niet als 1.5.0 uitgebracht; 1.5.1 is de eerste release van die lijn. Zie `CHANGELOG.md`.
 
 ## 2. Wat al gerealiseerd is
 
@@ -31,7 +85,7 @@ Onder andere aanwezig:
 - EPUB, PDF en Markdown export;
 - begeleide exportwizard;
 - first-run/onboarding;
-- handmatige en optionele automatische GitHub-updatecontrole;
+- updatecontrole en zelf bijwerken (Velopack, vanaf 1.5.1);
 - AI **Meelezer** met Ollama en OpenRouter;
 - Schrijverspersona, Boekprofiel en Boekgeheugen;
 - spelling, zoeken, focusweergave en opmaak;
@@ -206,7 +260,7 @@ Tot dit onderzoek is afgerond:
 
 Het werkdocument staat in:
 
-`documents/BOOK_FORMAT_ARCHITECTURE_RESEARCH.md`
+`documents/archive/research/BOOK_FORMAT_ARCHITECTURE_RESEARCH.md`
 
 Dit document bevat de huidige QuietWriter-analyse, open-source vergelijkingen, DOCX-scope, kandidaatarchitecturen en een expliciete reviewopdracht voor Claude/andere reviewers.
 
@@ -222,32 +276,32 @@ V1-contract:
 - alleen positieve groei tussen geslaagde editor-opslagen telt mee; schrappen verlaagt het dagtotaal niet;
 - uitzetten pauzeert het bijhouden maar wist de lokale historie niet en haalt later niets retroactief in;
 - daggrens is lokale middernacht;
-- geen dagdoel, streaks, badges, sprints, grafiek, rood/achterstandstaal of meldingen in v1;
+- geen dagdoel, streaks, badges, sprints, rood/achterstandstaal of meldingen in v1 (een rustige 30-dagengrafiek in Boekdetails kwam in 1.7.0);
 - woorddoel/deadline zijn actuele intentie en blijven daarom behouden bij versieherstel.
 
-Canoniek ontwerp: `documents/SCHRIJFDOELEN_DESIGN.md`.
+Canoniek ontwerp: `documents/design/SCHRIJFDOELEN_DESIGN.md`.
 
 ### 6.2 UI-consistentie van Instellingen en formulieren
 **Prioriteit: hoog; eerste Instellingen-pass uitgevoerd in 1.3.0-dev.16.** De vaste regel is nu: links naam + uitleg, rechts één controlzone; aan/uit-waarden gebruiken dezelfde afgeronde keuzevelden als andere instellingen en acties gebruiken de secundaire knopstijl.
 
 Nog te doen in de bredere componentaudit:
-- dezelfde regel nalopen op overige formulierpagina's naast Instellingen en Boekdetails;
+- ~~dezelfde regel nalopen op overige formulierpagina's naast Instellingen en Boekdetails~~ (1.7.0-dev15);
 - witte achtergronden alleen waar een invoer/control dat functioneel nodig heeft;
 - spacing, veldbreedtes en hulpteksthiërarchie tussen oudere pagina's verder harmoniseren;
 - previews en samengestelde controls alleen als uitzondering gebruiken wanneer ze functioneel echt iets toevoegen.
-- **Hoog:** Zoeken/vervangen-paneel stabiliseren. Bij een actieve zoekterm stort de verticale layout nu in, `0 resultaten` en `Geen resultaten gevonden` zijn dubbelop en `Vervangen door` springt naar boven. Dit is een losstaand UI-probleem en moet in een eigen iteratie worden opgelost.
-- **Polish:** kopiëren/plakken in de manuscripteditor mag uitsluitend tekst en opmaak meenemen. Na Ctrl+C/Ctrl+V mag de nieuw geplakte tekst niet geselecteerd blijven alsof de bronselectie is meegekopieerd.
+- **Opgelost (dev.24, gecontroleerd in 1.7.0):** Zoeken/vervangen-paneel stabiliseren. Bij een actieve zoekterm stort de verticale layout nu in, `0 resultaten` en `Geen resultaten gevonden` zijn dubbelop en `Vervangen door` springt naar boven. Dit is een losstaand UI-probleem en moet in een eigen iteratie worden opgelost.
+- **Opgelost (dev.24, gecontroleerd in 1.7.0):** kopiëren/plakken in de manuscripteditor mag uitsluitend tekst en opmaak meenemen. Na Ctrl+C/Ctrl+V mag de nieuw geplakte tekst niet geselecteerd blijven alsof de bronselectie is meegekopieerd.
 - **Polish:** context-subnavigatie gebruikt één visuele regel: dezelfde achtergrond als de pagina, met selectie als lokaal accentvlak. Planning en hoofdstuknavigatie zijn in dev.20 als eerste gelijkgetrokken; overige contextmenu’s later nalopen.
 
 ### 6.3 Planning dichter bij het schrijven
 **Fase 1 uitgevoerd in 1.3.0-dev.18 en uitgebouwd t/m dev.23.** Gekoppelde scènes verschijnen als presentation-only Planninghulp in een leeg hoofdstuk. De hulp wordt buiten het QTextDocument geschilderd en kan dus niet in manuscript, woordtelling, zoeken, spelling, export, AI-context of Undo terechtkomen. Instellingen > Uiterlijk kan de laag volledig verbergen.
 
-De bestaande scènestatus vormt inmiddels de eenvoudige workflow **Idee / Uitgewerkt / Geschreven**. Dev.22 voegde naast Tekstbreedte een subtiele knop **Planning** toe waarmee de schrijver ook tijdens bestaand manuscript gekoppelde scènes en hun status kan bekijken en een scène bewust als Geschreven kan markeren. Dev.23 maakt die overlay een betrouwbare toggle, schaalt hem mee met de editor en trekt statuslabels en hoofdstukscrollbar visueel gelijk. Geen automatische detectie: de schrijver bepaalt zelf wanneer een scène klaar is.
+De bestaande scènestatus vormt inmiddels de eenvoudige workflow **Idee / Uitgewerkt / Geschreven**. Dev.22 voegde naast Tekstbreedte een subtiele knop **Planning** toe waarmee de schrijver ook tijdens bestaand manuscript gekoppelde scènes en hun status kan bekijken en een scène bewust als Geschreven kan markeren. Dev.23 maakt die overlay een betrouwbare toggle, schaalt hem mee met de editor en trekt statuslabels en hoofdstukscrollbar visueel gelijk. Geen automatische detectie: de schrijver bepaalt zelf wanneer een scène klaar is. *(1.7.0: de knop en de popup zijn weggehaald, want dubbelop met In dit hoofdstuk; **✓ Klaar** staat daar nu bij elke scène.)*
 
 Vervolg pas na praktijkgebruik: scènegerichte plaatsing na echte scènebreuken en nog niet geschreven scènes onder het laatste geschreven segment.
 
 ### 6.4 Planning-polish op basis van echt gebruik
-Scènes verplaatsen, inklapbare hoofdstukgroepen, compactere scènebewerking, eerste verschijning personages, locaties, relaties en aliassen.
+~~Scènes verplaatsen, inklapbare hoofdstukgroepen~~ (1.7.0-dev15), compactere scènebewerking, eerste verschijning personages, locaties, relaties en aliassen.
 
 ### 6.5 Automatische `.qwbook`-back-ups
 Dagelijks, handmatig, instelbare locatie en retention; back-up blijft output en geen tweede live bron.
@@ -291,7 +345,11 @@ Veilige diagnoseweergave zonder manuscriptinhoud, API-sleutels of gevoelige boek
 - tweede onafhankelijke hoofdstukvolgorde;
 - volwaardige coverdesigner;
 - complexe DTP-editor;
-- volledige Scrivener/Obsidian/worldbuilding-featurepariteit.
+- volledige Scrivener/Obsidian/worldbuilding-featurepariteit;
+- een eigen updater of installer (Velopack doet dit sinds 1.5.1);
+- Enter-Enter-Enter als structuurcommando;
+- AI-gegenereerde omslagen;
+- een mobiele app.
 
 ## 10. Beslisregels voor nieuwe features
 

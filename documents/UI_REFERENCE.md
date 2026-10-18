@@ -64,10 +64,22 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 - Verborgen pagina's mogen via stacks geen minimumafmetingen van het hoofdvenster bepalen.
 - Controleer releases op lage laptophoogte en 100%, 125% en 150% schaal wanneer mogelijk.
 
+## Eén paginavorm (1.7.0-dev15)
+- Alle pagina's gebruiken `ui/page_layout.py`: buitenmarge `PAGE_MARGINS` (34, 28, 34, 26), dus titel en uitleg staan overal op dezelfde plek.
+- Formulieren volgen Instellingen: sectiekop klein in hoofdletters (`section_heading`, objectName `settingsSectionTitle`), veldnaam vetgedrukt (`field_label` / `settingsFieldLabel`), korte velden (keuzelijsten, datum) maximaal `SHORT_FIELD_WIDTH` breed, een formulier maximaal `FORM_MAX_WIDTH`.
+- In smalle detailpanelen (personage, Bewaarplaats) staat de veldnaam boven het veld, dicht erbij (5 px), met meer ruimte tussen de velden.
+- Subnavigatie binnen een pagina (Instellingen, Planning, Boekprofiel, Boekgeheugen, Schrijverspersona): op de paginakleur, keuze als accentvlak met een streep links (`contextSectionList`), zonder wit vlak of kop "Onderdelen".
+- Detailtitel in een paneel (bijvoorbeeld de naam van een personage): `detailTitle`, kleiner dan de paginatitel. Een subpagina binnen een pagina met subnavigatie (Instellingen, Planning) gebruikt `settingsPageTitle`.
+- Een leeg vlak zegt wat je kunt doen (Personages, Prullenbak); knoppen zonder werk zijn uitgeschakeld.
+
+## Interfacegrootte
+- Instellingen → Uiterlijk → Interfacegrootte (80–175%, standaard 100%) schaalt de hele interface via `QT_SCALE_FACTOR` en geldt na een herstart (`interface_scale.py`). Controleer nieuwe schermen ook op 1280×700 met 150% Windows-schaal plus 125% interfacegrootte.
+
 ## Boekenkast
 - Op brede schermen gebruikt de boekenkast een gecentreerde contentas met een maximum breedte; lege ruimte wordt links en rechts gebalanceerd.
 - Hero-inhoud, zoek/sorteerbediening en kaartgrid volgen dezelfde horizontale ankers.
 - Boek- en nieuw-boekkaarten gebruiken exact dezelfde buitenmaat en een responsive grid; voeg geen decoratieve zijpanelen toe alleen om brede schermen te vullen.
+- Omslag op een kaart: eigen omslag (met titelband) > `boekomslagen/default-cover.*` in de werkmap > gegenereerde omslag uit de boek-ID (`ui/generated_cover.py`). De gegenereerde omslag is themaonafhankelijk (gedempte, vrij donkere kleur met lichte tekst, zoals een echt boek), alleen weergave, en wordt nooit opgeslagen of geëxporteerd.
 
 ### Navigatie- en opslagdetails
 - In de Inhoud-boom vertegenwoordigt de geselecteerde rij de inhoud die werkelijk in het centrale werkvlak is geopend. Een sleepgreep of structurele kop (sectie, Voorwerk, Boek, Achterwerk) mag die selectie niet verplaatsen zolang de centrale tekstcontext niet verandert.
@@ -158,6 +170,17 @@ QuietWriter moet tijdens het schrijven zo weinig mogelijk als een interface voel
 - Zoeken/vervangen mag uitsluitend treffers aanbieden en muteren waarvan het volledige bronbereik buiten beschermde image-syntax valt. Maskering alleen is onvoldoende: ook een zoekterm met een begin- of eindspatie mag nooit een Markdown-delimiter, pad, quote of andere beheerde positie meenemen.
 
 
+
+### Exportvoorbeeld (1.7.0)
+- **Voorbeeld bekijken** staat links van de exportknop (Zelf instellen) en als extra knop in de laatste wizardstap. Niet bij QWBOOK.
+- Zelfde route als exporteren (`run_preview_flow` → `run_export`), maar het doel is `exporting/preview.preview_destination`: `<temp>/QuietWriter-voorbeeld/<slug>-voorbeeld<ext>`. Geen schrijfactie in de exportmap, geen `export/settings.json`, geen succesmelding.
+- EPUB: `epub_preview_page` maakt één HTML-pagina uit de spine; `EpubPreviewDialog` (niet-modaal) toont die met **Openen in ander programma** en **Sluiten**. Andere formaten: `QDesktopServices.openUrl`; lukt dat niet, dan een waarschuwing met het pad.
+
+### Ollama instellen (1.7.0)
+- Instellingen → AI Meelezer, rij *Ollama instellen* onder het Ollama-adres, alleen zichtbaar bij provider Ollama (`ui/ollama_setup.OllamaSetupBox`, kern in `ai/ollama_setup.py`).
+- Drie toestanden: niet gevonden (uitleg, **Ollama downloaden**, **Opnieuw zoeken**), draait zonder model (modellenlijst + **Model downloaden**), klaar (één regel, **Opnieuw zoeken**, **Ander model downloaden…**).
+- Zoeken en downloaden in een thread; zoeken bij openen van Instellingen, bij wisselen naar Ollama, bij AI aanzetten en na het wijzigen van het adres.
+- QuietWriter installeert Ollama nooit zelf en schrijft geen instellingen: na een download wordt het model alleen als concept gekozen (Opslaan bewaart).
 
 ## AI-geheugenvoorstellen (0.23.3)
 

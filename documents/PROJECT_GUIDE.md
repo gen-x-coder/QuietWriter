@@ -1,8 +1,6 @@
-> Actueel ontwikkeltraject: **1.5.0-dev.57**. Zie `DEV57_READER_UPDATER_REVIEW.md` en `DEV42_TO_DEV52_HANDOVER.md`; de hieronder vermelde oudere versiestatus is historisch.
-
 # QuietWriter — projectgids
 
-**Historische status (oude projectgids):** QuietWriter **1.3.1** was de publieke stabiele release. De actieve ontwikkellijn was **1.4.0-dev.39**; **1.3.0 is uitgebracht**. De 1.3-lijn bevat inmiddels de nieuwe Boekenkast met planken en Presentatiemodus; dev.11 introduceerde opt-in schrijfdoelen en lokale dagvoortgang; dev.18 startte Planning dichter bij het schrijven met presentation-only Planninghulp in lege hoofdstukken; dev.19 polijst de sceneweergave en maakt afgekapt gebleven scènes expliciet zichtbaar; dev.20 maakte Planning zelf duidelijker en trok context-subnavigatie visueel gelijk; dev.21 verduidelijkte de Planningworkflow en maakte scènestatus zichtbaar; dev.22 voegde de on-demand Planning-overlay in de editor toe, maakte Status een vaste dropdown en liet scènes bewust als Geschreven markeren; dev.23 polijstte die workflow; dev.24 maakt de overlay smaller/hoger, koppelt de Planning-knop aan de Planninghulp-instelling en repareert de losse zoek/vervang- en plakselectiebugs; dev.25 laat de Planning-knop ook zonder gekoppelde scènes beschikbaar en trekt de lege zoekstatus visueel gelijk. dev.26 maakte de lege flyout compact en vormde de basis voor een brede review; dev.27 verwerkte de review-hardening rond tests, opt-in, scrollwiel, profielinstellingen en popupgedrag; dev.28 rondt de kerneditor af met natuurlijke undo, veilige scènebreuk-plakacties, de updatecheck en een kleine polishbundel. dev.29 richt zich op echt Windows-/laptopgebruik: betrouwbare undo bij menselijke typesnelheid, zichtbare boeklaadfeedback, kleine-schermgedrag, thema-accenten en expliciete Integriteit.
+**Status:** 1.5.1. Ontwikkeling gaat in kleine patchversies (1.5.x). Werkwijze en vaste regels staan in `../AGENTS.md`; de planning in `ROADMAP_AND_IDEAS.md`.
 
 ## Wat QuietWriter is
 
@@ -28,7 +26,7 @@ De kernwaarden zijn:
 
 ## Huidige productstaat
 
-In de stabiele 1.2.32 zijn onder andere aanwezig:
+Onder andere aanwezig:
 
 - manuscript en hoofdstukstructuur;
 - Planning, scènes en personages;
@@ -41,9 +39,11 @@ In de stabiele 1.2.32 zijn onder andere aanwezig:
 - DOCX import/export;
 - EPUB/PDF/Markdown-export;
 - begeleid exporteren;
-- first-run/onboarding en updatecontrole;
+- first-run/onboarding;
+- zelf bijwerken van de portable build (Velopack, vanaf 1.5.1);
+- boekback-ups (`.qwbook`, automatisch en handmatig);
 - AI Meelezer, Schrijverspersona, Boekprofiel en Boekgeheugen;
-- spelling, zoeken, focusweergave en opmaak;
+- spelling, zoeken en opmaak;
 - lokale media;
 - vijf interfacetalen;
 - vijftien thema's.
@@ -60,7 +60,7 @@ Zie `CHANGELOG.md` voor exacte versiedetails.
 - History/revisions en optimistic concurrency;
 - EPUB, PDF, DOCX en Markdown export;
 - Ollama en OpenRouter als optionele AI-providers;
-- PyInstaller onedir voor Windows.
+- PyInstaller onedir voor Windows, verpakt en bijgewerkt met Velopack.
 
 ### Manuscriptarchitectuur: besluit afgerond
 
@@ -108,32 +108,27 @@ Deze lagen mogen niet stil in elkaar overlopen.
 
 ## Repository- en releasemodel
 
-- `gen-x-coder/QuietWriter-dev`: private ontwikkelrepository en actuele ontwikkelbaseline.
-- `gen-x-coder/QuietWriter`: publieke open-source- en releaserepository.
-- de SignPath Foundation-aanvraag is afgewezen wegens nog onvoldoende publieke adoptiesignalen; dit blokkeert de release niet;
-- de Windows-release wordt voorlopig unsigned gebouwd zonder UPX/obfuscatie, met lokaal gecompileerde PyInstaller-bootloader en gepubliceerde SHA-256-hashes;
-- stabiele releases worden als vaste Windows-build bevroren, gecontroleerd en met SHA-256 gepubliceerd;
-- actieve featureontwikkeling gebruikt oplopende prereleaseversies op de komende minor-lijn (nu `1.4.0-dev.X`). De 1.3.0-prerelease blijft bevroren; bij een latere definitieve release gaan eventuele patches naar `1.3.1`.
+- `gen-x-coder/QuietWriter-dev`: private ontwikkelrepository.
+- `gen-x-coder/QuietWriter`: publieke open-source- en releaserepository; de app zoekt updates alleen daar.
+- Unsigned Windows-build zonder UPX of obfuscatie, met een lokaal gecompileerde PyInstaller-bootloader en gepubliceerde SHA-256-hashes. SignPath is afgeblazen.
+- Versies: `x.y.z`; geen lange `-dev.N`-reeksen meer.
 
 Zie `RELEASE_PROCESS.md`.
 
 ## Leesvolgorde voor een nieuwe ontwikkelaar of AI
 
-1. `PROJECT_GUIDE.md`
-2. `ARCHITECTURE_AND_DATA_SAFETY.md`
-3. `PRODUCT_AND_UI_PHILOSOPHY.md`
-4. `ROADMAP_AND_IDEAS.md`
-5. `MANUSCRIPT_SYNTAX.md` — feitelijke 1.2.13-manuscriptsyntaxis en richting naar gangbare Markdownconventies
-6. `BOOK_FORMAT_ARCHITECTURE_RESEARCH.md` — actief onderzoek naar manuscriptopslag, intern documentmodel en DOCX-import
-7. `BOOK_FORMAT_ARCHITECTURE_REVIEW_CLAUDE.md` — eerste onafhankelijke architectuurreview
-8. `BOOK_FORMAT_ARCHITECTURE_REVIEW_1_2_24_CLAUDE.md` — onafhankelijke hardeningreview na de eerste DocumentView-implementatie
-9. `QUIETWRITER_REVIEW_1_2_30_CLAUDE.md` — finale audit die nog één hardeningblok vereiste
-10. `QUIETWRITER_REVIEW_1_2_31_CLAUDE.md` — afsluitende PySide6-review: A, refactor afgerond/releasecandidate
-11. `TEST_STRATEGY.md`
-12. `HISTORY_AND_LESSONS.md`
-13. `RELEASE_PROCESS.md`
-14. `RELEASE_BRANDING_AND_OPERATIONS.md`
-15. `PUBLIC_PRESENTATION.md`
-16. `CHANGELOG.md`
+1. `../AGENTS.md` — regels en werkwijze
+2. `PROJECT_GUIDE.md`
+3. `ARCHITECTURE_AND_DATA_SAFETY.md`
+4. `PRODUCT_AND_UI_PHILOSOPHY.md`
+5. `HISTORY_AND_LESSONS.md` — waarom dingen zijn zoals ze zijn
+6. `ROADMAP_AND_IDEAS.md`
+7. `MANUSCRIPT_SYNTAX.md`
+8. `TEST_STRATEGY.md`
+9. `RELEASE_PROCESS.md`
+10. `DEVELOPER_REFERENCE.md` en `UI_REFERENCE.md` (naslag)
+11. `design/` — ontwerp per functie (Darlings, schrijfdoelen, Planninghulp, exportwizard, paneeluitleg, back-ups)
+12. `research/` — lopend onderzoek (o.a. vergelijking met NEO, oktober 2026)
+13. `CHANGELOG.md`
 
-Historische roadmapdetails staan in `ROADMAP_HISTORY_TO_1_2_13.md`.
+De volledige geschiedenis (reviews, overdrachten, onderzoek, oude roadmap en changelog) staat in `archive/`, met een index in `archive/README.md`.

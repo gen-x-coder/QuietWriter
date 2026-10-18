@@ -115,14 +115,22 @@ class SpellPanel(QWidget):
         self._rows_rev = self.editor_page.editor.document().revision()
         d = self.editor_page.dictionary
         if not d.words:
-            self.rows=[]; self.index=0; self.status.setText(tr('spell.no_dictionary','Er is nog geen woordenboek ingesteld.')); self.word.clear(); self.suggestions.clear(); self._configure_tab_order(); return
+            self.rows=[]; self.index=0; self.status.setText(tr('spell.no_dictionary_171','Er is nog geen woordenboek voor deze taal. Kies of download er een bij Instellingen → Spelling.')); self.word.clear(); self.suggestions.clear(); self._set_actions_enabled(False); self._configure_tab_order(); return
         title_rows = [('title', w, a, b) for (w,a,b) in d.misspellings(self.editor_page.chapter_title.text())]
         body_text = text_for_language_tools(self.editor_page.editor.toPlainText())
         body_rows = [('body', w, a, b) for (w,a,b) in d.misspellings(body_text)]
         self.rows = title_rows + body_rows
         if not self.rows:
-            self.index=0; self.status.setText(tr('spell.no_errors','Geen spelfouten gevonden in dit hoofdstuk.')); self.word.clear(); self.suggestions.clear(); self._configure_tab_order(); return
+            self.index=0; self.status.setText(tr('spell.no_errors','Geen spelfouten gevonden in dit hoofdstuk.')); self.word.clear(); self.suggestions.clear(); self._set_actions_enabled(False); self._configure_tab_order(); return
+        self._set_actions_enabled(True)
         self.index=min(max(self.index,0),len(self.rows)-1); self.show_current(select_in_editor=select_in_editor)
+
+    def _set_actions_enabled(self, enabled: bool):
+        """Zonder woord (geen woordenboek, geen fouten) zijn de knoppen niet te gebruiken (dev15)."""
+        for button in (self.ignore_btn, self.ignore_all_btn, self.ignore_always_btn, self.add_btn):
+            button.setEnabled(bool(enabled))
+        if not enabled:
+            self.change_btn.setEnabled(False)
 
     def focus_first_control(self):
         """Put keyboard focus on the first useful action in the guided panel."""
@@ -159,7 +167,25 @@ class SpellPanel(QWidget):
             self.editor_page.chapter_title.setFocus()
             self.editor_page.chapter_title.setSelection(start, end-start)
         else:
+            # Een fout in een voetnoot: die staat ingeklapt in de tekst, dus
+            # selecteer hem in de notenstrook onder het blad (1.7).
+            note = self._footnote_at(start, end)
+            strip = getattr(self.editor_page, 'footnote_strip', None)
+            if note is not None and strip is not None:
+                index, content_start = note
+                if strip.select_in_note(index, start - content_start, end - content_start):
+                    return
             cur=self.editor_page.editor.textCursor(); cur.setPosition(start); cur.setPosition(end,QTextCursor.KeepAnchor); self.editor_page.editor.setTextCursor(cur); self.editor_page.editor.ensureCursorVisible()
+
+    def _footnote_at(self, start: int, end: int):
+        """(nootnummer vanaf 0, begin noottekst) als start–end in een voetnoot valt."""
+        spans_of = getattr(self.editor_page.editor, 'footnote_spans', None)
+        if spans_of is None:
+            return None
+        for index, (_open, content_start, content_end, _close) in enumerate(spans_of()):
+            if content_start <= start and end <= content_end:
+                return index, content_start
+        return None
 
 
     def _suggestions_ready(self, request_id, dictionary, word, payload):
@@ -277,7 +303,14 @@ class SpellPanel(QWidget):
             self.editor_page.chapter_title.setText(text[:start] + replacement + text[end:])
             self.editor_page.rename_current()
         else:
-            cur=self.editor_page.editor.textCursor(); cur.setPosition(start); cur.setPosition(end,QTextCursor.KeepAnchor); cur.insertText(replacement)
+            note = self._footnote_at(start, end)
+            strip = getattr(self.editor_page, 'footnote_strip', None)
+            if note is not None and strip is not None and strip.select_in_note(note[0], start - note[1], end - note[1]):
+                # Via het notenveld zelf: dat schrijft door naar het manuscript en
+                # kan daarna nooit de oude tekst terugzetten.
+                strip.rows[note[0]].edit.textCursor().insertText(replacement)
+            else:
+                cur=self.editor_page.editor.textCursor(); cur.setPosition(start); cur.setPosition(end,QTextCursor.KeepAnchor); cur.insertText(replacement)
         self.editor_page.highlighter.rehighlight(); self._advance()
 
     def ignore(self):

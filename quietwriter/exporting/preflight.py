@@ -42,6 +42,8 @@ def run_preflight(document: ExportDocument, format_name: str, settings: dict, pa
         rows.append(PreflightItem('ok', 'images', str(document.inline_asset_count)))
         if format_name == 'markdown':
             rows.append(PreflightItem('error', 'markdown_images_pending', str(document.inline_asset_count)))
+        if format_name == 'submission':
+            rows.append(PreflightItem('info', 'submission_images', str(document.inline_asset_count)))
 
     if format_name == 'pdf':
         fallback_count = 0

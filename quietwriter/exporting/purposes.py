@@ -31,6 +31,7 @@ PURPOSES: tuple[ExportPurpose, ...] = (
     ExportPurpose('share', 'qwbook', False, {'qwbook': {'include_history': False, 'include_ai_chat': False}}),
     ExportPurpose('backup', 'qwbook', False, {'qwbook': {'include_history': True, 'include_ai_chat': True}}),
     ExportPurpose('website', 'markdown', False),
+    ExportPurpose('submission', 'submission', True),
 )
 
 PURPOSES_BY_ID = {purpose.id: purpose for purpose in PURPOSES}

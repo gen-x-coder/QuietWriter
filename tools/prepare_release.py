@@ -35,7 +35,6 @@ ALLOWED_FILES = (
     "packaging/requirements-runtime.lock",
     "packaging/make_version_info.py",
     "tools/fetch_bundled_fonts.py",
-    "tools/fetch_dictionaries.py",
     "tools/write_build_manifest.py",
     "tools/render_release_readme.py",
 )

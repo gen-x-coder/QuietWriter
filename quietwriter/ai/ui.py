@@ -131,14 +131,14 @@ class AIPanel(QWidget):
         )
         lay.addWidget(self.panel_help)
         self.expand_button = QPushButton(tr('ai.workspace.popout', 'Pop-out'))
-        self.expand_button.setIcon(self.style().standardIcon(QStyle.SP_TitleBarMaxButton))
+        self.expand_button.setIcon(QIcon())  # dev15: geen los Windows-titelbalkicoon, zoals de knoppen ernaast
         self.expand_button.setToolTip(tr('ai.workspace.title', 'AI Meelezer — werkruimte'))
         self.expand_button.clicked.connect(self.open_workspace)
-        self.save_chat_button = QPushButton(tr('ai.archive.save_short', 'Bewaren'))
-        self.save_chat_button.setToolTip(tr('ai.archive.save', 'Gesprek bewaren'))
+        self.save_chat_button = QPushButton(tr('ai.archive.save_short', 'Opslaan'))
+        self.save_chat_button.setToolTip(tr('ai.archive.save', 'Gesprek opslaan'))
         self.save_chat_button.clicked.connect(self.save_conversation)
         self.archives_button = QPushButton(tr('ai.archive.list_short', 'Gesprekken'))
-        self.archives_button.setToolTip(tr('ai.archive.open', 'Bewaarde gesprekken'))
+        self.archives_button.setToolTip(tr('ai.archive.open', 'Opgeslagen gesprekken'))
         self.archives_button.clicked.connect(self.open_archives)
         archive_controls = QHBoxLayout()
         archive_controls.setSpacing(5)
@@ -1040,7 +1040,7 @@ class AIPanel(QWidget):
         self._home_layout = (home, index)
         self._workspace_placeholder = placeholder
         self.expand_button.setText(tr('ai.workspace.close', 'Terug'))
-        self.expand_button.setIcon(self.style().standardIcon(QStyle.SP_TitleBarNormalButton))
+        self.expand_button.setIcon(QIcon())  # dev15: geen los Windows-titelbalkicoon, zoals de knoppen ernaast
         self.expand_button.clicked.disconnect()
         self.expand_button.clicked.connect(dialog.close)
 
@@ -1065,7 +1065,7 @@ class AIPanel(QWidget):
             self.expand_button.clicked.disconnect()
             self.expand_button.clicked.connect(self.open_workspace)
             self.expand_button.setText(tr('ai.workspace.popout', 'Pop-out'))
-            self.expand_button.setIcon(self.style().standardIcon(QStyle.SP_TitleBarMaxButton))
+            self.expand_button.setIcon(QIcon())  # dev15: geen los Windows-titelbalkicoon, zoals de knoppen ernaast
             if was_selected:
                 self.show()
             dialog.deleteLater()
@@ -1080,36 +1080,36 @@ class AIPanel(QWidget):
 
     def save_conversation(self):
         if self.is_busy():
-            notice_information(self, tr('ai.archive.save', 'Gesprek bewaren'),
-                tr('ai.archive.wait_until_ready', 'Wacht totdat de Meelezer klaar is met antwoorden. Daarna kun je het gesprek bewaren.'))
+            notice_information(self, tr('ai.archive.save', 'Gesprek opslaan'),
+                tr('ai.archive.wait_until_ready', 'Wacht totdat de Meelezer klaar is met antwoorden. Daarna kun je het gesprek opslaan.'))
             return
         if not any(m.get('role') == 'user' for m in self.messages):
-            QMessageBox.information(self, tr('ai.archive.save', 'Gesprek bewaren'),
-                tr('ai.archive.nothing_to_save', 'Er is nog geen gesprek om te bewaren. Stel eerst een vraag aan de Meelezer.'))
+            QMessageBox.information(self, tr('ai.archive.save', 'Gesprek opslaan'),
+                tr('ai.archive.nothing_to_save', 'Er is nog geen gesprek om op te slaan. Stel eerst een vraag aan de Meelezer.'))
             return
         if self.archive is None:
-            notice_information(self, tr('ai.archive.save', 'Gesprek bewaren'),
-                tr('ai.archive.book_required', 'Open eerst een boek om een gesprek te kunnen bewaren.'))
+            notice_information(self, tr('ai.archive.save', 'Gesprek opslaan'),
+                tr('ai.archive.book_required', 'Open eerst een boek om een gesprek op te kunnen slaan.'))
             return
-        title, ok = prompt_text(self, tr('ai.archive.save', 'Gesprek bewaren'),
+        title, ok = prompt_text(self, tr('ai.archive.save', 'Gesprek opslaan'),
             tr('ai.archive.title_prompt', 'Titel van het gesprek:'))
         if not ok:
             return
         try:
             self.archive.save_explicit(self.messages, title, self._last_provider, self._last_model)
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, tr('ai.archive.save', 'Gesprek bewaren'), str(exc))
+            QMessageBox.warning(self, tr('ai.archive.save', 'Gesprek opslaan'), str(exc))
 
     def open_archives(self):
         if self.archive is None:
             return
         dialog = QDialog(self)
-        dialog.setWindowTitle(tr('ai.archive.open', 'Bewaarde gesprekken'))
+        dialog.setWindowTitle(tr('ai.archive.open', 'Opgeslagen gesprekken'))
         dialog.resize(850, 580)
         layout = QVBoxLayout(dialog)
         items = self.archive.list_items()
         if not items:
-            notice = QLabel(tr('ai.archive.empty', 'Er zijn nog geen bewaarde gesprekken voor dit boek. Bewaar eerst een gesprek via Bewaren.'))
+            notice = QLabel(tr('ai.archive.empty', 'Er zijn nog geen opgeslagen gesprekken voor dit boek. Sla eerst een gesprek op via Opslaan.'))
             notice.setWordWrap(True)
             layout.addWidget(notice)
         else:

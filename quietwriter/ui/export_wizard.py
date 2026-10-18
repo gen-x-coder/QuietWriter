@@ -13,7 +13,7 @@ from __future__ import annotations
 from PySide6.QtCore import QEvent, QUrl, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
+    QButtonGroup, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
     QRadioButton, QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
 
@@ -26,6 +26,7 @@ from ..exporting.runner import destination_for
 from ..exporting.summary import build_content_summary, build_package_summary, round_words
 from ..exporting.templates import TEMPLATES
 from ..i18n import current_locale, tr
+from .page_layout import PAGE_MARGINS
 from ..publication_models import PUBLICATION_ITEMS
 
 STEP_DONE = 'done'
@@ -109,6 +110,11 @@ def _purpose_texts(purpose_id: str) -> tuple[str, str, str]:
             tr('export.wizard.purpose.website_help', 'Platte tekst met een vaste kop, klaar om te plakken in je site.'),
             'Markdown',
         ),
+        'submission': (
+            tr('export.wizard.purpose.submission', 'Inzenden bij een uitgeverij of wedstrijd'),
+            tr('export.wizard.purpose.submission_help', 'Een net manuscript in Word, zoals uitgeverijen en jury’s het willen: ruime regelafstand, titelpagina en paginanummers.'),
+            'DOCX',
+        ),
     }[purpose_id]
 
 
@@ -121,6 +127,7 @@ def _kind_noun(purpose_id: str) -> str:
         'share': tr('export.wizard.kind.share', 'bestand om te delen'),
         'backup': tr('export.wizard.kind.backup', 'back-up'),
         'website': tr('export.wizard.kind.website', 'websitebestand'),
+        'submission': tr('export.wizard.kind.submission', 'manuscript'),
     }.get(purpose_id, tr('export.wizard.kind.default', 'bestand'))
 
 
@@ -132,6 +139,7 @@ def _make_verb(purpose_id: str) -> str:
         'share': tr('export.wizard.make.share', 'Bestand om te delen maken'),
         'backup': tr('export.wizard.make.backup', 'Back-up maken'),
         'website': tr('export.wizard.make.website', 'Websitebestand maken'),
+        'submission': tr('export.wizard.make.submission', 'Manuscript maken'),
     }.get(purpose_id, tr('export.wizard.make.default', 'Exporteren'))
 
 
@@ -212,7 +220,7 @@ class ExportWizard(QWidget):
         # Step bar (not clickable; Terug/Volgende are the only navigation).
         bar_host = QWidget(); bar_host.setObjectName('wizardStepBar')
         bar_host.setMaximumWidth(820 + 84)
-        bar = QVBoxLayout(bar_host); bar.setContentsMargins(42, 10, 42, 0); bar.setSpacing(0)
+        bar = QVBoxLayout(bar_host); bar.setContentsMargins(PAGE_MARGINS[0], 10, PAGE_MARGINS[2], 0); bar.setSpacing(0)
         self.step_row = QHBoxLayout(); self.step_row.setSpacing(22)
         self.step_labels: list[QLabel] = []
         bar.addLayout(self.step_row)
@@ -229,8 +237,8 @@ class ExportWizard(QWidget):
         self.action_bar = QFrame(); self.action_bar.setObjectName('wizardActionBar')
         self.action_bar.setMaximumWidth(820 + 84)
         self.action_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        fl = QHBoxLayout(self.action_bar); fl.setContentsMargins(42, 10, 42, 10); fl.setSpacing(10)
-        self.back_button = QPushButton(tr('export.wizard.back', 'Terug')); self.back_button.setObjectName('secondaryButton')
+        fl = QHBoxLayout(self.action_bar); fl.setContentsMargins(PAGE_MARGINS[0], 10, PAGE_MARGINS[2], 10); fl.setSpacing(10)
+        self.back_button = QPushButton(tr('export.wizard.back', 'Vorige')); self.back_button.setObjectName('secondaryButton')
         self.hint_label = _label('', 'muted', wrap=False)
         self.extra_button = QPushButton(''); self.extra_button.setObjectName('secondaryButton')
         self.next_button = QPushButton(tr('export.wizard.next', 'Volgende')); self.next_button.setObjectName('primaryButton')
@@ -242,7 +250,7 @@ class ExportWizard(QWidget):
         self.scroll.setObjectName('wizardScroll')
         self.scroll.setMinimumHeight(0)
         self.scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        host = QWidget(); host_layout = QVBoxLayout(host); host_layout.setContentsMargins(42, 18, 42, 24); host_layout.setSpacing(0)
+        host = QWidget(); host_layout = QVBoxLayout(host); host_layout.setContentsMargins(PAGE_MARGINS[0], 18, PAGE_MARGINS[2], 24); host_layout.setSpacing(0)
         self.pages = QStackedWidget()
         self.pages.currentChanged.connect(self._fit_pages)
         host_layout.addWidget(self.pages); host_layout.addStretch(1)
@@ -372,6 +380,37 @@ class ExportWizard(QWidget):
         for box in (self.page_numbers, self.running_header):
             box.setObjectName('publicationToggle'); box.toggled.connect(self._appearance_changed); pl.addWidget(box)
         layout.addWidget(self.paper_card)
+
+        # Inzenden: manuscriptopmaak.
+        self.submission_card = QFrame(); self.submission_card.setObjectName('wizardCard')
+        sl = QVBoxLayout(self.submission_card); sl.setContentsMargins(18, 14, 18, 14); sl.setSpacing(8)
+        sl.addWidget(_label(tr('export.wizard.submission.font', 'Lettertype'), 'sectionTitle'))
+        self.submission_fonts = {}
+        font_group = QButtonGroup(self)
+        for key, label in (('times', 'Times New Roman'), ('arial', 'Arial'), ('courier', 'Courier New')):
+            radio = QRadioButton(label); radio.setObjectName('publicationRadio')
+            font_group.addButton(radio); radio.toggled.connect(self._appearance_changed); sl.addWidget(radio)
+            self.submission_fonts[key] = radio
+        sl.addWidget(_label(tr('export.wizard.submission.spacing', 'Regelafstand'), 'sectionTitle'))
+        self.submission_double = QRadioButton(tr('export.wizard.submission.double', 'Dubbel (meest gevraagd)'))
+        self.submission_one_half = QRadioButton(tr('export.wizard.submission.one_half', 'Anderhalf'))
+        spacing_group = QButtonGroup(self)
+        for radio in (self.submission_double, self.submission_one_half):
+            radio.setObjectName('publicationRadio'); spacing_group.addButton(radio)
+            radio.toggled.connect(self._appearance_changed); sl.addWidget(radio)
+        self.submission_header = QCheckBox(tr('export.wizard.submission.header', 'Kopregel met achternaam, titel en paginanummer'))
+        self.submission_anonymous = QCheckBox(tr('export.wizard.submission.anonymous', 'Anoniem inzenden: geen naam en contactgegevens in het bestand'))
+        for box in (self.submission_header, self.submission_anonymous):
+            box.setObjectName('publicationToggle'); box.toggled.connect(self._appearance_changed); sl.addWidget(box)
+        self.submission_anonymous_note = _label(tr('export.wizard.submission.anonymous_note', 'QuietWriter laat je naam, contactgegevens en de auteur in de bestandseigenschappen weg. Controleer zelf of de titel of je tekst je niet verraden.'), 'muted')
+        sl.addWidget(self.submission_anonymous_note)
+        sl.addWidget(_label(tr('export.wizard.submission.contact', 'Je naam en contactgegevens (linksboven op de titelpagina)'), 'sectionTitle'))
+        self.submission_contact = QPlainTextEdit(); self.submission_contact.setFixedHeight(96)
+        self.submission_contact.setPlaceholderText(tr('export.wizard.submission.contact_placeholder', 'Naam\nAdres\nE-mail\nTelefoon'))
+        self.submission_contact.textChanged.connect(self._appearance_changed)
+        sl.addWidget(self.submission_contact)
+        sl.addWidget(_label(tr('export.wizard.submission.contact_note', 'Deze gegevens bewaart QuietWriter alleen op deze computer, niet in het boek.'), 'muted'))
+        layout.addWidget(self.submission_card)
 
         self.section_pages = QCheckBox(tr('export.wizard.sections', 'Elk deel begint met een eigen titelpagina'))
         self.section_pages.setObjectName('publicationToggle'); self.section_pages.toggled.connect(self._appearance_changed)
@@ -515,8 +554,20 @@ class ExportWizard(QWidget):
             return
         self._show_step(self.steps[self._index() - 1])
 
+    def _can_preview(self) -> bool:
+        from ..exporting.preview import PREVIEW_FORMATS
+        return bool(self.purpose_id) and self.format_name in PREVIEW_FORMATS
+
+    def _preview(self):
+        draft = dict(self.draft)
+        draft['format'] = self.format_name
+        draft['purpose'] = self.purpose_id
+        return self.page.show_export_preview(self.format_name, draft)
+
     def _extra_clicked(self):
-        if self.step == STEP_CHECK:
+        if self.step == STEP_EXPORT:
+            self._preview()
+        elif self.step == STEP_CHECK:
             self.recheck(save_first=True)
         elif self.step == STEP_DONE:
             self._reset_state()
@@ -592,7 +643,7 @@ class ExportWizard(QWidget):
         self.back_button.setVisible(step != STEP_DONE)
         self.back_button.setEnabled(self._index() > 0)
         self.next_button.setVisible(step != STEP_DONE)
-        self.extra_button.setVisible(step in (STEP_CHECK, STEP_DONE))
+        self.extra_button.setVisible(step in (STEP_CHECK, STEP_DONE) or (step == STEP_EXPORT and self._can_preview()))
         self.hint_label.setText('')
         self.next_button.setText(tr('export.wizard.next', 'Volgende'))
         enabled = True
@@ -608,6 +659,7 @@ class ExportWizard(QWidget):
             self.next_button.setText(tr('export.wizard.content.next', 'Klopt, volgende'))
         elif step == STEP_EXPORT:
             self.next_button.setText(_make_verb(self.purpose_id or ''))
+            self.extra_button.setText(tr('export.preview.button', 'Voorbeeld bekijken'))
         elif step == STEP_DONE:
             self.extra_button.setText(tr('export.wizard.done.again', 'Nog een export maken'))
         self.next_button.setEnabled(enabled and self.book is not None)
@@ -700,6 +752,7 @@ class ExportWizard(QWidget):
             'open_points': (tr('export.wizard.issue.open_points', '{n} open punt(en) staan nog in je boek', n=item.value), tr('export.wizard.issue.open_points_help', 'De technische markeringen komen niet in de export. Controleer wel of je deze plekken bewust onafgewerkt wilt laten.'), tr('export.wizard.action.open_points', 'Open punten bekijken'), main.show_open_points),
             'missing_assets': (tr('export.wizard.issue.missing_assets', 'Een afbeelding ontbreekt of is gewijzigd'), self._missing_asset_text(item.value), tr('export.wizard.action.media', 'Media openen'), main.show_media),
             'markdown_images_pending': (tr('export.wizard.issue.markdown_images', 'Afbeeldingen passen niet in een websitebestand'), tr('export.wizard.issue.markdown_images_help', 'Markdown-export ondersteunt nog geen afbeeldingen. Kies een ander doel.'), tr('export.wizard.action.other_purpose', 'Ander doel kiezen'), lambda: self._show_step(STEP_PURPOSE)),
+            'submission_images': (tr('export.wizard.issue.submission_images', '{n} afbeelding(en) in je boek', n=item.value), tr('export.wizard.issue.submission_images_help', 'Een inzending is tekst. Afbeeldingen komen als korte aanduiding in het manuscript, bijvoorbeeld [Afbeelding: kaart].'), *no_action),
             'cover_missing': (tr('export.wizard.issue.cover_missing', 'Geen omslag'), tr('export.wizard.issue.cover_missing_help', 'Je e-book krijgt dan geen voorkant in de boekenkast van de lezer.'), *details),
             'pdf_wrap_fallback': (tr('export.wizard.issue.pdf_wrap', '{n} afbeelding(en) zonder tekstomloop', n=item.value), tr('export.wizard.issue.pdf_wrap_help', 'Een lang onderschrift past niet naast de afbeelding. De tekst loopt er in de PDF onderdoor.'), *no_action),
             'qwbook_large': (tr('export.wizard.issue.qwbook_large', 'Groot bestand: ongeveer {size}', size=_fmt_size(_safe_int(item.value))), tr('export.wizard.issue.qwbook_large_help', 'Zet de versiegeschiedenis uit voor een kleiner bestand.'), tr('export.wizard.action.content_step', 'Naar Inhoud-stap'), lambda: self._show_step(STEP_CONTENT)),
@@ -953,6 +1006,12 @@ class ExportWizard(QWidget):
     # ------------------------------------------------------------------ appearance
     def _render_appearance(self):
         fmt = self.format_name
+        self.submission_card.setVisible(fmt == 'submission')
+        for card in self.template_cards.values():
+            card.setVisible(fmt != 'submission')
+        if fmt == 'submission':
+            self._render_submission()
+            return
         group = 'pdf' if fmt == 'pdf' else 'epub'
         options = self.draft.setdefault(group, {})
         if fmt == 'pdf':
@@ -986,12 +1045,51 @@ class ExportWizard(QWidget):
         for widget in (self.cover_art_only, self.cover_has_text, self.paper_a5, self.paper_a4, self.page_numbers, self.running_header, self.section_pages):
             widget.blockSignals(False)
 
+    def _contact_setting(self) -> str:
+        settings = getattr(self.page.main, 'settings', None)
+        try:
+            return str(settings.value('export/submission_contact', '', str) or '') if settings is not None else ''
+        except Exception:
+            return ''
+
+    def _render_submission(self):
+        options = self.draft.setdefault('submission', {})
+        if 'contact' not in options:
+            options['contact'] = self._contact_setting()
+        self.appearance_heading.setText(tr('export.wizard.appearance.heading_submission', 'Hoe moet je manuscript eruitzien?'))
+        self.appearance_intro.setText(tr('export.wizard.appearance.intro_submission', 'QuietWriter kiest de gangbare opmaak. Lees wel altijd de inzendregels: soms wordt iets anders gevraagd.'))
+        for widget in (self.cover_card, self.no_cover_label, self.paper_card, self.section_pages):
+            widget.setVisible(False)
+        controls = (*self.submission_fonts.values(), self.submission_double, self.submission_one_half,
+                    self.submission_header, self.submission_anonymous, self.submission_contact)
+        for widget in controls:
+            widget.blockSignals(True)
+        self.submission_fonts.get(options.get('font', 'times'), self.submission_fonts['times']).setChecked(True)
+        (self.submission_one_half if options.get('line_spacing') == 'one_half' else self.submission_double).setChecked(True)
+        self.submission_header.setChecked(bool(options.get('running_header', True)))
+        self.submission_anonymous.setChecked(bool(options.get('anonymous', False)))
+        self.submission_contact.setPlainText(str(options.get('contact') or ''))
+        self.submission_contact.setEnabled(not self.submission_anonymous.isChecked())
+        self.submission_anonymous_note.setVisible(self.submission_anonymous.isChecked())
+        for widget in controls:
+            widget.blockSignals(False)
+
     def _template_clicked(self, button):
         group = 'pdf' if self.format_name == 'pdf' else 'epub'
         self.draft.setdefault(group, {})['template'] = str(button.property('templateKey'))
 
     def _appearance_changed(self, *_):
         if self.step != STEP_APPEARANCE:
+            return
+        if self.format_name == 'submission':
+            options = self.draft.setdefault('submission', {})
+            options['font'] = next((key for key, radio in self.submission_fonts.items() if radio.isChecked()), 'times')
+            options['line_spacing'] = 'one_half' if self.submission_one_half.isChecked() else 'double'
+            options['running_header'] = self.submission_header.isChecked()
+            options['anonymous'] = self.submission_anonymous.isChecked()
+            options['contact'] = self.submission_contact.toPlainText().strip()
+            self.submission_contact.setEnabled(not options['anonymous'])
+            self.submission_anonymous_note.setVisible(options['anonymous'])
             return
         if self.format_name == 'pdf':
             pdf = self.draft.setdefault('pdf', {})
@@ -1032,6 +1130,15 @@ class ExportWizard(QWidget):
             elif self.content and self.content.has_cover:
                 parts.append(tr('export.wizard.review.cover_text', 'omslag met titel en auteur') if options.get('cover_mode') != 'artwork_with_text'
                              else tr('export.wizard.review.cover_plain', 'omslag zoals hij is'))
+            rows.append((tr('export.wizard.review.style', 'Stijl'), ' · '.join(parts)))
+        if fmt == 'submission':
+            options = self.draft.get('submission') or {}
+            names = {'times': 'Times New Roman', 'arial': 'Arial', 'courier': 'Courier New'}
+            parts = [names.get(options.get('font', 'times'), 'Times New Roman') + ' 12',
+                     tr('export.wizard.submission.one_half_short', 'anderhalve regelafstand') if options.get('line_spacing') == 'one_half'
+                     else tr('export.wizard.submission.double_short', 'dubbele regelafstand')]
+            if options.get('anonymous'):
+                parts.append(tr('export.wizard.submission.anonymous_short', 'anoniem'))
             rows.append((tr('export.wizard.review.style', 'Stijl'), ' · '.join(parts)))
         if fmt == 'qwbook':
             options = self.draft.get('qwbook') or {}
@@ -1082,6 +1189,11 @@ class ExportWizard(QWidget):
         # distinction explicit on the done page instead of claiming the
         # choices were remembered.
         settings_saved = self.page.persist_settings_dict(draft)
+        if self.purpose_id == 'submission':
+            options = draft.get('submission') or {}
+            settings = getattr(self.page.main, 'settings', None)
+            if settings is not None and not options.get('anonymous'):
+                settings.setValue('export/submission_contact', str(options.get('contact') or ''))
         self._show_done(settings_saved=settings_saved)
 
     def _show_done(self, *, settings_saved: bool = True):
@@ -1110,6 +1222,8 @@ class ExportWizard(QWidget):
                       tr('export.wizard.tip.share', 'Stuur het bestand naar de andere QuietWriter-gebruiker. Die kiest op de Boekenkast Boek importeren.')),
             'backup': (tr('export.wizard.tip.backup_title', 'Terugzetten'),
                        tr('export.wizard.tip.backup', 'Kies op de Boekenkast Boek importeren en selecteer dit bestand. QuietWriter zet het boek terug met alles wat erin zit.')),
+            'submission': (tr('export.wizard.tip.submission_title', 'Voordat je het opstuurt'),
+                           tr('export.wizard.tip.submission', 'Lees de inzendregels van de uitgeverij of wedstrijd nog eens. Vragen ze om een ander lettertype, een PDF of een anonieme inzending? Pas het dan aan in Word of maak het manuscript opnieuw.')),
             'website': (tr('export.wizard.tip.website_title', 'Op je site zetten'),
                         tr('export.wizard.tip.website', 'Open het bestand in een teksteditor en plak de inhoud in je site, of upload het als Markdown-bestand.')),
         }

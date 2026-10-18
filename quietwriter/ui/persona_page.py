@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 
 from .dialog_notices import notice_warning, notice_critical
 from ..i18n import tr
+from .page_layout import set_page_margins
 from ..persona_profile import EXAMPLE_PERSONAS, SECTIONS, default_persona_markdown, empty_profile, parse_persona, render_persona
 from ..storage import CorruptSourceError, PersonaExternalModificationError
 from .dialogs import confirm
@@ -94,7 +95,7 @@ class PersonaPage(QWidget):
         self._corrupt_source = False
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(32, 26, 36, 30)
+        set_page_margins(outer)
         outer.setSpacing(14)
 
         top = QHBoxLayout()
@@ -113,11 +114,10 @@ class PersonaPage(QWidget):
         outer.addLayout(top)
 
         body = QHBoxLayout(); body.setSpacing(18)
-        nav_host = QFrame(); nav_host.setObjectName('settingsNav')
-        nav_layout = QVBoxLayout(nav_host); nav_layout.setContentsMargins(8, 8, 8, 8); nav_layout.setSpacing(6)
-        nav_title = QLabel(tr('persona.sections', 'Onderdelen')); nav_title.setObjectName('sectionTitle')
-        nav_layout.addWidget(nav_title)
-        self.sections = QListWidget(); self.sections.setObjectName('personaSectionList')
+        # 1.7 (dev15): subnavigatie zoals Instellingen en Planning, op de paginakleur.
+        nav_host = QFrame(); nav_host.setObjectName('contextNavHost')
+        nav_layout = QVBoxLayout(nav_host); nav_layout.setContentsMargins(0, 0, 0, 0); nav_layout.setSpacing(0)
+        self.sections = QListWidget(); self.sections.setObjectName('contextSectionList')
         self.sections.setMinimumWidth(230); self.sections.setMaximumWidth(280)
         for section in SECTIONS:
             item = QListWidgetItem(tr(f'persona.section.{section.key}.title', section.title))

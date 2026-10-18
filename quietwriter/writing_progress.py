@@ -60,6 +60,16 @@ class WritingProgressStore:
         day = (on_date or date.today()).isoformat()
         return int(self._data.get('books', {}).get(str(book_id), {}).get(day, 0) or 0)
 
+    def recent_days(self, book_id: str, days: int = 30, *, on_date: date | None = None) -> list[tuple[date, int]]:
+        """De laatste ``days`` kalenderdagen t/m vandaag, oudste eerst; dagen zonder telling zijn 0."""
+        today = on_date or date.today()
+        stored = self._data.get('books', {}).get(str(book_id), {})
+        result = []
+        for offset in range(max(0, int(days)) - 1, -1, -1):
+            day = today - timedelta(days=offset)
+            result.append((day, max(0, int(stored.get(day.isoformat(), 0) or 0))))
+        return result
+
     def add(self, book_id: str, words: int, *, on_date: date | None = None) -> int:
         amount = max(0, int(words or 0))
         current = self.today(book_id, on_date=on_date)

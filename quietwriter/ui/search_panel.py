@@ -1,11 +1,107 @@
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QRect, QSize, Qt, Signal
+from PySide6.QtGui import QFont, QFontMetrics, QPalette
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QPushButton, QStackedLayout, QVBoxLayout, QWidget
+    QApplication, QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QPushButton, QStackedLayout, QStyle, QStyledItemDelegate, QVBoxLayout, QWidget
 )
 from ..i18n import tr
 from .panel_help import PanelHelp
+
+SNIPPET_BEFORE = 36
+SNIPPET_AFTER = 90
+HIGHLIGHT_ROLE = Qt.UserRole + 1
+TITLE_ROLE = Qt.UserRole + 2
+SNIPPET_ROLE = Qt.UserRole + 3
+
+
+def search_snippet(text: str, start: int, end: int) -> tuple[str, int, int]:
+    """Stukje tekst rond een treffer: (tekst, begin, eind van de treffer erin).
+
+    Blijft binnen de alinea van de treffer, begint en eindigt op een
+    woordgrens en zet '…' waar iets is weggelaten.
+    """
+    text = text or ''
+    line_start = text.rfind('\n', 0, start) + 1
+    line_end = text.find('\n', end)
+    if line_end < 0:
+        line_end = len(text)
+    a = max(line_start, start - SNIPPET_BEFORE)
+    if a > line_start:
+        space = text.find(' ', a, start)
+        a = space + 1 if space >= 0 else a
+    b = min(line_end, end + SNIPPET_AFTER)
+    if b < line_end:
+        space = text.rfind(' ', end, b)
+        b = space if space > end else b
+    prefix = '…' if a > line_start else ''
+    suffix = '…' if b < line_end else ''
+    snippet = prefix + text[a:b] + suffix
+    hl_start = len(prefix) + (start - a)
+    return snippet, hl_start, hl_start + (end - start)
+
+
+class SearchResultDelegate(QStyledItemDelegate):
+    """Twee rustige regels: hoofdstuk (alleen bij een nieuw hoofdstuk) en het
+    stukje tekst met de treffer vet. Nooit horizontaal scrollen."""
+
+    PAD = 6
+
+    def _fonts(self, option):
+        base = QFont(option.font)
+        title = QFont(base); title.setPointSizeF(max(7.5, base.pointSizeF() - 1.5))
+        bold = QFont(base); bold.setBold(True)
+        return base, title, bold
+
+    def sizeHint(self, option, index):
+        base, title, _ = self._fonts(option)
+        height = QFontMetrics(base).height() + 2 * self.PAD
+        if index.data(TITLE_ROLE):
+            height += QFontMetrics(title).height() + 2
+        return QSize(option.rect.width(), height)
+
+    def paint(self, painter, option, index):
+        painter.save()
+        style = option.widget.style() if option.widget else QApplication.style()
+        style.drawPrimitive(QStyle.PE_PanelItemViewItem, option, painter, option.widget)
+        base, title_font, bold = self._fonts(option)
+        selected = bool(option.state & QStyle.State_Selected)
+        palette = option.palette
+        text_color = palette.color(QPalette.HighlightedText if selected else QPalette.Text)
+        muted = palette.color(QPalette.PlaceholderText)
+        rect = option.rect.adjusted(self.PAD, self.PAD, -self.PAD, -self.PAD)
+        y = rect.top()
+        title = index.data(TITLE_ROLE)
+        if title:
+            painter.setFont(title_font)
+            painter.setPen(text_color if selected else muted)
+            metrics = QFontMetrics(title_font)
+            painter.drawText(QRect(rect.left(), y, rect.width(), metrics.height()), Qt.AlignLeft | Qt.AlignVCenter,
+                             metrics.elidedText(str(title), Qt.ElideRight, rect.width()))
+            y += metrics.height() + 2
+        snippet = str(index.data(SNIPPET_ROLE) or '')
+        hl = index.data(HIGHLIGHT_ROLE) or (0, 0)
+        start, end = max(0, int(hl[0])), max(0, int(hl[1]))
+        parts = ((snippet[:start], base), (snippet[start:end], bold), (snippet[end:], base))
+        x = rect.left()
+        height = QFontMetrics(base).height()
+        painter.setPen(text_color)
+        for number, (part, font) in enumerate(parts):
+            if not part:
+                continue
+            metrics = QFontMetrics(font)
+            room = rect.right() - x
+            if room <= 8:
+                break
+            shown = metrics.elidedText(part, Qt.ElideRight, room) if number == 2 else part
+            width = metrics.horizontalAdvance(shown)
+            if width > room:
+                shown = metrics.elidedText(part, Qt.ElideRight, room)
+                width = metrics.horizontalAdvance(shown)
+            painter.setFont(font)
+            painter.drawText(QRect(x, y, width + 1, height), Qt.AlignLeft | Qt.AlignVCenter, shown)
+            x += width
+        painter.restore()
 
 class SearchPanel(QWidget):
     open_match = Signal(object)
@@ -15,7 +111,7 @@ class SearchPanel(QWidget):
 
     def __init__(self, settings=None):
         super().__init__()
-        lay = QVBoxLayout(self); lay.setContentsMargins(18,18,18,18)
+        lay = QVBoxLayout(self); lay.setContentsMargins(18,18,18,18); lay.setSpacing(10)
         self.panel_help = PanelHelp(settings, 'search', tr('search.title', 'Zoeken en vervangen'), tr('panel_help.search', 'Zoek in dit hoofdstuk, deze sectie of het hele boek. Vervang treffers één voor één, of allemaal tegelijk met Alles vervangen.'))
         self.scope = QComboBox(); self.scope.addItem(tr('search.scope.chapter', 'Huidig hoofdstuk'), 'chapter'); self.scope.addItem(tr('search.scope.section', 'Huidige sectie'), 'section'); self.scope.addItem(tr('search.scope.book', 'Hele boek'), 'book')
         self.query = QLineEdit(); self.query.setPlaceholderText(tr('search.placeholder', 'Zoeken…')); self.query.setClearButtonEnabled(True)
@@ -28,6 +124,9 @@ class SearchPanel(QWidget):
         self.empty = QLabel(tr('search.no_results', 'Geen resultaten gevonden.')); self.empty.setObjectName('searchEmptyResults'); self.empty.setAlignment(Qt.AlignCenter)
         self.results = QListWidget()
         self.results.setObjectName('searchResults')
+        self.results.setItemDelegate(SearchResultDelegate(self.results))
+        self.results.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.results.setUniformItemSizes(False)
         self.result_area = QWidget()
         self.result_area.setObjectName('searchResultArea')
         self.result_stack = QStackedLayout(self.result_area)
@@ -68,8 +167,15 @@ class SearchPanel(QWidget):
         active = bool(self.query.text().strip())
         self.result_stack.setCurrentWidget(self.empty if active and not rows else self.results)
         self.summary.setText((tr('search.result.one', '{count} resultaat', count=len(rows)) if len(rows) == 1 else tr('search.result.many', '{count} resultaten', count=len(rows))) if active and rows else '')
+        previous = None
         for row in rows:
-            cid, title, snippet, start, length = row
-            item = QListWidgetItem(f'{title}\n{snippet}')
+            cid, title, snippet, start, length = row[:5]
+            highlight = row[5] if len(row) > 5 else (0, 0)
+            item = QListWidgetItem(f'{title}: {snippet}')   # ook voor schermlezers en zoeken in de lijst
+            item.setToolTip(f'{title}\n{snippet}')
             item.setData(Qt.UserRole, (cid, start, length))
+            item.setData(TITLE_ROLE, title if cid != previous else '')
+            item.setData(SNIPPET_ROLE, snippet)
+            item.setData(HIGHLIGHT_ROLE, highlight)
+            previous = cid
             self.results.addItem(item)

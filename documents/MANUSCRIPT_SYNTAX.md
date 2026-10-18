@@ -72,6 +72,13 @@ Een losse `*` is gewone tekst. Voorbeeld:
 
 bevat geen geldige cursieve span en moet letterlijk blijven.
 
+## Voetnoten vanaf 1.7
+
+- voetnoot: `^[tekst van de noot]`, de Pandoc-inline-noot. De noot staat op de plek van de verwijzing; nummeren gebeurt pas bij exporteren.
+- `^[` opent, de eerste `]` zonder backslash sluit; geen noot in een noot; gewone inline-opmaak binnen de noot mag.
+- `\^` en `\]` zijn letterlijke tekens. Getypte en geplakte `^` en `]` worden zo geschreven.
+- Geen nieuwe `manuscript_syntax`-feature: oudere versies tonen de noot als gewone tekst. Zie `documents/design/FOOTNOTES_DESIGN.md`.
+
 ## Historische ambiguïteit en escaping
 
 In 1.2.13 bestond nog geen algemene escapingregel. Daardoor konden gewone prozaregels toevallig op markup lijken, bijvoorbeeld:
@@ -106,6 +113,8 @@ Wanneer een nieuw concept nodig is:
 5. voeg parsing toe aan `DocumentView`;
 6. laat alle consumers dezelfde semantiek gebruiken;
 7. zorg dat oudere QuietWriter-versies de bron ten minste verliesvrij als tekst kunnen laten staan of het boek expliciet blokkeren.
+
+**Besloten in 1.7:** scènes krijgen géén ID of marker in de tekst. De koppeling met Planning loopt via de volgorde van scènebreuken (`design/SCENES_IN_TEXT_DESIGN.md`). De syntax verandert daardoor niet.
 
 Mogelijke toekomstige onderwerpen, nog **niet besloten**:
 

@@ -10,7 +10,7 @@ class NotesPage(QWidget):
     def __init__(self, planning_page):
         super().__init__(); self.owner=planning_page; self.dirty=False; self._clean_text=''
         lay=QVBoxLayout(self); lay.setContentsMargins(28,24,34,30); lay.setSpacing(12)
-        top=QHBoxLayout(); title=QLabel(tr('planning.notes.title', 'Notities')); title.setObjectName('title'); top.addWidget(title); top.addStretch(); self.save_button=QPushButton(tr('common.save', 'Opslaan')); self.save_button.setObjectName('primaryButton'); self.save_button.setEnabled(False); self.save_button.clicked.connect(self.save); top.addWidget(self.save_button)
+        top=QHBoxLayout(); title=QLabel(tr('planning.notes.title', 'Notities')); title.setObjectName('settingsPageTitle'); top.addWidget(title); top.addStretch(); self.save_button=QPushButton(tr('common.save', 'Opslaan')); self.save_button.setObjectName('primaryButton'); self.save_button.setEnabled(False); self.save_button.clicked.connect(self.save); top.addWidget(self.save_button)
         self.new_note_button=QPushButton(tr('planning.notes.new', 'Nieuwe notitie')); self.new_note_button.clicked.connect(self.add_note); top.insertWidget(top.count()-1,self.new_note_button)
         info=QLabel(tr('planning.notes.description', 'Vrije notities voor dit boek. Onder water blijft dit gewone Markdown.')); info.setObjectName('muted')
         self.editor=ManuscriptEditor(settings=self.owner.main.settings); self.editor.setObjectName('planningNotesEditor'); self.editor.max_text_width = 100000; self.editor.min_side_margin = 8; self.editor._update_margins(); self.editor.textChanged.connect(self.changed)

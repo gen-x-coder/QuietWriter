@@ -5,7 +5,7 @@ from PySide6.QtCore import (
     Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve, QUrl,
     QParallelAnimationGroup
 )
-from PySide6.QtGui import QAction, QDesktopServices, QIcon
+from PySide6.QtGui import QAction, QDesktopServices, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QFileDialog, QFrame, QHBoxLayout, QInputDialog, QMainWindow,
     QLabel, QMessageBox, QPushButton, QProgressDialog, QScrollArea, QStatusBar, QVBoxLayout, QWidget, QLayout
@@ -14,14 +14,14 @@ from PySide6.QtWidgets import (
 from .dialog_notices import notice_information, notice_warning, notice_critical
 from .current_page_stack import CurrentPageStack
 from .darlings_page import DarlingsPage
-from .. import APP_NAME
+from .. import APP_NAME, __version__
 from ..crash_logging import log_exception
 from ..icon_theme import app_icon_path, icon, set_icon_theme
 from ..i18n import tr
 from ..search import BookSearchIndex
 from ..themes import THEMES, stylesheet
 from ..update_checker import UpdateChecker, is_newer_version
-from ..update_pilot_gate import pilot_enabled
+from ..self_update import SelfUpdater, SelfUpdateWorker
 from ..typography import typography_from_values
 from ..editor_view import DEFAULT_TEXT_WIDTH, normalize_text_width
 from ..manuscript_markup import ManuscriptStyle
@@ -52,6 +52,10 @@ class MainWindow(QMainWindow):
 
     def __init__(self, settings, library, models, startup_status=None):
         super().__init__(); self.settings=settings; self.library=library
+        self.library.thin_daily_versions = bool(settings.value('history/thin_daily', True, bool))
+        app = QApplication.instance()
+        if app is not None:
+            app.applicationStateChanged.connect(self._application_state_changed)
         self.models = [str(item.get('name')) if isinstance(item, dict) else str(item) for item in (models or [])]
         self._active_book = None
         self._active_theme = str(self.settings.value('theme','Helder') or 'Helder')
@@ -62,6 +66,7 @@ class MainWindow(QMainWindow):
         self._restoring_document_status = False
         self.status.messageChanged.connect(self._status_message_changed)
         window_title = f'{APP_NAME} — DEV' if settings.applicationName() == 'QuietWriter-Dev' else APP_NAME
+        self._base_window_title = window_title
         self.setWindowTitle(window_title); self.setWindowIcon(QIcon(str(app_icon_path()))); self.resize(1280, 720)
         self.rail_expanded = self.settings.value('nav_expanded', False, bool)
         self._feature_visibility_preview = None
@@ -178,7 +183,7 @@ class MainWindow(QMainWindow):
         self.chapter_context_button = trb('planning', tr('tool.chapter_context', 'In dit hoofdstuk'), self.editor_page.show_chapter_context)
         self.open_points_button = trb('edit', tr('tool.open_points', 'Open punten'), self.editor_page.show_open_points)
         self.ai_button = trb('spark', tr('tool.ai', 'Meelezer'), self.editor_page.show_ai)
-        self.spell_button = trb('spell', tr('tool.spell', 'Spellingscontrole'), self.editor_page.show_spell)
+        self.spell_button = trb('spell', tr('tool.spell', 'Spelling'), self.editor_page.show_spell)
         self.insert_button = trb('insert', tr('tool.insert', 'Toevoegen'), self.editor_page.show_insert_menu)
         self.history_button = trb('history', tr('tool.history', 'Versiegeschiedenis'), self.editor_page.show_history)
         self.darlings_tool_button = trb('darlings', tr('tool.darlings', 'Bewaarplaats'), self.editor_page.show_darlings_actions)
@@ -197,12 +202,15 @@ class MainWindow(QMainWindow):
 
         self.start.open_book.connect(self.open_book); self.start.new_book.connect(self.new_book); self.start.import_book.connect(self.import_book)
         self.start.demo_mode_changed.connect(self._demo_mode_changed)
+        self.start.duplicate_book.connect(self.duplicate_book_from_shelf)
+        self.start.export_book.connect(self.export_book_from_shelf)
         self.restore_state(); self._apply_feature_visibility(); self._apply_nav_width(); self._apply_toolrail_width(); QTimer.singleShot(0, self.editor_page._position_contents_edge_button)
         self.stack.currentChanged.connect(self._mode_changed); self._mode_changed(0)
 
         save = QAction('Opslaan', self); save.setShortcut('Ctrl+S'); save.triggered.connect(self.save_active); self.addAction(save)
         focus_left = QAction(self); focus_left.setShortcut('Ctrl+Shift+L'); focus_left.triggered.connect(self.editor_page.toggle_manuscript); self.addAction(focus_left)
         focus_right = QAction(self); focus_right.setShortcut('Ctrl+Shift+R'); focus_right.triggered.connect(self.editor_page.toggle_right); self.addAction(focus_right)
+        shortcuts = QAction(self); shortcuts.setShortcuts([QKeySequence('Ctrl+/'), QKeySequence('F1')]); shortcuts.triggered.connect(self.show_shortcuts); self.addAction(shortcuts)
         scene_break = QAction(self); scene_break.setShortcut('Ctrl+Shift+Return'); scene_break.triggered.connect(self.editor_page.insert_scene_break); self.addAction(scene_break)
 
         # Apply the persisted writing profile once all writer-facing widgets exist.
@@ -225,6 +233,7 @@ class MainWindow(QMainWindow):
         )
 
     def _demo_mode_changed(self, enabled: bool):
+        self._update_window_title()
         if hasattr(self.settings_page, '_refresh_backup_books'):
             self.settings_page._refresh_backup_books()
         self.darlings_page.refresh()
@@ -245,9 +254,87 @@ class MainWindow(QMainWindow):
             # the active runtime profile is updated as well.
             self.start.demo_toggle.setChecked(False)
 
+    def _application_state_changed(self, state):
+        # Terug in QuietWriter (bijv. na het wachten op Dropbox): een open,
+        # onveranderd hoofdstuk dat elders is bijgewerkt, stil overnemen.
+        if state == Qt.ApplicationActive and hasattr(self, 'editor_page'):
+            try:
+                self.editor_page.refresh_open_chapter_from_disk()
+            except RuntimeError:
+                pass
+
+    def show_undo_notice(self, message: str, undo, seconds: int = 12):
+        """Rustige melding in de statusbalk met een knop 'Ongedaan maken'.
+
+        Geen dialoog: wie doorschrijft, merkt er niets van. Na een paar seconden
+        verdwijnt de knop; de actie blijft dan via de prullenbak terug te draaien.
+        """
+        self._clear_undo_notice()
+        label = QLabel(message)
+        label.setObjectName('muted')
+        button = QPushButton(tr('common.undo', 'Ongedaan maken'))
+        button.setObjectName('secondaryButton')
+        def run():
+            self._clear_undo_notice()
+            undo()
+        button.clicked.connect(run)
+        self.status.addPermanentWidget(label)
+        self.status.addPermanentWidget(button)
+        self._undo_notice_widgets = (label, button)
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(self._clear_undo_notice)
+        timer.start(max(1, int(seconds)) * 1000)
+        self._undo_notice_timer = timer
+
+    def _clear_undo_notice(self):
+        timer = getattr(self, '_undo_notice_timer', None)
+        if timer is not None:
+            timer.stop()
+            self._undo_notice_timer = None
+        for widget in getattr(self, '_undo_notice_widgets', ()) or ():
+            try:
+                self.status.removeWidget(widget)
+                widget.deleteLater()
+            except RuntimeError:
+                pass
+        self._undo_notice_widgets = ()
+
+    def show_shortcuts(self):
+        from .shortcuts_dialog import show_shortcuts
+        return show_shortcuts(self)
+
     def active_book(self):
         """Return the single live Book object for the current workspace book."""
         return self._active_book
+
+    # Elke plek die het actieve boek wisselt (openen, herladen, sluiten,
+    # hernoemen via Boekdetails) loopt via dit attribuut. Daardoor volgt de
+    # venstertitel (taakbalk, Alt+Tab) altijd het open boek.
+    @property
+    def _active_book(self):
+        return self.__dict__.get('_active_book_value')
+
+    @_active_book.setter
+    def _active_book(self, book):
+        self.__dict__['_active_book_value'] = book
+        self._update_window_title()
+
+    def _update_window_title(self):
+        base = getattr(self, '_base_window_title', None)
+        if base is None:
+            return
+        book = self.__dict__.get('_active_book_value')
+        title = str(getattr(book, 'title', '') or '').strip() if book is not None else ''
+        if title:
+            # Een boek op een verborgen plank mag in Presentatiemodus nergens
+            # zichtbaar zijn, ook niet in de taakbalk.
+            try:
+                if self.start.demo_mode_enabled() and not self._book_visible_in_presentation_mode(book):
+                    title = ''
+            except Exception:
+                title = ''
+        self.setWindowTitle(f'{title} — {base}' if title else base)
 
     def adopt_active_book(self, book, preferred_chapter_id: str | None = None, *, planning_reload_kind: str | None = None, planning_changed_files=None):
         """Adopt one freshly loaded live Book across all book-facing pages.
@@ -1010,6 +1097,37 @@ class MainWindow(QMainWindow):
             self._replace_book_details_page(book)
         self.stack.setCurrentWidget(self.book_details_page)
 
+    def export_book_from_shelf(self, book):
+        """Boekacties → Exporteren: boek openen en direct naar Exporteren."""
+        active = self.active_book()
+        if active is None or active.id != book.id:
+            self.open_book(book)
+            active = self.active_book()
+            if active is None or active.id != book.id:
+                return  # openen geweigerd of afgebroken (bijv. Presentatiemodus)
+        self.show_export()
+
+    def duplicate_book_from_shelf(self, book):
+        """Boekacties → Dupliceren: een losse kopie op dezelfde plank."""
+        active = self.active_book()
+        if active is not None and active.id == book.id:
+            # De kopie wordt van schijf gemaakt: eerst alles van dit boek opslaan.
+            if not self._save_book_details_if_pending(): return
+            if self.planning_page.save_pending() is False: return
+            if self.darlings_page.save_pending() is False: return
+            if self.book_profile_page.dirty and self.book_profile_page.save() is False: return
+            if self.book_memory_page.dirty and self.book_memory_page.save() is False: return
+            if self.editor_page.save() is False: return
+        try:
+            copy = self.library.duplicate_book(book)
+        except Exception as exc:
+            log_exception(type(exc), exc, exc.__traceback__, label='Boek dupliceren', notify=False)
+            notice_warning(self, tr('bookshelf.duplicate_failed_title', 'Dupliceren mislukt'),
+                           tr('bookshelf.duplicate_failed_text', 'Er is geen kopie gemaakt; het originele boek is niet veranderd.\n\n{error}', error=exc))
+            return
+        self.start.refresh()
+        self.status.showMessage(tr('bookshelf.duplicated_status', 'Kopie gemaakt: {title}', title=copy.title), 4000)
+
     def show_export(self):
         self._leave_settings_preview()
         if not self._save_book_details_if_pending(): return
@@ -1055,6 +1173,7 @@ class MainWindow(QMainWindow):
             self._active_book = book
             self.editor_page.book = book
             self.editor_page.book_title_label.setText(book.title)
+            self.editor_page.editor.typing_language = str((book.metadata or {}).get('language', 'nl') or 'nl')
             self.export_page.set_book(book)
             self.editor_page.update_counts()
         self.status.showMessage(tr('book_details.saved_status', 'Boekdetails opgeslagen'), 2500)
@@ -1168,15 +1287,182 @@ class MainWindow(QMainWindow):
         self.editor_page.editor.apply_manuscript_style(style)
         self.planning_page.notes_page.editor.apply_manuscript_style(style)
 
+    # ------------------------------------------------------------------
+    # Updates
+    #
+    # Twee routes, één knop:
+    # 1. Velopack-build (portable zip vanaf 1.5.1): QuietWriter downloadt,
+    #    sluit via het normale afsluitpad af (alles opgeslagen), beëindigt het
+    #    proces en Velopack werkt bij en start opnieuw.
+    # 2. Bronversie, losse PyInstaller-map of oude zip: alleen melden en de
+    #    GitHub-pagina openen (update_checker).
+    # Er loopt hooguit één bewerking tegelijk. Een handmatige klik tijdens een
+    # automatische controle maakt die controle 'hoorbaar'; nooit andersom.
+    # ------------------------------------------------------------------
+    def _self_updater(self):
+        updater = getattr(self, '_self_updater_instance', None)
+        if updater is None:
+            updater = SelfUpdater()
+            self._self_updater_instance = updater
+        return updater
+
+    def can_self_update(self) -> bool:
+        return self._self_updater().available
+
     def check_for_updates(self, *, silent: bool = False):
+        running = getattr(self, '_update_op', None)
+        if running is not None:
+            if not silent:
+                running.silent = False
+            return
+        if getattr(self._update_checker, '_reply', None) is not None:
+            if not silent:
+                self._update_check_silent = False
+            return
+        updater = self._self_updater()
+        if not updater.available:
+            self._start_github_check(silent=silent)
+            return
+        self._start_update_op(SelfUpdateWorker(updater, 'check', silent=silent))
+
+    def _start_github_check(self, *, silent: bool):
         self._update_check_silent = bool(silent)
         self._update_checker.check()
 
+    def _start_update_op(self, worker):
+        worker.found.connect(self._self_update_found)
+        worker.progress.connect(self._self_update_progress)
+        worker.downloaded.connect(self._self_update_downloaded)
+        worker.failed.connect(self._self_update_failed)
+        worker.finished.connect(self._self_update_op_finished)
+        self._update_op = worker
+        worker.start()
+
+    def _self_update_op_finished(self):
+        self._update_op = None
+
+    def _self_update_found(self, update):
+        op = getattr(self, '_update_op', None)
+        silent = bool(op.silent) if op is not None else True
+        current = self._self_updater().current_version() or __version__
+        if update is None:
+            # Velopack ziet niets om met één klik te installeren. Vraag GitHub
+            # toch naar de laatste stabiele versie:
+            # - handmatig: zodat "nieuwere versie" of "bijgewerkt" klopt;
+            # - automatisch: een release waarvoor bijwerken nog dicht staat
+            #   (geen releases.win.json) wordt dan nog steeds gemeld, met de
+            #   downloadpagina. Zonder nieuwe versie blijft het stil.
+            self._start_github_check(silent=silent)
+            return
+        if hasattr(self, 'settings_page'):
+            self.settings_page.show_self_update_status(current, update.version)
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Information)
+        box.setWindowTitle(tr('updates.available_title', 'Nieuwe versie beschikbaar'))
+        box.setText(tr(
+            'updates.available_text',
+            'QuietWriter {latest} is beschikbaar. Je gebruikt nu {current}.',
+            latest=update.version, current=current,
+        ))
+        box.setInformativeText(tr(
+            'updates.self_update_info',
+            'QuietWriter downloadt de nieuwe versie, slaat alles op, sluit af en start daarna vanzelf opnieuw. Je boeken en instellingen blijven waar ze zijn.',
+        ))
+        update_button = box.addButton(tr('updates.update_now', 'Nu bijwerken'), QMessageBox.AcceptRole)
+        box.addButton(tr('updates.later', 'Later'), QMessageBox.RejectRole)
+        box.setDefaultButton(update_button)
+        box.exec()
+        if box.clickedButton() is update_button:
+            # De controle-bewerking is nog niet 'finished' verwerkt; start de
+            # download zodra die is afgerond.
+            QTimer.singleShot(0, lambda u=update: self._download_self_update(u))
+
+    def _download_self_update(self, update):
+        if getattr(self, '_update_op', None) is not None:
+            QTimer.singleShot(50, lambda u=update: self._download_self_update(u))
+            return
+        dialog = QProgressDialog(
+            tr('updates.downloading', 'QuietWriter {version} downloaden…', version=update.version),
+            None, 0, 100, self,
+        )
+        dialog.setWindowTitle(tr('updates.available_title', 'Nieuwe versie beschikbaar'))
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.setMinimumDuration(0)
+        dialog.setAutoClose(False)
+        dialog.setValue(0)
+        self._self_update_progress_dialog = dialog
+        # De schrijver koos zelf voor bijwerken: een mislukte download altijd melden.
+        self._start_update_op(SelfUpdateWorker(self._self_updater(), 'download', update, silent=False))
+        dialog.show()
+
+    def _self_update_progress(self, value: int):
+        dialog = getattr(self, '_self_update_progress_dialog', None)
+        if dialog is not None:
+            dialog.setValue(int(value))
+
+    def _close_self_update_progress(self):
+        dialog = getattr(self, '_self_update_progress_dialog', None)
+        self._self_update_progress_dialog = None
+        if dialog is not None:
+            dialog.close()
+            dialog.deleteLater()
+
+    def _quit_application(self):
+        """Beëindig het hele proces, ook als er nog een los venster openstaat
+        (zoals de Meelezer-pop-out). Velopack wacht op het einde van het proces."""
+        app = QApplication.instance()
+        if app is not None:
+            app.closeAllWindows()
+            app.quit()
+
+    def _self_update_downloaded(self, update):
+        self._close_self_update_progress()
+        # 1. Het gewone afsluitpad: slaat alles op en mag weigeren (back-up
+        #    bezig, AI nog actief, opslaan mislukt). Dan nergens aankomen.
+        if not self.close():
+            notice_information(
+                self, tr('updates.ready_title', 'Update staat klaar'),
+                tr('updates.ready_text', 'QuietWriter {version} is gedownload en wordt geïnstalleerd zodra je QuietWriter de volgende keer start.', version=update.version),
+            )
+            return
+        # 2. Venster is dicht en alles is opgeslagen. Laat Velopack wachten
+        #    tot dit proces stopt en beëindig daarna het hele proces.
+        try:
+            self._self_updater().apply_when_closed(update)
+        except Exception as exc:
+            log_exception(type(exc), exc, exc.__traceback__, label='Update toepassen', notify=False)
+            notice_warning(
+                None, tr('updates.apply_error_title', 'Bijwerken niet gestart'),
+                tr('updates.apply_error_text', 'Je werk is opgeslagen en QuietWriter is gesloten, maar de update kon niet worden gestart. Start QuietWriter opnieuw: de gedownloade update wordt dan alsnog geïnstalleerd.\n\n{error}', error=exc),
+            )
+        finally:
+            self._quit_application()
+
+    def _self_update_failed(self, message: str):
+        op = getattr(self, '_update_op', None)
+        mode = getattr(op, 'mode', 'check')
+        silent = bool(op.silent) if op is not None else True
+        self._close_self_update_progress()
+        if mode == 'download':
+            notice_warning(
+                self, tr('updates.download_error_title', 'Downloaden mislukt'),
+                tr('updates.download_error_text', 'De nieuwe versie kon niet worden gedownload. Er is niets veranderd; je kunt het later opnieuw proberen.\n\n{error}', error=message),
+            )
+            return
+        if silent:
+            return
+        notice_warning(
+            self, tr('updates.error_title', 'Controleren op updates'),
+            tr('updates.error_text', 'De updatecontrole kon GitHub nu niet bereiken. Probeer het later opnieuw.\n\n{error}', error=message),
+        )
+
     def _update_check_finished(self, result):
+        """GitHub-route: melden, 'nieuwere versie' of 'bijgewerkt', of GitHub openen."""
         self._last_update_result = result
         if hasattr(self, 'settings_page'):
             self.settings_page.show_update_status(result)
         silent = self._update_check_silent
+        self._update_check_silent = True
         if result.update_available:
             box = QMessageBox(self)
             box.setIcon(QMessageBox.Information)
@@ -1186,36 +1472,31 @@ class MainWindow(QMainWindow):
                 'QuietWriter {latest} is beschikbaar. Je gebruikt nu {current}.',
                 latest=result.latest_version, current=result.current_version,
             ))
-            open_button = box.addButton(tr('updates.open_github', 'GitHub openen'), QMessageBox.ActionRole)
-            # Pilot remains fail-closed: until official signing and install wiring
-            # are reviewed, the extra route is a read-only readiness preview.
-            pilot_button = None
-            if pilot_enabled(self.library.root):
-                pilot_button = box.addButton(
-                    tr('updates.pilot_preview', 'Nieuwe updater (proef)'), QMessageBox.ActionRole
+            if self.can_self_update():
+                # Velopack-kopie, maar bijwerken met één klik is voor deze
+                # release (nog) niet vrijgegeven: er is geen releases.win.json.
+                info = tr(
+                    'updates.manual_info_released_later',
+                    'Bijwerken met één klik is voor deze versie nog niet vrijgegeven. Wil je niet wachten, download dan de nieuwe zip en pak hem uit in een nieuwe map; je boeken en instellingen blijven behouden.',
                 )
+            else:
+                info = tr(
+                    'updates.manual_info',
+                    'Deze kopie van QuietWriter kan zichzelf nog niet bijwerken. Download de nieuwe zip één keer en pak hem uit in een nieuwe map; je boeken en instellingen blijven behouden. Daarna werkt bijwerken vanzelf.',
+                )
+            box.setInformativeText(info)
+            open_button = box.addButton(tr('updates.open_github', 'GitHub openen'), QMessageBox.ActionRole)
             box.addButton(tr('common.close', 'Sluiten'), QMessageBox.RejectRole)
             box.exec()
             if box.clickedButton() is open_button and result.release_url:
                 QDesktopServices.openUrl(QUrl(result.release_url))
-            elif pilot_button is not None and box.clickedButton() is pilot_button:
-                notice_information(
-                    self,
-                    tr('updates.pilot_title', 'Updater-proef ingeschakeld'),
-                    tr('updates.pilot_wait',
-                       'Deze computer is aangemeld voor de proef met de nieuwe updater. '
-                       'De automatische installatie is nog niet beschikbaar: officiële '
-                       'releaseondertekening en de onafhankelijke veiligheidscontrole '
-                       'moeten eerst zijn afgerond. Je kunt de nieuwe versie voorlopig '
-                       'handmatig via GitHub installeren.'),
-                )
         elif not silent:
             if is_newer_version(result.current_version, result.latest_version):
-                notice_warning(
+                notice_information(
                     self, tr('updates.ahead_title', 'Je gebruikt een nieuwere versie'),
                     tr(
                         'updates.ahead_text',
-                        'Je gebruikt QuietWriter {current}, een hogere versie dan de nieuwste stabiele versie op GitHub ({latest}). Deze versie kan fouten bevatten.',
+                        'Je gebruikt QuietWriter {current}. Dat is nieuwer dan de laatste stabiele versie op GitHub ({latest}).',
                         current=result.current_version, latest=result.latest_version,
                     ),
                 )
@@ -1226,7 +1507,9 @@ class MainWindow(QMainWindow):
                 )
 
     def _update_check_failed(self, message: str):
-        if self._update_check_silent:
+        silent = self._update_check_silent
+        self._update_check_silent = True
+        if silent:
             return
         notice_warning(
             self, tr('updates.error_title', 'Controleren op updates'),
@@ -1401,11 +1684,6 @@ class MainWindow(QMainWindow):
     def _apply_feature_visibility(self):
         """Render committed feature switches without preview side effects."""
         self._feature_visibility_preview = None
-        self._update_checker = UpdateChecker(self)
-        self._last_update_result = None
-        self._update_check_silent = True
-        self._update_checker.finished.connect(self._update_check_finished)
-        self._update_checker.failed.connect(self._update_check_failed)
         state = self._effective_rail_state()
         self._render_rail(state)
         self._render_feature_buttons(ai_enabled=state.ai_enabled)

@@ -7,8 +7,11 @@ from .docx_exporter import export_docx
 from .epub_exporter import export_epub
 from .markdown_exporter import export_markdown
 from .pdf_exporter import export_pdf
+from .submission_exporter import export_submission
 
-FORMAT_SUFFIXES = {'epub': '.epub', 'pdf': '.pdf', 'markdown': '.md', 'docx': '.docx', 'qwbook': '.qwbook'}
+FORMAT_SUFFIXES = {'epub': '.epub', 'pdf': '.pdf', 'markdown': '.md', 'docx': '.docx', 'qwbook': '.qwbook',
+                   # Eigen naam, zodat de inzending het Word-bestand niet overschrijft.
+                   'submission': '-manuscript.docx'}
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,8 @@ def run_export(library, book, document, format_name: str, settings: dict, destin
         export_pdf(document, destination, settings)
     elif format_name == 'docx':
         export_docx(document, destination, settings)
+    elif format_name == 'submission':
+        export_submission(document, destination, settings)
     elif format_name == 'qwbook':
         from ..qwbook_io import export_qwbook
         options = settings.get('qwbook') or {}

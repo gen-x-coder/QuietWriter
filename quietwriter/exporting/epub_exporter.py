@@ -12,6 +12,15 @@ from .cover import render_cover
 from .markup import markdown_to_xhtml, markdown_to_xhtml_with_headings
 from .models import ExportDocument, ExportItem
 from .templates import template_css
+
+# Voetnoten (1.7): klein nummer in de tekst, de noten onder aan het hoofdstuk.
+FOOTNOTE_CSS = '''
+a.noteref { text-decoration: none; }
+a.noteref sup { font-size: 0.7em; line-height: 0; }
+section.footnotes { font-size: 0.85em; margin-top: 2em; }
+hr.footnotes-rule { width: 30%; margin: 0 0 0.8em 0; border: 0; border-top: 1px solid currentColor; }
+aside.footnote p { text-indent: 0; margin: 0 0 0.4em 0; }
+'''
 from .epub_validation import validate_epub_archive
 
 
@@ -45,7 +54,7 @@ def _xhtml(title: str, body: str, language: str = 'nl', body_class: str = '') ->
     cls = f' class="{html.escape(body_class, quote=True)}"' if body_class else ''
     return (
         '<?xml version="1.0" encoding="utf-8"?>\n'
-        f'<html xmlns="{XHTML_NS}" xml:lang="{html.escape(language, quote=True)}" lang="{html.escape(language, quote=True)}">\n'
+        f'<html xmlns="{XHTML_NS}" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="{html.escape(language, quote=True)}" lang="{html.escape(language, quote=True)}">\n'
         '<head>\n'
         f'  <title>{html.escape(title)}</title>\n'
         '  <meta charset="utf-8"/>\n'
@@ -166,7 +175,7 @@ def export_epub(document: ExportDocument, destination: Path, settings: dict) -> 
     nav_entries: list[tuple[str, str]] = []
     xhtml_labels: dict[str, str] = {}
 
-    css = template_css(template).encode('utf-8')
+    css = (template_css(template) + FOOTNOTE_CSS).encode('utf-8')
     files['EPUB/styles/book.css'] = css
     manifest.append(('css', 'styles/book.css', 'text/css', ''))
 

@@ -18,6 +18,14 @@ Introduceer geen tweede onafhankelijke bron voor dezelfde informatie.
 ## Revisions en externe sync
 QuietWriter gebruikt revision-/hashcontrole en optimistic concurrency, niet Dropbox-specifieke locks. Voor iedere writeroute moet externe wijziging vóór de write worden gedetecteerd. Bij same-book reload mag dirty invoer in een ander scherm nooit als nevenschade verdwijnen.
 
+**Hoofdstuktekst (sinds 1.6.0)** wordt per bestand beoordeeld (`Library._verify_for_chapter_save`):
+- alleen *andere* hoofdstukbestanden extern gewijzigd → stil overnemen (niets in QuietWriter houdt die ongeopgeslagen vast) en rustig melden in de statusbalk;
+- *dit* hoofdstuk hier én elders gewijzigd, en alleen hoofdstuktekst → beide bewaren zonder dialoog (`save_chapter_keep_both`): eerst een `conflict_local`-versie, dan de schijfversie als nieuw hoofdstuk direct eronder, dan de lokale tekst in het hoofdstuk zelf. Elke tussenstand na een crash verliest niets; een fout bij het schrijven draait alles behalve de veiligheidsversie terug (`_rollback_keep_both`: oude bytes van `book.json`, extra bestand weg, bewaakte stand terug) en valt terug op de gewone conflictkeuze (sinds 1.6.1);
+- open hoofdstuk onveranderd en extern bijgewerkt → bij terugkeer in de app stil herladen (`refresh_open_chapter_from_disk`);
+- `book.json`, Planning, profielen, publicatie → de bestaande expliciete conflictkeuze blijft.
+
+**Dagversies** worden (instelbaar, standaard aan) uitgedund: alles < 30 dagen, daarna één per week, na 180 dagen één per maand. Alleen soort `daily` zonder ster; handmatige, ★- en veiligheidsversies nooit.
+
 ## Atomische writes
 Normale writes gebruiken tijdelijk bestand + atomische replace. Een blijvende Windows/sync-lock geeft een fout; er is bewust geen directe truncate/overwrite-fallback. Een fallback mag nooit gevaarlijker zijn dan de fout die hij probeert op te lossen.
 

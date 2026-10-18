@@ -23,27 +23,26 @@ def _require_supported_python() -> None:
 
 _require_supported_python()
 
-def _health_request(argv):
-    if '--update-health-check' not in argv:
-        return None
-    # Health checking is intentionally isolated from the user's normal profile:
-    # the existing smoke-test builds temporary settings and workspace.
-    i = argv.index('--update-health-check')
-    if len(argv) != i + 3:
-        return 2
-    from pathlib import Path
-    from quietwriter.update_health import run_health_check
-    from quietwriter.app import run
-    token, path = argv[i+1:i+3]
-    sys.argv = [argv[0], '--smoke-test']
-    try:
-        return run_health_check(token, Path(path), run)
-    except Exception as exc:
-        print(f'Update health check failed: {type(exc).__name__}', file=sys.stderr)
-        return 1
 
-from quietwriter.app import run
+def _velopack_startup() -> None:
+    """Velopack moet als eerste draaien: bij installeren/bijwerken kan het
+    dit proces afhandelen en beëindigen. In een bronversie of een oude
+    portable zip doet dit niets."""
+    try:
+        import velopack
+    except ImportError:
+        return
+    try:
+        velopack.App().run()
+    except Exception:
+        # Een kapotte of ontbrekende Velopack-installatie mag het schrijven
+        # nooit blokkeren; QuietWriter valt dan terug op alleen melden.
+        pass
+
+
+_velopack_startup()
+
+from quietwriter.app import run  # noqa: E402  (pas na de Velopack-hook)
 
 if __name__ == '__main__':
-    health = _health_request(sys.argv)
-    raise SystemExit(run() if health is None else health)
+    raise SystemExit(run())

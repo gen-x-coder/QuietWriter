@@ -4,19 +4,23 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_planning_button_is_a_real_toggle_and_popup_syncs_back():
-    source = (ROOT / 'quietwriter' / 'ui' / 'editor_page.py').read_text(encoding='utf-8')
-    assert 'self.planning_overlay_button.setCheckable(True)' in source
-    assert 'self.planning_overlay_button.toggled.connect(self._toggle_planning_overlay)' in source
-    assert 'self.planning_overlay.closed.connect(self._planning_overlay_closed)' in source
-    assert 'QTimer.singleShot(0, self._sync_planning_overlay_button)' in source
+    # 1.7.0: de knop Planning (popup) naast Tekstbreedte is weggehaald op verzoek
+    # van Lucas: dubbelop met "In dit hoofdstuk", waar nu ook "✓ Klaar" staat.
+    page = Path('quietwriter/ui/editor_page.py').read_text(encoding='utf-8')
+    panel = Path('quietwriter/ui/chapter_context_panel.py').read_text(encoding='utf-8')
+    assert 'planning_overlay' not in page and 'class PlanningOverlay' not in page
+    assert 'planning.overlay.mark_written' in panel and 'markWritten' in panel
+    assert "scene.status = 'geschreven'" in page
 
 
 def test_planning_overlay_prefers_narrow_tall_shape():
-    source = (ROOT / 'quietwriter' / 'ui' / 'editor_page.py').read_text(encoding='utf-8')
-    assert "width_cap = max(320, int(owner_width * 0.30))" in source
-    assert "int(owner_width * 0.26)" in source
-    assert "height_cap = max(420, int(owner_height * 0.82))" in source
-    assert "int(owner_height * 0.76)" in source
+    # 1.7.0: de knop Planning (popup) naast Tekstbreedte is weggehaald op verzoek
+    # van Lucas: dubbelop met "In dit hoofdstuk", waar nu ook "✓ Klaar" staat.
+    page = Path('quietwriter/ui/editor_page.py').read_text(encoding='utf-8')
+    panel = Path('quietwriter/ui/chapter_context_panel.py').read_text(encoding='utf-8')
+    assert 'planning_overlay' not in page and 'class PlanningOverlay' not in page
+    assert 'planning.overlay.mark_written' in panel and 'markWritten' in panel
+    assert "scene.status = 'geschreven'" in page
 
 
 def test_status_labels_are_title_cased_in_dropdown_and_ghost():

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 
 from .dialog_notices import notice_information, notice_warning
 from ..i18n import tr
+from .page_layout import set_page_margins
 from ..media.manager import MediaCleanupError, MediaManager
 from ..revisions import ExternalModificationError
 from .dialogs import confirm
@@ -40,7 +41,7 @@ class MediaManagerPage(QWidget):
         self.inventory = None
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(42, 34, 42, 34)
+        set_page_margins(root)
         root.setSpacing(12)
 
         top = QHBoxLayout()

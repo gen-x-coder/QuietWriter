@@ -10,6 +10,10 @@ QuietWriter depends on third-party software and assets. This inventory is intend
 - **spylls** — MIT License. Source: https://github.com/zverok/spylls
 - **python-docx** — MIT License. Source: https://github.com/python-openxml/python-docx
 - **lxml** — BSD 3-Clause License. Source: https://github.com/lxml/lxml
+- **keyring** (OpenRouter browser login via Windows Credential Manager) — MIT License. Source: https://github.com/jaraco/keyring
+  - **jaraco.classes**, **jaraco.functools**, **jaraco.context**, **more-itertools** — MIT License.
+  - **pywin32-ctypes** — BSD 3-Clause License. Source: https://github.com/enthought/pywin32-ctypes
+- **Velopack** (Python package and the `Update.exe` it adds to the portable build) — MIT License. Source: https://github.com/velopack/velopack
 
 ## Bundled writing fonts
 
@@ -22,9 +26,11 @@ The following fonts are licensed under the **SIL Open Font License 1.1**. Their 
 
 ## Hunspell dictionaries
 
-QuietWriter can use Hunspell-compatible dictionaries for spelling. No dictionary data is stored in the source package. The Windows portable build bundles one dictionary, fetched at build time by `tools/fetch_dictionaries.py`:
+QuietWriter can use Hunspell-compatible dictionaries for spelling. Since 1.7 **no dictionary is bundled**, neither in the source package nor in the Windows build.
 
-- **Dutch (nl_NL)** — OpenTaal, https://opentaal.org (source: https://github.com/OpenTaal/opentaal-hunspell, distributed via https://github.com/LibreOffice/dictionaries). © 2020 OpenTaal (Simon Brouwer, Sander van Geloven); © 2006–2010 OpenTaal (Ruud Baars, Simon Brouwer); © 2001–2005 Simon Brouwer and others; © 1996 Nederlandstalige TeX Gebruikersgroep. Used under the **Revised BSD License (3-clause)**; OpenTaal also offers CC BY 3.0. The full license header is kept in `dictionaries/nl_NL.aff` and summarised in `dictionaries/LICENSE_nl_NL.txt`.
+- QuietWriter finds dictionaries that come with ONLYOFFICE, LibreOffice or OpenOffice on the computer and uses them read-only.
+- On request, QuietWriter downloads a dictionary from a fixed list pinned to one commit of https://github.com/LibreOffice/dictionaries (see `quietwriter/dictionary_download.py`). Every file is checked against a SHA-256 checksum stored in QuietWriter.
+- Each downloaded dictionary keeps its own license next to it as `LICENSE-<locale>.txt` in the workspace, and its author and license are shown before downloading. Example: Dutch (nl_NL) is OpenTaal (https://opentaal.org), Revised BSD License (3-clause) or CC BY 3.0. Since 1.7.0-dev14 the list has 35 dictionaries; the author and license of each one are in `CATALOG` in `quietwriter/dictionary_download.py` and in the downloaded `LICENSE-<locale>.txt`.
 
 ## Libraries bundled via Requests
 

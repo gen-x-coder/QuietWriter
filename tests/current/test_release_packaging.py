@@ -34,7 +34,7 @@ def test_release_staging_is_allowlist_based_and_clean(tmp_path):
     assert (stage / 'packaging' / 'requirements-runtime.lock').is_file()
     assert (stage / 'tools' / 'write_build_manifest.py').is_file()
     assert (stage / 'tools' / 'fetch_bundled_fonts.py').is_file()
-    assert (stage / 'tools' / 'fetch_dictionaries.py').is_file()
+    assert not (stage / 'tools' / 'fetch_dictionaries.py').exists()   # 1.7: niets meer meegeleverd
     assert (stage / 'documents' / 'licenses' / 'LICENSE').is_file()
     assert (stage / 'documents' / 'licenses' / 'THIRD_PARTY_LICENSES.md').is_file()
 

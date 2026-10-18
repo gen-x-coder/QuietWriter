@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 from .dialog_notices import notice_information, notice_warning, notice_critical
 from .dialogs import confirm
 from ..i18n import tr
+from .page_layout import set_page_margins
 from ..integrity import BookIntegrityChecker
 from ..sync_conflicts import discover_conflict_copies
 from ..recovery_overview import list_replacement_recoveries, compare_recovery_files
@@ -35,7 +36,7 @@ class IntegrityPage(QWidget):
         self._recovery_meta_cache = {}
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(42, 34, 42, 34)
+        set_page_margins(root)
         root.setSpacing(12)
 
         top = QHBoxLayout()

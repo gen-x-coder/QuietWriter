@@ -4,7 +4,7 @@ Dit document legt de productstem en publieke presentatie van QuietWriter vast. H
 
 ## Kernpositionering
 
-**Rustig schrijven. Eerlijk meelezen.**
+**Rustig schrijven. Heldere boeken.**
 
 Ondersteunende gedachte:
 

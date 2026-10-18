@@ -18,7 +18,9 @@ Gebruik van externe AI-diensten valt daarnaast onder de voorwaarden en het priva
 
 ## Updatecontrole
 
-Wanneer automatische of handmatige updatecontrole wordt gebruikt, kan QuietWriter contact maken met GitHub om te controleren of een nieuwere release beschikbaar is. Daarbij wordt geen manuscriptinhoud verstuurd.
+Wanneer automatische of handmatige updatecontrole wordt gebruikt, kan QuietWriter contact maken met GitHub om te controleren of een nieuwere release beschikbaar is. Daarbij wordt geen manuscriptinhoud verstuurd. Kies je **Nu bijwerken**, dan downloadt QuietWriter het updatepakket van GitHub. Ook dan wordt er niets van je boeken of instellingen verstuurd.
+
+Kies je bij Instellingen → Spelling **Downloaden…**, dan haalt QuietWriter het gekozen woordenboek op bij de LibreOffice-woordenboekbibliotheek op GitHub (raw.githubusercontent.com). Dat gebeurt alleen na die klik. Er wordt niets van je tekst verstuurd, en elk bestand wordt gecontroleerd met een vaste SHA-256 voordat het wordt gebruikt.
 
 ## API-sleutels en instellingen
 

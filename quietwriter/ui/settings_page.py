@@ -10,12 +10,13 @@ from PySide6.QtWidgets import (
     QGridLayout, QLineEdit, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSizePolicy, QVBoxLayout, QWidget
 )
 from .current_page_stack import CurrentPageStack
-from ..workspace_path import normalize_workspace_path, require_external_user_directory, UnsafeWorkspacePath
+from ..workspace_path import normalize_workspace_path, require_external_user_directory, require_writable_directory, UnsafeWorkspacePath
 from ..first_run import request_first_run_reset
 from .. import APP_NAME, __version__
 from ..ai.providers import ProviderFactory
-from ..dictionary_catalog import DictionaryCatalog
+from ..dictionary_catalog import DictionaryCatalog, ordered_sources, source_label
 from ..i18n import tr
+from ..interface_scale import DEFAULT_SCALE as DEFAULT_INTERFACE_SCALE, SCALES as INTERFACE_SCALES, SETTING_KEY as INTERFACE_SCALE_KEY, normalize_scale as normalize_interface_scale
 from ..themes import THEMES, stylesheet
 from ..typography import WritingTypography, available_families, typography_from_values
 from ..editor_view import DEFAULT_TEXT_WIDTH, normalize_text_width
@@ -73,8 +74,10 @@ class SettingsBooleanChoice(QuietComboBox):
         index = self.findData(bool(checked))
         self.setCurrentIndex(index if index >= 0 else 0)
 
+MODEL_FIELD_WIDTH = 520   # ongeveer drie keer de oude breedte (1.7)
+
+
 class SettingsPage(QWidget):
-    DICTIONARY_DOWNLOAD_URL = 'https://extensions.openoffice.org/'
 
     def __init__(self, settings: QSettings, main, models=None):
         super().__init__(main)
@@ -146,6 +149,11 @@ class SettingsPage(QWidget):
         self.language.addItem(tr('language.german', 'Duits'), 'de')
         self.language.addItem(tr('language.french', 'Frans'), 'fr')
         self.language.addItem(tr('language.spanish', 'Spaans'), 'es')
+        # Vertalingen van gebruikers (Instellingen → Vertalingen, 1.7).
+        from ..i18n import BUILTIN_CODES, available_languages
+        for code, name in available_languages():
+            if code not in BUILTIN_CODES:
+                self.language.addItem(name, code)
         language_value = str(settings.value('language', 'nl') or 'nl')
         language_index = self.language.findData(language_value)
         self.language.setCurrentIndex(language_index if language_index >= 0 else 0)
@@ -181,43 +189,23 @@ class SettingsPage(QWidget):
         self.auto_update_check = SettingsBooleanChoice(settings.value('auto_update_check', False, bool), tr('settings.updates.not_automatic', 'Niet automatisch'), tr('settings.updates.automatic', 'Automatisch'))
         self._add_settings_field(
             gl, tr('settings.updates.auto', 'Automatisch controleren op updates'), self.auto_update_check,
-            tr('settings.updates.auto_help', 'Standaard aan. QuietWriter vraagt GitHub na het opstarten naar de nieuwste stabiele versie. Hiervoor is internet nodig. Er worden geen boeken of manuscripten verstuurd. Uitschakelen kan hier altijd.')
+            tr('settings.updates.auto_help', 'QuietWriter vraagt GitHub na het opstarten of er een nieuwe stabiele versie is. Hiervoor is internet nodig. Er worden geen boeken of manuscripten verstuurd. Bijwerken gebeurt nooit zonder dat je het zelf kiest.')
         )
-        # The unfinished download/updater experiment is strictly opt-in.
-        # Keep its widget instantiated for existing settings/dirty tracking,
-        # but never expose the control without the workspace pilot marker.
-        from ..update_pilot_gate import pilot_enabled
-        updater_pilot = pilot_enabled(self.main.library.root)
-        self.auto_update_download = SettingsBooleanChoice(
-            False, tr('settings.updates.download_off', 'Niet automatisch'),
-            tr('settings.updates.download_on', 'Automatisch'),
-        )
-        self.auto_update_download.setEnabled(False)
-        if updater_pilot:
-            self._add_settings_field(
-                gl, tr('settings.updates.download', 'Updates automatisch downloaden'),
-                self.auto_update_download,
-                tr('settings.updates.download_help', 'Deze optie is nog niet beschikbaar.'),
-            )
-            pilot_info = WrappedHeightLabel(tr(
-                'settings.updates.pilot_notice',
-                'Updater-proef actief. Automatische installatie is nog niet beschikbaar.'
-            ))
-            pilot_info.setObjectName('muted')
-            self._add_settings_field(
-                gl, tr('settings.updates.pilot', 'Proefprogramma'), pilot_info,
-                tr('settings.updates.pilot_help',
-                   'Verwijder het lege bestand .quietwriter-update-pilot uit je boekenwerkmap om de proef uit te schakelen.')
-            )
         self.update_version_status = WrappedHeightLabel(
             tr('settings.updates.version_info', 'Huidige versie: {current}. Beschikbare stabiele versie: nog niet gecontroleerd.', current=__version__)
         )
         self.update_version_status.setObjectName('muted')
         self._add_settings_field(
             gl, tr('settings.updates.version', 'Versie-informatie'), self.update_version_status,
-            tr('settings.updates.version_help', 'Alleen officiële stabiele GitHub-releases. Geen automatische installatie.')
+            tr('settings.updates.version_help', 'Alleen officiële stabiele releases van GitHub. Je kiest zelf wanneer je bijwerkt; je boeken en instellingen blijven altijd staan.')
         )
         self.show_update_status(getattr(self.main, '_last_update_result', None))
+        self.update_mode_status = WrappedHeightLabel(self._update_mode_text())
+        self.update_mode_status.setObjectName('muted')
+        self._add_settings_field(
+            gl, tr('settings.updates.mode', 'Bijwerken'), self.update_mode_status,
+            tr('settings.updates.mode_help', 'Een uitgepakte portable zip werkt zichzelf bij. Een bronversie of een losse programmamap niet; dan download je nieuwe versies via GitHub.')
+        )
         check_now = QPushButton(tr('settings.updates.check_now', 'Nu controleren')); check_now.setObjectName('secondaryButton')
         check_now.clicked.connect(lambda: self.main.check_for_updates(silent=False))
         self._add_settings_field(
@@ -231,6 +219,13 @@ class SettingsPage(QWidget):
         self._add_settings_field(
             gl, tr('settings.help.label', 'Uitleg in panelen'), show_help,
             tr('settings.help.help', 'Toont de korte uitleg in de panelen van de rechterbalk weer, zoals de eerste keer. Je boeken en instellingen blijven ongewijzigd.')
+        )
+
+        shortcuts_button = QPushButton(tr('settings.help.shortcuts_button', 'Sneltoetsen bekijken')); shortcuts_button.setObjectName('secondaryButton')
+        shortcuts_button.clicked.connect(lambda: self.main.show_shortcuts())
+        self._add_settings_field(
+            gl, tr('settings.help.shortcuts_label', 'Sneltoetsen'), shortcuts_button,
+            tr('settings.help.shortcuts_help', 'Een overzicht van alle sneltoetsen. Ook altijd te openen met Ctrl+/ of F1.')
         )
 
         self._add_settings_section(gl, tr('settings.section.reset', 'Opnieuw instellen'))
@@ -262,16 +257,21 @@ class SettingsPage(QWidget):
         browse_backup.clicked.connect(self._choose_backup_path)
         backup_location_layout.addWidget(browse_backup)
         self._add_settings_field(bl, tr('settings.backup.location', 'Back-upmap'), backup_location_row,
-            tr('settings.backup.location_help', 'Bewaar back-ups op een andere plek dan je boeken. Herstellen kan via Boek importeren.'))
+            tr('settings.backup.location_help', 'Bewaar back-ups op een andere plek dan je boeken. Terugzetten kan via Boek importeren.'))
         self._add_settings_section(bl, tr('settings.backup.automatic_section', 'Automatische boekback-ups'))
         self.backup_enabled = SettingsBooleanChoice(settings.value('backup/enabled', False, bool),
             tr('settings.backup.off', 'Uit'), tr('settings.backup.on', 'Aan'))
         
         self._add_settings_field(bl, tr('settings.backup.enable', 'Automatisch back-uppen'), self.backup_enabled,
             tr('settings.backup.enable_help', 'Optioneel: maximaal één back-up per gewijzigd boek per 24 uur, zolang QuietWriter openstaat.'))
+        self._add_settings_section(bl, tr('settings.history.section', 'Versiegeschiedenis'))
+        self.history_thin_daily = SettingsBooleanChoice(settings.value('history/thin_daily', True, bool),
+            tr('settings.backup.off', 'Uit'), tr('settings.backup.on', 'Aan'))
+        self._add_settings_field(bl, tr('settings.history.thin', 'Oude dagversies uitdunnen'), self.history_thin_daily,
+            tr('settings.history.thin_help', 'Elke schrijfdag bewaart QuietWriter een versie van je boek. Dagversies ouder dan 30 dagen worden teruggebracht tot één per week, en ouder dan een half jaar tot één per maand. Versies met een ster, versies die je zelf maakt en veiligheidsversies blijven altijd bewaard.'))
         self._add_settings_section(bl, tr('settings.backup.manual_section', 'Handmatige boekback-ups'))
         self.backup_book = QuietComboBox()
-        self._add_settings_field(bl, tr('settings.backup.book', 'Boek voor back-up of herstel'), self.backup_book)
+        self._add_settings_field(bl, tr('settings.backup.book', 'Boek voor back-up of terugzetten'), self.backup_book)
         self.backup_now = QPushButton(tr('settings.backup.now', 'Nu een back-up maken'))
         self.backup_now.setObjectName('secondaryButton')
         self.backup_now.clicked.connect(self._start_manual_backup)
@@ -297,7 +297,7 @@ class SettingsPage(QWidget):
         self.backup_restore_manual.setObjectName('secondaryButton')
         self.backup_restore_manual.clicked.connect(self._restore_backup)
         restore_layout.addWidget(self.backup_restore_manual)
-        self._add_settings_field(bl, tr('settings.backup.restore_label', 'Herstellen'), restore_row,
+        self._add_settings_field(bl, tr('settings.backup.restore_label', 'Terugzetten'), restore_row,
             tr('settings.backup.restore_help', 'Kies een back-up op datum of selecteer zelf een bestand. Een bestaand boek wordt nooit ongemerkt vervangen.'))
         self.backup_enabled.toggled.connect(self._update_backup_controls)
         self.backup_path.textChanged.connect(self._update_backup_status)
@@ -321,6 +321,13 @@ class SettingsPage(QWidget):
         self.theme = QuietComboBox(); self.theme.addItems(THEMES.keys()); self.theme.setCurrentText(settings.value('theme', 'Helder'))
         self._add_settings_field(al, tr('settings.appearance.theme', 'Kleurenschema'), self.theme,
             tr('settings.appearance.theme_help', 'Past de volledige interface direct als voorbeeld aan.'))
+        self.interface_scale = QuietComboBox()
+        for step in INTERFACE_SCALES:
+            label = tr('settings.appearance.scale_default', '{percent}% (standaard)', percent=step) if step == DEFAULT_INTERFACE_SCALE else f'{step}%'
+            self.interface_scale.addItem(label, step)
+        self._select_interface_scale(settings.value(INTERFACE_SCALE_KEY, DEFAULT_INTERFACE_SCALE))
+        self._add_settings_field(al, tr('settings.appearance.scale', 'Interfacegrootte'), self.interface_scale,
+            tr('settings.appearance.scale_help', 'Maakt alle knoppen, menu\'s en teksten groter of kleiner, bovenop de schaal van Windows. Wordt na een herstart van QuietWriter toegepast.'))
 
         self._add_settings_section(al, tr('settings.section.typography', 'Schrijftypografie'))
         self.editor_font = QuietComboBox(); self._populate_font_combo(self.original_typography.family)
@@ -334,7 +341,7 @@ class SettingsPage(QWidget):
         font_control.setObjectName('settingsInlineControl')
         fh = QHBoxLayout(font_control); fh.setContentsMargins(0, 0, 0, 0); fh.setSpacing(16)
         self.editor_font.setMinimumWidth(220); self.editor_font.setMaximumWidth(340)
-        preview_card.setMinimumWidth(320); preview_card.setMaximumWidth(560); preview_card.setMinimumHeight(92); preview_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        preview_card.setMinimumWidth(200); preview_card.setMaximumWidth(560); preview_card.setMinimumHeight(92); preview_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         fh.addWidget(self.editor_font, 0, Qt.AlignTop); fh.addWidget(preview_card, 1)
         self._add_settings_field(al, tr('settings.appearance.font', 'Schrijflettertype'), font_control,
             tr('settings.appearance.font_help', 'Aanbevolen lettertypen worden door QuietWriter zelf geladen. Daaronder blijven alle beschikbare systeemlettertypen zichtbaar.'))
@@ -374,8 +381,8 @@ class SettingsPage(QWidget):
             tr('settings.appearance.indent_help', 'Vervolgalinea’s springen in. De eerste alinea van een hoofdstuk, na een lege regel, tussenkop of scènebreuk begint links.'))
         self._add_settings_field(al, tr('settings.appearance.paragraph_spacing', 'Ruimte na alinea'), self.manuscript_paragraph_spacing,
             tr('settings.appearance.paragraph_spacing_help', 'Voegt subtiele extra ruimte tussen opeenvolgende alinea’s toe.'))
-        self._add_settings_field(al, tr('settings.appearance.smart_quotes', 'Slimme aanhalingstekens'), self.smart_quotes,
-            tr('settings.appearance.smart_quotes_help', 'Zet een tijdens het typen ingevoerd recht dubbel aanhalingsteken om naar een typografisch openings- of sluitteken.'))
+        self._add_settings_field(al, tr('settings.appearance.smart_quotes', 'Typografie tijdens typen'), self.smart_quotes,
+            tr('settings.appearance.smart_quotes_help', 'Maakt van rechte aanhalingstekens, apostroffen, -- en ... vanzelf de juiste typografische tekens voor de taal van het boek (bijvoorbeeld “ ”, ’, – en …).'))
         self._add_settings_field(al, tr('settings.appearance.planning_ghosts', 'Planninghulp in editor'), self.planning_ghosts_enabled,
             tr('settings.appearance.planning_ghosts_help', 'Toont bij een leeg hoofdstuk de gekoppelde scènes uit Planning als zachte hulptekst. Deze tekst wordt niet onderdeel van het manuscript, telt niet mee en wordt niet geëxporteerd.'))
         al.addStretch(1)
@@ -425,6 +432,14 @@ class SettingsPage(QWidget):
         self._add_settings_field(ail, tr('settings.ai.ollama_url', 'Ollama-adres'), self.ollama,
             tr('settings.ai.ollama_url_help', 'Alleen relevant wanneer Ollama als provider is gekozen.'))
         self.ollama_row = self.ollama.parentWidget().parentWidget()
+        # 1.7: Ollama vinden en een model binnenhalen zonder opdrachtregel.
+        from .ollama_setup import OllamaSetupBox
+        self.ollama_setup = OllamaSetupBox(lambda: self.ollama.text().strip() or 'http://127.0.0.1:11434',
+                                           self._ollama_model_ready, self)
+        self._add_settings_field(ail, tr('settings.ai.ollama_setup', 'Ollama instellen'), self.ollama_setup,
+            tr('settings.ai.ollama_setup_help', 'QuietWriter kijkt of Ollama op deze computer draait en kan een passend model voor je downloaden.'))
+        self.ollama_setup_row = self.ollama_setup.parentWidget().parentWidget()
+        self.ollama.editingFinished.connect(self._refresh_ollama_setup)
         self.openrouter_auth_method = QuietComboBox()
         self.openrouter_auth_method.addItem(tr('settings.ai.auth_browser_choice', 'Verbinden via browser'), 'browser')
         self.openrouter_auth_method.addItem(tr('settings.ai.auth_manual_choice', 'API-sleutel invoeren'), 'manual')
@@ -467,6 +482,13 @@ class SettingsPage(QWidget):
 
         self._add_settings_section(ail, tr('settings.section.model', 'Model'))
         self.model = QuietComboBox(); self.model.setEditable(False)
+        # 1.7: Ollama-namen zijn vaak lang (hf.co/…/…:Q6_K). Ruim veld, lange namen
+        # in het midden ingekort, volledige naam als tooltip en een brede keuzelijst.
+        self.model.setMinimumWidth(MODEL_FIELD_WIDTH)
+        self.model.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.model.setMinimumContentsLength(20)
+        self.model.view().setTextElideMode(Qt.ElideMiddle)
+        self.model.currentIndexChanged.connect(self._update_model_tooltip)
         self.ai_refresh_button = QPushButton(tr('settings.ai.refresh_models', 'Modellen ophalen')); self.ai_refresh_button.setObjectName('secondaryButton'); self.ai_refresh_button.clicked.connect(self.refresh_models)
         self.openrouter_free_only = SettingsBooleanChoice(settings.value('openrouter_free_only', False, bool), tr('settings.ai.all_models', 'Alle modellen'), tr('settings.ai.free_models', 'Alleen gratis'))
         self.openrouter_free_only.setToolTip(tr('settings.ai.openrouter_free_only_help', 'Toont alleen OpenRouter-modellen waarvan de actuele prompt- en outputprijs nul zijn. Gebruik Modellen ophalen om de prijsstatus te verversen.'))
@@ -474,7 +496,7 @@ class SettingsPage(QWidget):
         self.openrouter_writing_only = SettingsBooleanChoice(settings.value('openrouter_writing_only', True, bool), tr('settings.ai.all_models', 'Alle modellen'), tr('settings.ai.writing_models', 'Geschikt voor schrijven'))
         self.openrouter_writing_only.setToolTip(tr('settings.ai.writing_models_help', 'Verbergt duidelijk gespecialiseerde programmeermodellen. Algemene taalmodellen blijven beschikbaar.'))
         self.openrouter_writing_only.toggled.connect(self._openrouter_free_filter_changed)
-        modelbox = QWidget(); mv = QVBoxLayout(modelbox); mv.setContentsMargins(0,0,0,0); mv.setSpacing(5)
+        modelbox = QWidget(); modelbox.setMinimumWidth(MODEL_FIELD_WIDTH + 140); mv = QVBoxLayout(modelbox); mv.setContentsMargins(0,0,0,0); mv.setSpacing(5)
         modelrow = QWidget(); mh = QHBoxLayout(modelrow); mh.setContentsMargins(0,0,0,0); mh.setSpacing(8); mh.addWidget(self.model, 1); mh.addWidget(self.ai_refresh_button)
         self.ai_model_status = QLabel(''); self.ai_model_status.setObjectName('settingsFieldHelp'); self.ai_model_status.hide()
         self.free_router_hint = QLabel(tr('settings.ai.free_router_hint', 'OpenRouter Free kiest voor ieder bericht opnieuw een gratis model. De schrijfstijl en mogelijkheden kunnen verschillen. Kies een specifiek model voor meer consistentie.'))
@@ -494,49 +516,58 @@ class SettingsPage(QWidget):
             tr('settings.ai.quick_actions_expanded_help', 'Toont de drie Meelezer-snelacties direct wanneer het paneel opent. Staat dit uit, dan blijven ze bereikbaar via de knop Snelacties zonder permanente ruimte in te nemen.'))
         self._ai_controls = (self.ai_provider, self.ollama, self.openrouter_auth_method, self.openrouter_key, self.openrouter_connect, self.openrouter_disconnect, self.model, self.ai_refresh_button, self.openrouter_free_only, self.openrouter_writing_only, self.ai_disable_thinking, self.ai_quick_actions_expanded)
         self.ai_enabled.toggled.connect(self._update_ai_controls)
+        self.ai_enabled.toggled.connect(self._refresh_ollama_setup)
         self.ai_provider.currentIndexChanged.connect(self._ai_provider_changed)
         self.openrouter_auth_method.currentIndexChanged.connect(self._update_ai_controls)
         self.model.currentIndexChanged.connect(self._update_thinking_control)
         self.model.currentIndexChanged.connect(self._ai_model_selection_changed)
         self.model.currentIndexChanged.connect(self._update_free_router_hint)
         self._update_ai_controls()
+        QTimer.singleShot(0, self._refresh_ollama_setup)
         ail.addStretch(1)
         self._add_settings_category(nav_lay, tr('settings.ai', 'AI Meelezer'), ai)
 
         # Spelling
         spelling, spl = self._make_settings_page(
             tr('settings.spelling', 'Spelling'),
-            tr('settings.spelling.intro', 'Beheer de spellingscontrole en de gevonden Hunspell-woordenboeken.')
+            tr('settings.spelling.intro_170', 'Kies het woordenboek en de taal waarmee QuietWriter de spelling controleert.')
         )
         self._add_settings_section(spl, tr('settings.section.checking', 'Controle'))
         self.spell_enabled = SettingsBooleanChoice(settings.value('spell_enabled', True, bool))
-        self._add_settings_field(spl, tr('settings.spelling.check', 'Spellingscontrole'), self.spell_enabled,
+        self._add_settings_field(spl, tr('settings.spelling.check', 'Spelling controleren'), self.spell_enabled,
             tr('settings.spelling.check_help', 'Onderstreept onbekende woorden in de editor. Je manuscripttekst zelf wordt nooit automatisch aangepast.'))
         self.dictionary_catalog = DictionaryCatalog(Path(settings.value('workspace', str(Path.home() / 'QuietWriter'))) / 'dictionaries')
-        self.spell_language = QuietComboBox()
+        # 1.7: eerst het woordenboek, dan de talen die daarin zitten.
         self.spell_dictionary_source = QuietComboBox()
-        self.spell_language.currentIndexChanged.connect(self._dictionary_language_changed)
-        self.spell_dictionary_source.currentIndexChanged.connect(self.update_dictionary_info)
-        self._add_settings_field(spl, tr('settings.spelling.language', 'Taal'), self.spell_language,
-            tr('settings.spelling.language_help', 'Kies de taal voor de spellingscontrole.'))
+        self.spell_language = QuietComboBox()
+        self.spell_dictionary_source.currentIndexChanged.connect(self._dictionary_source_changed)
+        self.spell_language.currentIndexChanged.connect(self.update_dictionary_info)
         self._add_settings_field(spl, tr('settings.spelling.dictionary_choice', 'Woordenboek'), self.spell_dictionary_source,
-            tr('settings.spelling.dictionary_choice_help', 'Kies welk gevonden woordenboek QuietWriter voor deze taal gebruikt.'))
-
-        self._add_settings_section(spl, tr('settings.section.dictionaries', 'Woordenboeken'))
+            tr('settings.spelling.dictionary_choice_help_170', 'Een woordenboek dat je in QuietWriter hebt gedownload of toegevoegd, of een dat al bij ONLYOFFICE, LibreOffice of OpenOffice op deze computer staat.'))
+        self._add_settings_field(spl, tr('settings.spelling.language', 'Taal'), self.spell_language,
+            tr('settings.spelling.language_help_170', 'De talen die in dit woordenboek zitten.'))
+        for combo in (self.spell_dictionary_source, self.spell_language):
+            combo.setMinimumWidth(320)   # beide keuzelijsten even breed
         self.dictionary_info = WrappedHeightLabel(''); self.dictionary_info.setObjectName('muted')
         self._add_settings_full_width(spl, self.dictionary_info)
         actions_widget = QWidget(); actions = QHBoxLayout(actions_widget); actions.setContentsMargins(0,0,0,0); actions.setSpacing(8)
-        self.scan_dict_btn = QPushButton(tr('settings.spelling.rescan', 'Opnieuw zoeken')); self.scan_dict_btn.setObjectName('secondaryButton'); self.scan_dict_btn.clicked.connect(self.refresh_dictionaries)
+        self.download_dict_btn = QPushButton(tr('settings.spelling.download', 'Downloaden…')); self.download_dict_btn.setObjectName('secondaryButton'); self.download_dict_btn.clicked.connect(self.open_dictionary_download)
         self.add_dict_btn = QPushButton(tr('settings.spelling.add_dictionary', 'Toevoegen…')); self.add_dict_btn.setObjectName('secondaryButton'); self.add_dict_btn.clicked.connect(self.choose_dictionary)
-        self.remove_dict_btn = QPushButton(tr('common.delete', 'Verwijderen')); self.remove_dict_btn.setObjectName('secondaryButton'); self.remove_dict_btn.clicked.connect(self.remove_dictionary)
-        self.download_dict_btn = QPushButton(tr('settings.spelling.download_site', 'Downloadsite')); self.download_dict_btn.setObjectName('secondaryButton'); self.download_dict_btn.clicked.connect(self.open_dictionary_download)
-        for btn in (self.scan_dict_btn, self.add_dict_btn, self.remove_dict_btn, self.download_dict_btn):
+        self.remove_dict_btn = QPushButton(tr('settings.spelling.remove_button', 'Verwijderen…')); self.remove_dict_btn.setObjectName('secondaryButton'); self.remove_dict_btn.clicked.connect(self.remove_dictionary)
+        self.scan_dict_btn = QPushButton(tr('settings.spelling.rescan', 'Opnieuw zoeken')); self.scan_dict_btn.setObjectName('secondaryButton'); self.scan_dict_btn.clicked.connect(self.refresh_dictionaries)
+        for btn in (self.download_dict_btn, self.add_dict_btn, self.remove_dict_btn, self.scan_dict_btn):
             actions.addWidget(btn)
         actions.addStretch(1)
         self._add_settings_field(spl, tr('settings.spelling.manage', 'Beheer'), actions_widget,
-            tr('settings.spelling.manage_help', 'QuietWriter zoekt in de werkmap en in geïnstalleerde versies van ONLYOFFICE, LibreOffice en OpenOffice. Je kunt ook zelf een .dic/.aff-woordenboek toevoegen.'))
+            tr('settings.spelling.manage_help_170b', 'Downloaden haalt een woordenboek op uit een vaste, gecontroleerde lijst. Met Toevoegen kies je zelf een .dic-bestand. Verwijderen gaat alleen over woordenboeken in QuietWriter; die van Office-programma’s blijven staan.'))
         spl.addStretch(1)
         self._add_settings_category(nav_lay, tr('settings.spelling', 'Spelling'), spelling)
+
+        # Vertalingen: eigen pagina met eigen opslaan (staat los van het formulier).
+        from .translations_page import TranslationsPage
+        self.translations_page = TranslationsPage(settings, self)
+        self.translations_index = self.pages.count()
+        self._add_settings_category(nav_lay, tr('settings.translations', 'Vertalingen'), self.translations_page)
 
         # Over volgt direct op Spelling; de vrije ruimte blijft onder de laatste categorie.
         self.about_page = AboutPage(self)
@@ -668,9 +699,10 @@ class SettingsPage(QWidget):
 
         info = QWidget()
         info.setObjectName('settingsRowInfo')
-        info.setMinimumWidth(240)
-        info.setMaximumWidth(320)
-        info.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        # Vaste breedte (1.7): anders schuift een rij met langere uitleg zijn
+        # keuzelijst naar rechts en lijnen de bedieningselementen niet meer uit.
+        info.setFixedWidth(310)
+        info.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         iv = QVBoxLayout(info)
         iv.setContentsMargins(0, 0, 0, 0)
         iv.setSpacing(5)
@@ -681,11 +713,13 @@ class SettingsPage(QWidget):
             detail = QLabel(note)
             detail.setObjectName('settingsFieldHelp')
             detail.setWordWrap(True)
+            detail.setAlignment(Qt.AlignTop | Qt.AlignLeft)
             detail.setMaximumWidth(310)
             detail.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
             # QLabel's height-for-width is not propagated reliably through this
             # nested settings grid on all Qt/HiDPI combinations. Reserve the
             # wrapped height explicitly so translated help never gets clipped.
+            detail.ensurePolished()   # eerst het thema-lettertype, anders wordt de hoogte te groot
             needed = detail.heightForWidth(310)
             if needed > 0:
                 detail.setMinimumHeight(needed)
@@ -750,12 +784,34 @@ class SettingsPage(QWidget):
             return
         self.pages.setCurrentIndex(index)
         if hasattr(self, 'save_btn'):
-            self.save_btn.setVisible(index != getattr(self, 'about_index', -1))
+            own_buttons = (getattr(self, 'about_index', -1), getattr(self, 'translations_index', -1))
+            self.save_btn.setVisible(index not in own_buttons)
             self._update_dirty_state()
         for i, button in enumerate(self._settings_nav_buttons):
             button.blockSignals(True)
             button.setChecked(i == index)
             button.blockSignals(False)
+
+    def _update_mode_text(self) -> str:
+        from ..self_update import update_source_override
+        try:
+            can = bool(self.main.can_self_update())
+        except Exception:
+            can = False
+        if not can:
+            return tr('settings.updates.mode_manual', 'Deze kopie kan zichzelf niet bijwerken.')
+        override = update_source_override()
+        if override:
+            text = tr('settings.updates.mode_override', 'Deze kopie werkt zichzelf bij. Testbron: {source}', source=override)
+        else:
+            text = tr('settings.updates.mode_self', 'Deze kopie werkt zichzelf bij.')
+        try:
+            pilot = bool(getattr(self.main._self_updater(), 'pilot', False))
+        except Exception:
+            pilot = False
+        if pilot:
+            text += ' ' + tr('settings.updates.mode_pilot', 'Testkopie: ziet ook testversies (pre-releases) die gebruikers nog niet zien.')
+        return text
 
     def show_update_status(self, result):
         if not hasattr(self, 'update_version_status'):
@@ -766,9 +822,24 @@ class SettingsPage(QWidget):
             text = tr('settings.updates.version_found', 'Huidige versie: {current}. Nieuwste stabiele versie: {latest}.', current=result.current_version, latest=result.latest_version)
         self.update_version_status.setText(text)
 
+    def show_self_update_status(self, current: str, latest: str | None):
+        """Status na een Velopack-controle (zelf bijwerkende build)."""
+        if not hasattr(self, 'update_version_status'):
+            return
+        if latest:
+            text = tr('settings.updates.version_found', 'Huidige versie: {current}. Nieuwste stabiele versie: {latest}.', current=current, latest=latest)
+        else:
+            text = tr('settings.updates.version_latest', 'Huidige versie: {current}. Dit is de nieuwste stabiele versie.', current=current)
+        self.update_version_status.setText(text)
+
+    def _select_interface_scale(self, value):
+        index = self.interface_scale.findData(normalize_interface_scale(value))
+        self.interface_scale.setCurrentIndex(index if index >= 0 else self.interface_scale.findData(DEFAULT_INTERFACE_SCALE))
+
     def _current_form_state(self):
         return (
             self.language.currentData() or 'nl',
+            int(self.interface_scale.currentData() or DEFAULT_INTERFACE_SCALE),
             self.theme.currentText(),
             self.editor_font.currentText(),
             int(self.editor_font_size.value()),
@@ -781,9 +852,9 @@ class SettingsPage(QWidget):
             bool(self.advanced_options.isChecked()),
             bool(self.guided_export.isChecked()),
             bool(self.auto_update_check.isChecked()),
-            bool(self.auto_update_download.isChecked()),
             bool(self.writing_progress_enabled.isChecked()),
             bool(self.backup_enabled.isChecked()), self.backup_path.text(),
+            bool(self.history_thin_daily.isChecked()),
             self.root.text(),
             self.cover_template.text(),
             bool(self.ai_enabled.isChecked()),
@@ -803,10 +874,10 @@ class SettingsPage(QWidget):
 
     def _wire_dirty_tracking(self):
         widgets = (
-            self.language, self.theme, self.editor_font,
+            self.language, self.interface_scale, self.theme, self.editor_font,
             self.editor_font_size, self.editor_text_width, self.manuscript_line_spacing,
             self.manuscript_indent, self.manuscript_paragraph_spacing,
-            self.smart_quotes, self.planning_ghosts_enabled, self.advanced_options, self.guided_export, self.auto_update_check, self.auto_update_download, self.writing_progress_enabled, self.backup_enabled, self.backup_path, self.root, self.cover_template,
+            self.smart_quotes, self.planning_ghosts_enabled, self.advanced_options, self.guided_export, self.auto_update_check, self.writing_progress_enabled, self.backup_enabled, self.history_thin_daily, self.backup_path, self.root, self.cover_template,
             self.ai_enabled, self.ai_provider, self.ollama, self.openrouter_auth_method, self.openrouter_key, self.model, self.openrouter_free_only, self.openrouter_writing_only,
             self.ai_disable_thinking, self.ai_quick_actions_expanded,
             self.spell_enabled, self.spell_language, self.spell_dictionary_source,
@@ -956,11 +1027,10 @@ class SettingsPage(QWidget):
         return Path(self.root.text().strip() or str(Path.home() / 'QuietWriter')) / 'dictionaries'
 
     def _dictionary_source_label(self, source: str, locale: str = "") -> str:
-        labels = {
-            'Werkmap': tr('settings.spelling.source_workspace', 'Zelf toegevoegd'),
-            'Meegeleverd': (tr('settings.spelling.source_bundled', 'OpenTaal (meegeleverd)') if locale == 'nl_NL' else tr('settings.spelling.source_bundled_generic', 'Meegeleverd')),
-        }
-        return labels.get(source, source)
+        return source_label(source)
+
+    def _dictionary_sources(self) -> list[str]:
+        return ordered_sources(self.dictionary_catalog.entries())
 
     def refresh_dictionaries(self, checked=False, preserve_locale=None, preserve_source=None):
         current_locale = preserve_locale or self.spell_language.currentData() or str(self.settings.value('spell_language', 'nl_NL') or 'nl_NL')
@@ -968,60 +1038,69 @@ class SettingsPage(QWidget):
         if current_source is None:
             current_source = self.spell_dictionary_source.currentData() or str(self.settings.value('spell_dictionary_source', '') or '')
         self.dictionary_catalog = DictionaryCatalog(self._dictionary_workspace())
-        self.spell_language.blockSignals(True)
-        self.spell_language.clear()
-        entries = self.dictionary_catalog.entries()
-        seen_locales = set()
-        for entry in entries:
-            if entry.locale in seen_locales:
-                continue
-            seen_locales.add(entry.locale)
-            self.spell_language.addItem(entry.label, entry.locale)
-        idx = self.spell_language.findData(current_locale)
-        if idx >= 0:
-            self.spell_language.setCurrentIndex(idx)
-        elif self.spell_language.count():
-            self.spell_language.setCurrentIndex(0)
-        self.spell_language.blockSignals(False)
-        self._populate_dictionary_sources(str(current_source or ''))
-
-    def _dictionary_language_changed(self, *_):
-        self._populate_dictionary_sources('')
-
-    def _populate_dictionary_sources(self, preserve_source: str = ''):
-        locale = self.spell_language.currentData()
-        entries = self.dictionary_catalog.entries(str(locale or '')) if locale else []
+        sources = self._dictionary_sources()
+        if current_source not in sources:
+            # Bewaarde bron is weg (of nog niet gekozen): neem de eerste die deze taal heeft.
+            having = [entry.source for entry in self.dictionary_catalog.entries(str(current_locale or ''))]
+            current_source = next((s for s in sources if s in having), sources[0] if sources else '')
         self.spell_dictionary_source.blockSignals(True)
         self.spell_dictionary_source.clear()
-        seen_sources = set()
-        for entry in entries:
-            if entry.source in seen_sources:
-                continue
-            seen_sources.add(entry.source)
-            self.spell_dictionary_source.addItem(self._dictionary_source_label(entry.source), entry.source)
-        idx = self.spell_dictionary_source.findData(preserve_source)
+        for source in sources:
+            self.spell_dictionary_source.addItem(self._dictionary_source_label(source), source)
+        idx = self.spell_dictionary_source.findData(current_source)
         if idx >= 0:
             self.spell_dictionary_source.setCurrentIndex(idx)
-        elif entries:
-            self.spell_dictionary_source.setCurrentIndex(0)
         self.spell_dictionary_source.blockSignals(False)
-        self.spell_dictionary_source.setEnabled(bool(entries))
-        self.update_dictionary_info()
-        self._update_dirty_state()
+        self.spell_dictionary_source.setEnabled(bool(sources))
+        self._populate_dictionary_languages(str(current_locale or ''))
 
-    def update_dictionary_info(self):
-        locale = self.spell_language.currentData()
+    def _dictionary_source_changed(self, *_):
+        self._populate_dictionary_languages(str(self.spell_language.currentData() or ''))
+
+    def _populate_dictionary_languages(self, preserve_locale: str = ''):
         source = self.spell_dictionary_source.currentData()
-        entry = self.dictionary_catalog.get(locale, source) if locale else None
-        if not entry:
-            self.dictionary_info.setText(tr('settings.spelling.no_dictionaries', 'Geen woordenboeken gevonden. Installeer bijvoorbeeld ONLYOFFICE, LibreOffice of OpenOffice, of voeg zelf een Hunspell-woordenboek toe.'))
+        entries = [entry for entry in self.dictionary_catalog.entries() if entry.source == source]
+        self.spell_language.blockSignals(True)
+        self.spell_language.clear()
+        seen = set()
+        for entry in entries:
+            if entry.locale in seen:
+                continue
+            seen.add(entry.locale)
+            self.spell_language.addItem(entry.label, entry.locale)
+        for wanted in (preserve_locale, str(self.settings.value('spell_language', 'nl_NL') or ''), 'nl_NL'):
+            idx = self.spell_language.findData(wanted) if wanted else -1
+            if idx >= 0:
+                self.spell_language.setCurrentIndex(idx)
+                break
+        else:
+            if self.spell_language.count():
+                self.spell_language.setCurrentIndex(0)
+        self.spell_language.blockSignals(False)
+        self.spell_language.setEnabled(bool(entries))
+        self.update_dictionary_info()
+
+    def update_dictionary_info(self, *_):
+        """Alleen een melding als er niets te kiezen is of iets bij te werken; geen bestandspaden."""
+        empty = not self.dictionary_catalog.entries()
+        text = ''
+        if empty:
+            text = tr('settings.spelling.no_dictionaries_170', 'Er is nog geen woordenboek. Kies hieronder Downloaden… om er een op te halen.')
+        else:
+            try:
+                from ..dictionary_download import updates_available
+                updates = updates_available(self._dictionary_workspace())
+            except Exception:
+                updates = []
+            if updates:
+                text = tr('settings.spelling.updates_available',
+                          'Er is een nieuwere versie van: {names}. Kies Downloaden… om bij te werken.',
+                          names=', '.join(entry.label for entry in updates))
+        self.dictionary_info.setText(text)
+        self.dictionary_info.setVisible(bool(text))
+        if text:
             self.dictionary_info.sync_height()
-            self.remove_dict_btn.setEnabled(False)
-            return
-        aff = tr('settings.spelling.aff_rules', 'met .aff-regels') if entry.aff else tr('settings.spelling.dic_only', 'alleen .dic')
-        self.dictionary_info.setText(tr('settings.spelling.dictionary_info', 'Bron: {source} · {locale} · {kind}\n{path}', source=self._dictionary_source_label(entry.source, entry.locale), locale=entry.locale, kind=aff, path=entry.dic))
-        self.dictionary_info.sync_height()
-        self.remove_dict_btn.setEnabled(entry.source == 'Werkmap')
+        self._update_dirty_state()
 
     def choose_dictionary(self):
         p, _ = QFileDialog.getOpenFileName(self, tr('settings.spelling.choose_dictionary', 'Kies Hunspell-woordenboek'), str(Path.home()), tr('settings.spelling.dictionary_filter', 'Hunspell woordenboek (*.dic);;Alle bestanden (*)'))
@@ -1032,20 +1111,32 @@ class SettingsPage(QWidget):
         self.refresh_dictionaries(preserve_locale=entry.locale, preserve_source=entry.source)
 
     def remove_dictionary(self):
-        locale = self.spell_language.currentData()
+        """Venster met de woordenboeken van QuietWriter zelf; daar kies je wat weg mag (1.7)."""
+        from .dictionary_remove_dialog import DictionaryRemoveDialog
         source = self.spell_dictionary_source.currentData()
-        entry = self.dictionary_catalog.get(locale, source) if locale else None
-        if not entry or entry.source != 'Werkmap':
-            _translated_notice(QMessageBox.Information, self, tr('settings.spelling.remove_title', 'Woordenboek verwijderen'), tr('settings.spelling.remove_info', 'Alleen woordenboeken die je zelf aan QuietWriter hebt toegevoegd kunnen hier worden verwijderd. Woordenboeken van Office-programma’s blijven onaangeroerd.'))
-            return
-        if not confirm(self, tr('settings.spelling.remove_title', 'Woordenboek verwijderen'), tr('settings.spelling.remove_confirm', 'Wil je “{label}” uit de QuietWriter-werkmap verwijderen?', label=entry.label)):
-            return
-        if not self.dictionary_catalog.remove_custom(locale):
-            _translated_notice(QMessageBox.Warning, self, tr('settings.spelling.remove_title', 'Woordenboek verwijderen'), tr('settings.spelling.remove_failed', 'Het woordenboek kon niet worden verwijderd.'))
-        self.refresh_dictionaries()
+        dialog = DictionaryRemoveDialog(self._dictionary_workspace(), self,
+                                        preselect=str(self.spell_language.currentData() or '') if source == 'Werkmap' else None)
+        dialog.exec()
+        if dialog.removed:
+            self.refresh_dictionaries()
 
     def open_dictionary_download(self):
-        QDesktopServices.openUrl(QUrl(self.DICTIONARY_DOWNLOAD_URL))
+        """Woordenboek downloaden uit de ingebouwde, gecontroleerde lijst (1.7)."""
+        from .dictionary_download_dialog import DictionaryDownloadDialog
+        dialog = DictionaryDownloadDialog(self._dictionary_workspace(), self,
+                                          preselect=str(self.spell_language.currentData() or ''))
+        dialog.exec()
+        if dialog.installed_locale:
+            self.refresh_dictionaries(preserve_locale=dialog.installed_locale, preserve_source='Werkmap')
+            self._update_dirty_state()
+
+    def _update_model_tooltip(self, *_):
+        name = self._selected_ai_model()
+        self.model.setToolTip(name)
+        # De open keuzelijst mag breder zijn dan het veld: dan past de langste naam.
+        metrics = self.model.view().fontMetrics()
+        widest = max((metrics.horizontalAdvance(self.model.itemText(i)) for i in range(self.model.count())), default=0)
+        self.model.view().setMinimumWidth(min(widest + 60, 1000))
 
     def _selected_ai_model(self) -> str:
         data = self.model.currentData()
@@ -1151,6 +1242,7 @@ class SettingsPage(QWidget):
         elif self.model.count():
             self.model.setCurrentIndex(0)
         self.model.blockSignals(False)
+        self._update_model_tooltip()
         self._update_thinking_control()
         self._update_free_router_hint()
 
@@ -1194,6 +1286,18 @@ class SettingsPage(QWidget):
                 enabled = False
         self.ai_disable_thinking.setEnabled(enabled)
 
+    def _refresh_ollama_setup(self, *_):
+        if self.ai_enabled.isChecked() and str(self.ai_provider.currentData() or 'ollama') == 'ollama':
+            self.ollama_setup.refresh()
+
+    def _ollama_model_ready(self, name: str):
+        """Na een download: modellen opnieuw ophalen en het nieuwe model als concept kiezen."""
+        self.refresh_models()
+        if name in self._ai_models_by_provider.get('ollama', []):
+            self._ai_model_drafts['ollama'] = name
+            self._populate_models('ollama')
+            self._update_dirty_state()
+
     def _ai_provider_changed(self, *_):
         new_provider = str(self.ai_provider.currentData() or 'ollama')
         old_provider = str(self._last_ai_provider or 'ollama')
@@ -1204,6 +1308,8 @@ class SettingsPage(QWidget):
             self.ai_model_status.clear()
             self.ai_model_status.hide()
         self._update_ai_controls()
+        if old_provider != new_provider:
+            self._refresh_ollama_setup()
         self._update_dirty_state()
 
     def _update_ai_controls(self, *_):
@@ -1214,6 +1320,8 @@ class SettingsPage(QWidget):
         is_openrouter = provider_name == 'openrouter'
         browser_mode = self.openrouter_auth_method.currentData() == 'browser'
         self.ollama_row.setVisible(provider_name == 'ollama')
+        self.ollama_setup_row.setVisible(provider_name == 'ollama')
+        self.ollama_setup.setEnabled(enabled)
         self.openrouter_manual_row.setVisible(is_openrouter and not browser_mode)
         self.openrouter_browser_row.setVisible(is_openrouter and browser_mode)
         self.openrouter_auth_method.parentWidget().parentWidget().setVisible(is_openrouter)
@@ -1250,7 +1358,7 @@ class SettingsPage(QWidget):
         self.openrouter_auth_status.setText(labels[kind])
         self.openrouter_auth_status.setStyleSheet(
             f'QLabel {{ color: {fg}; background-color: {bg}; border-radius: 5px;'
-            ' padding: 5px 9px; font-weight: 600; }}'
+            ' padding: 5px 9px; font-weight: 600; }'  # geen f-string: één accolade
         )
         self.openrouter_auth_status.setToolTip(message or labels[kind])
 
@@ -1416,11 +1524,14 @@ class SettingsPage(QWidget):
         y = margin
         self.save_feedback.move(x, y)
 
-    def _show_saved_feedback(self, language_restart=False):
-        self.save_feedback.setText(
-            tr('settings.saved_restart_language', 'Opgeslagen · taal wordt na herstart toegepast')
-            if language_restart else tr('settings.saved', 'Opgeslagen')
-        )
+    def _show_saved_feedback(self, language_restart=False, scale_restart=False):
+        if language_restart:
+            text = tr('settings.saved_restart_language', 'Opgeslagen · taal wordt na herstart toegepast')
+        elif scale_restart:
+            text = tr('settings.saved_restart_scale', 'Opgeslagen · interfacegrootte wordt na herstart toegepast')
+        else:
+            text = tr('settings.saved', 'Opgeslagen')
+        self.save_feedback.setText(text)
         self.save_feedback.adjustSize()
         self._position_save_feedback()
         self.save_feedback.show()
@@ -1700,6 +1811,8 @@ class SettingsPage(QWidget):
         self.root.setText(normalized_workspace)
         try:
             require_external_user_directory(normalized_workspace)
+            if normalized_workspace != old_root:
+                require_writable_directory(normalized_workspace)
             if self.backup_path.text().strip():
                 require_external_user_directory(self.backup_path.text().strip())
         except UnsafeWorkspacePath as exc:
@@ -1707,6 +1820,8 @@ class SettingsPage(QWidget):
             return
         old_language = str(self.settings.value('language', 'nl') or 'nl')
         new_language = str(self.language.currentData() or 'nl')
+        old_scale = normalize_interface_scale(self.settings.value(INTERFACE_SCALE_KEY, DEFAULT_INTERFACE_SCALE))
+        new_scale = int(self.interface_scale.currentData() or DEFAULT_INTERFACE_SCALE)
         new_typography = typography_from_values(self.editor_font.currentText(), self.editor_font_size.value())
         new_manuscript_style = ManuscriptStyle.from_values(
             self.manuscript_line_spacing.value(), self.manuscript_indent.value(),
@@ -1725,6 +1840,7 @@ class SettingsPage(QWidget):
         # correct the storage problem and press Save again.
         values = {
             'language': new_language,
+            INTERFACE_SCALE_KEY: new_scale,
             'theme': self.theme.currentText(),
             'editor_font': new_typography.family,
             'editor_font_size': int(self.editor_font_size.value()),
@@ -1737,9 +1853,9 @@ class SettingsPage(QWidget):
             'advanced_options': self.advanced_options.isChecked(),
             'export/guided': self.guided_export.isChecked(),
             'auto_update_check': self.auto_update_check.isChecked(),
-            'auto_update_download': False,  # Disabled until verified downloader ships
             'writing_progress_enabled': self.writing_progress_enabled.isChecked(),
             'backup/enabled': self.backup_enabled.isChecked(),
+            'history/thin_daily': self.history_thin_daily.isChecked(),
             'backup/path': self.backup_path.text().strip(),
             'autosave': True,
             'workspace': normalized_workspace,
@@ -1770,6 +1886,10 @@ class SettingsPage(QWidget):
         for key, value in values.items():
             self.settings.setValue(key, value)
         self.settings.sync()
+        try:
+            self.main.library.thin_daily_versions = bool(values['history/thin_daily'])
+        except AttributeError:
+            pass
         if self.settings.status() != QSettings.Status.NoError:
             for key, (existed, value) in previous.items():
                 if existed:
@@ -1797,7 +1917,8 @@ class SettingsPage(QWidget):
             export_page.apply_mode_setting()
         self._saved_form_state = self._current_form_state()
         self._update_dirty_state()
-        self._show_saved_feedback(language_restart=(new_language != old_language))
+        self._show_saved_feedback(language_restart=(new_language != old_language),
+                                  scale_restart=(new_scale != old_scale))
 
     def begin_session(self):
         self._refresh_backup_books()
@@ -1822,15 +1943,16 @@ class SettingsPage(QWidget):
         self.advanced_options.setChecked(self.settings.value('advanced_options', True, bool))
         self.guided_export.setChecked(self.settings.value('export/guided', True, bool))
         self.auto_update_check.setChecked(self.settings.value('auto_update_check', False, bool))
-        self.auto_update_download.setChecked(False)
         self.writing_progress_enabled.setChecked(self.settings.value('writing_progress_enabled', False, bool))
         self.backup_enabled.setChecked(self.settings.value('backup/enabled', False, bool))
+        self.history_thin_daily.setChecked(self.settings.value('history/thin_daily', True, bool))
         self.backup_path.setText(str(self.settings.value('backup/path', '') or ''))
         self.backup_path.setCursorPosition(0)
         self._refresh_backup_books()
         language_value = str(self.settings.value('language', 'nl') or 'nl')
         language_index = self.language.findData(language_value)
         self.language.setCurrentIndex(language_index if language_index >= 0 else 0)
+        self._select_interface_scale(self.settings.value(INTERFACE_SCALE_KEY, DEFAULT_INTERFACE_SCALE))
         self.settings.setValue('autosave', True)
         self.root.setText(self.settings.value('workspace', str(Path.home()/APP_NAME)))
         self.cover_template.setText(self.settings.value('cover_header_template', '/{slug}.jpg'))

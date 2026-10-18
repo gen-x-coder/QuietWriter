@@ -8,12 +8,11 @@ def test_bookdetails_does_not_own_writing_progress_opt_in():
 
 
 def test_planning_popup_blocks_mouse_replay_and_empty_filler_is_transparent():
+    # 1.7.0: de Planning-popup is weggehaald (dubbelop met "In dit hoofdstuk",
+    # verzoek van Lucas). Er is dus ook geen popup meer die muisklikken kan
+    # herhalen; dit pint vast dat hij niet stilletjes terugkomt.
     source = Path('quietwriter/ui/editor_page.py').read_text(encoding='utf-8')
-    theme = Path('quietwriter/themes.py').read_text(encoding='utf-8')
-    assert 'Qt.WA_NoMouseReplay' in source
-    assert "self.empty_filler.setObjectName('planningOverlayFiller')" in source
-    assert 'QWidget#planningOverlayFiller' in theme
-    assert 'background: transparent' in theme[theme.find('QWidget#planningOverlayFiller'):theme.find('QWidget#planningOverlayFiller') + 120]
+    assert 'planningOverlayFiller' not in source and 'class PlanningOverlay' not in source
 
 
 def test_active_settings_are_threaded_into_editor_and_tree():

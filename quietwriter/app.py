@@ -12,6 +12,7 @@ from .crash_logging import enable_crash_logging, log_exception, set_error_notifi
 from .font_catalog import register_bundled_fonts
 from .icon_theme import app_icon_path
 from .i18n import tr
+from .interface_scale import apply_interface_scale
 from .runtime_profile import RuntimeProfile, parse_runtime_args, profile_for
 from .startup import apply_saved_appearance, discover_startup_models, run_first_setup
 from .smoke_test import SmokeTestContext
@@ -39,6 +40,9 @@ def run():
         profile = profile_for('dev')
         force_first_run = False
     _set_windows_app_id(profile)
+    if not smoke_test:
+        # Interfacegrootte (1.7) moet vóór QApplication bekend zijn.
+        apply_interface_scale(QSettings('QuietWriter', profile.settings_application))
     app = QApplication(qt_argv)
     app.setApplicationName(profile.qt_application_name)
     app.setOrganizationName('QuietWriter')

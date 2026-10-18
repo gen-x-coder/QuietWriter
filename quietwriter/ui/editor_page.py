@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from .dialog_notices import notice_information, notice_warning, notice_critical
+from ..crash_logging import log_exception
 from .current_page_stack import CurrentPageStack
 from ..ai.ui import AIPanel
 from ..chapter_order import DropTarget, move_chapter as reorder_chapter
@@ -50,149 +51,35 @@ from .insert_panel import InsertPanel
 from .darlings_actions_panel import DarlingsActionsPanel
 from .manuscript_editor import ManuscriptEditor
 from .manuscript_tree import ManuscriptTree
-from .search_panel import SearchPanel
+from .search_panel import SearchPanel, search_snippet
 from .spell_panel import SpellPanel
 from .publication.publication_editor import PublicationEditor
 from .publication.publication_setup import PublicationSetup
 
-class PlanningOverlay(QFrame):
-    """Tijdelijke, read-only Planningoverlay met één expliciete statusactie.
 
-    De overlay is UI-state: hij schrijft nooit tekst naar het manuscript. Alleen
-    de knop ``Klaar`` wijzigt bewust de opgeslagen scènestatus.
-    """
-
-    markWritten = Signal(str)
-    closed = Signal()
+class _ElidingLabel(QLabel):
+    """Label dat zijn tekst inkort (…) op de breedte die het krijgt, zonder het venster breder te maken."""
 
     def __init__(self, parent=None):
-        super().__init__(parent, Qt.Popup)
-        self.setObjectName('planningOverlay')
-        self.setAttribute(Qt.WA_NoMouseReplay, True)
-        self.setMinimumWidth(0)
-        root = QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 14)
-        root.setSpacing(8)
-        title = QLabel(tr('planning.overlay.title', 'Planning voor dit hoofdstuk'))
-        title.setObjectName('sectionTitle')
-        title.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        root.addWidget(title, 0, Qt.AlignTop)
-        help_label = QLabel(tr('planning.overlay.help', 'Bekijk tijdens het schrijven wat al klaar is en wat nog openstaat. Markeer een scène zelf als klaar wanneer je vindt dat die geschreven is.'))
-        help_label.setObjectName('muted')
-        help_label.setWordWrap(True)
-        help_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        root.addWidget(help_label, 0, Qt.AlignTop)
-        self.empty = QLabel(tr('planning.overlay.empty', 'Geen planning voor dit hoofdstuk.'))
-        self.empty.setObjectName('muted')
-        self.empty.setWordWrap(True)
-        self.empty.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        root.addWidget(self.empty, 0, Qt.AlignTop)
-        self.scroll = QScrollArea()
-        self.scroll.setObjectName('planningOverlayScroll')
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.NoFrame)
-        self.host = QWidget()
-        self.host.setObjectName('planningOverlayHost')
-        self.rows = QVBoxLayout(self.host)
-        self.rows.setContentsMargins(0, 0, 4, 0)
-        self.rows.setSpacing(6)
-        self.rows.addStretch()
-        self.scroll.setWidget(self.host)
-        root.addWidget(self.scroll, 1)
-        self.empty_filler = QWidget()
-        self.empty_filler.setObjectName('planningOverlayFiller')
-        self.empty_filler.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        root.addWidget(self.empty_filler, 1)
-        self.resize(430, 360)
+        super().__init__(parent)
+        self._full_text = ''
 
-    @staticmethod
-    def _status_text(status: str) -> tuple[str, str]:
-        status = str(status or 'idee')
-        if status == 'geschreven':
-            return '✓', tr('planning.status.written', 'Geschreven')
-        if status == 'uitgewerkt':
-            return '◐', tr('planning.status.developed', 'Uitgewerkt')
-        return '○', tr('planning.status.idea', 'Idee')
+    def set_full_text(self, text: str):
+        self._full_text = str(text or '')
+        self._apply()
 
-    def set_scenes(self, scenes):
-        while self.rows.count() > 1:
-            item = self.rows.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        scenes = tuple(scenes or ())
-        self.empty.setVisible(not scenes)
-        self.empty_filler.setVisible(False)
-        self.scroll.setVisible(bool(scenes))
-        for scene in scenes:
-            row = QFrame()
-            row.setObjectName('planningOverlayScene')
-            lay = QVBoxLayout(row)
-            lay.setContentsMargins(10, 9, 10, 9)
-            lay.setSpacing(4)
-            top = QHBoxLayout()
-            title = QLabel(getattr(scene, 'title', '') or tr('chapter_context.scene', 'Scène'))
-            title.setObjectName('subsectionTitle')
-            title.setWordWrap(True)
-            prefix, status_text = self._status_text(getattr(scene, 'status', ''))
-            status = QLabel(f'{prefix} {status_text}')
-            status.setObjectName('sceneStatusBadge')
-            top.addWidget(title, 1)
-            top.addWidget(status, 0, Qt.AlignTop)
-            lay.addLayout(top)
-            synopsis = (getattr(scene, 'synopsis', '') or '').strip()
-            if synopsis:
-                syn = QLabel(synopsis)
-                syn.setObjectName('muted')
-                syn.setWordWrap(True)
-                lay.addWidget(syn)
-            if getattr(scene, 'status', '') != 'geschreven':
-                done = QPushButton(tr('planning.overlay.mark_written', '✓ Klaar'))
-                done.setObjectName('linkButton')
-                done.setToolTip(tr('planning.overlay.mark_written_tip', 'Markeer deze scène als geschreven'))
-                done.clicked.connect(lambda _=False, sid=getattr(scene, 'id', ''): self.markWritten.emit(sid))
-                lay.addWidget(done, 0, Qt.AlignLeft)
-            self.rows.insertWidget(self.rows.count() - 1, row)
+    def full_text(self) -> str:
+        return self._full_text
 
-    def show_for(self, button: QWidget, scenes):
-        scenes = tuple(scenes or ())
-        self.set_scenes(scenes)
-        # A previous show_for() may have fixed the popup to a tall scene-list
-        # size. Clear those constraints before asking Qt for the empty-state
-        # size, otherwise switching to a chapter without scenes can retain the
-        # old height.
-        self.setMinimumSize(0, 0)
-        self.setMaximumSize(16777215, 16777215)
-        self.adjustSize()
+    def _apply(self):
+        width = max(0, self.width() - 2)
+        shown = self.fontMetrics().elidedText(self._full_text, Qt.ElideRight, width) if width else ''
+        if shown != self.text():
+            super().setText(shown)
 
-        # Houd de overlay smal en hoog zodat hij zo weinig mogelijk over het
-        # manuscript valt. Zonder scènes is er geen lijst om voor te reserveren:
-        # dan blijft de flyout compact rond titel, uitleg en lege melding.
-        owner = self.parentWidget()
-        owner_width = owner.width() if owner is not None else 1000
-        owner_height = owner.height() if owner is not None else 700
-        width_cap = max(320, int(owner_width * 0.30))
-        width = max(320, min(width_cap, int(owner_width * 0.26)))
-        if scenes:
-            height_cap = max(420, int(owner_height * 0.82))
-            height = max(420, min(height_cap, int(owner_height * 0.76)))
-        else:
-            height = max(150, min(220, self.sizeHint().height()))
-        self.setFixedSize(width, height)
-
-        pos = button.mapToGlobal(QPoint(button.width() - width, button.height() + 6))
-        screen = button.screen().availableGeometry() if button.screen() else None
-        if screen is not None:
-            x = min(max(screen.left() + 8, pos.x()), screen.right() - width - 8)
-            y = min(max(screen.top() + 8, pos.y()), screen.bottom() - height - 8)
-            pos = QPoint(x, y)
-        self.move(pos)
-        self.show()
-        self.raise_()
-
-    def hideEvent(self, event):
-        super().hideEvent(event)
-        self.closed.emit()
-
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._apply()
 
 class EditorPage(QWidget):
     def __init__(self, main):
@@ -239,14 +126,14 @@ class EditorPage(QWidget):
         self.center = QWidget(); cl = QVBoxLayout(self.center); cl.setContentsMargins(0,0,0,0); cl.setSpacing(0)
         self.history_banner = QFrame(); self.history_banner.setObjectName('historyBanner'); hb = QHBoxLayout(self.history_banner); hb.setContentsMargins(14,8,14,8)
         self.history_banner_label = QLabel(''); self.history_banner_label.setObjectName('historyBannerLabel')
-        self.history_restore_btn = QPushButton(tr('history.restore_button', 'Deze versie herstellen')); self.history_restore_btn.setObjectName('restoreButton'); self.history_restore_btn.clicked.connect(self.restore_preview_version)
+        self.history_restore_btn = QPushButton(tr('history.restore_button', 'Deze versie terugzetten')); self.history_restore_btn.setObjectName('restoreButton'); self.history_restore_btn.clicked.connect(self.restore_preview_version)
         self.history_exit_btn = QPushButton(tr('history.exit_button', 'Afsluiten')); self.history_exit_btn.setObjectName('historyExitButton'); self.history_exit_btn.clicked.connect(self.exit_history_preview)
         hb.addWidget(self.history_banner_label); hb.addStretch(); hb.addWidget(self.history_restore_btn); hb.addWidget(self.history_exit_btn)
         self.history_banner.hide()
         topbar = QFrame(); topbar.setObjectName('editorTopbar'); tl = QHBoxLayout(topbar); tl.setContentsMargins(14,8,18,8)
         undo = QPushButton(); self.undo_button = undo; undo.setProperty('iconName','undo'); undo.setObjectName('compactButton'); undo.setIcon(icon('undo')); undo.setIconSize(QSize(22,22)); undo.setToolTip(tr('editor.undo', 'Ongedaan maken'))
         redo = QPushButton(); self.redo_button = redo; redo.setProperty('iconName','redo'); redo.setObjectName('compactButton'); redo.setIcon(icon('redo')); redo.setIconSize(QSize(22,22)); redo.setToolTip(tr('editor.redo', 'Opnieuw'))
-        self.book_title_label = QLabel(''); self.book_title_label.setObjectName('bookTitleLabel')
+        self.book_title_label = _ElidingLabel(); self.book_title_label.setObjectName('bookTitleLabel')
         self._book_title_full = ''
         self.book_title_label.setMinimumWidth(0)
         self.book_title_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
@@ -268,19 +155,8 @@ class EditorPage(QWidget):
         width_index = self.text_width_combo.findData(current_width)
         self.text_width_combo.setCurrentIndex(width_index if width_index >= 0 else self.text_width_combo.findData(DEFAULT_TEXT_WIDTH))
         self.text_width_combo.currentIndexChanged.connect(self._editor_text_width_changed)
-        self.planning_overlay_button = QPushButton(tr('planning.overlay.button', 'Planning'))
-        self.planning_overlay_button.setObjectName('planningOverlayButton')
-        self.planning_overlay_button.setToolTip(tr('planning.overlay.button_tip', 'Planning voor dit hoofdstuk tonen'))
-        self.planning_overlay_button.setAccessibleName(self.planning_overlay_button.toolTip())
-        self.planning_overlay_button.setEnabled(False)
-        self.planning_overlay_button.setCheckable(True)
-        self.planning_overlay_button.toggled.connect(self._toggle_planning_overlay)
-        self.planning_overlay = PlanningOverlay(self)
-        self.planning_overlay.markWritten.connect(self._mark_scene_written)
-        self.planning_overlay.closed.connect(self._planning_overlay_closed)
         tl.addWidget(undo); tl.addWidget(redo); tl.addSpacing(8); tl.addWidget(self.book_title_label, 1); tl.addStretch()
         tl.addWidget(self.text_width_combo)
-        tl.addSpacing(6); tl.addWidget(self.planning_overlay_button)
         tl.addSpacing(8); tl.addWidget(self.autosave_status)
         self.chapter_title = QLineEdit(); self.chapter_title.setPlaceholderText(tr('editor.chapter_title_placeholder', 'Hoofdstuktitel')); self.chapter_title.setAlignment(Qt.AlignCenter); self.chapter_title.setObjectName('chapterTitle')
         _writing_typography = WritingTypography.from_settings(self.main.settings)
@@ -315,6 +191,10 @@ class EditorPage(QWidget):
         self.publication_store = PublicationStore(self.main.library)
         self.manuscript_content = QWidget(); manuscript_layout = QVBoxLayout(self.manuscript_content); manuscript_layout.setContentsMargins(0,0,0,0); manuscript_layout.setSpacing(0)
         manuscript_layout.addWidget(self.chapter_title); manuscript_layout.addWidget(self.editor)
+        # Voetnoten (1.7): onder de tekst, alleen zichtbaar als het hoofdstuk noten heeft.
+        from .footnote_strip import FootnoteStrip
+        self.footnote_strip = FootnoteStrip(self.editor)
+        self.editor.attach_footnote_strip(self.footnote_strip)
         self.publication_editor = PublicationEditor(self)
         self.publication_setup = PublicationSetup(self)
         self.publication_setup.saved.connect(self._save_publication_setup)
@@ -329,6 +209,17 @@ class EditorPage(QWidget):
         self.editor.selectionChanged.connect(self.darlings_actions.refresh)
         self.right.addWidget(self.search); self.right.addWidget(self.chapter_context); self.right.addWidget(self.open_points); self.right.addWidget(self.ai); self.right.addWidget(self.spell); self.right.addWidget(self.insert); self.right.addWidget(self.history); self.right.addWidget(self.darlings_actions)
         self.chapter_context.openPlanning.connect(self._open_planning_from_context)
+        self.chapter_context.jumpToSegment.connect(self._jump_to_segment)
+        self.chapter_context.addUnplanned.connect(self._add_unplanned_scenes)
+        self.chapter_context.markWritten.connect(self._mark_scene_written)
+        # 1.7: welke geplande scène hoort bij de plek van de cursor?
+        self._planned_scenes = ()
+        self._last_segment = None
+        self._scene_position_timer = QTimer(self)
+        self._scene_position_timer.setSingleShot(True)
+        self._scene_position_timer.setInterval(250)
+        self._scene_position_timer.timeout.connect(self._scene_position_changed)
+        self.editor.cursorPositionChanged.connect(self._scene_position_timer.start)
         self.open_points.openPointRequested.connect(self.jump_to_open_point)
         self.open_points.addRequested.connect(self.add_open_point)
         # Escape closes only the temporary right-side editor tool and returns
@@ -339,6 +230,7 @@ class EditorPage(QWidget):
         self._right_escape.setContext(Qt.WidgetWithChildrenShortcut)
         self._right_escape.activated.connect(self._close_right_panel_from_keyboard)
         self.insert.sceneBreakRequested.connect(self._insert_scene_break_from_panel)
+        self.insert.footnoteRequested.connect(self._insert_footnote_from_panel)
         self.insert.imageInsertRequested.connect(self._insert_image_from_panel)
         self.insert.imageEditRequested.connect(self._save_image_edit_from_panel)
         self.history.versionSelected.connect(self.enter_history_preview)
@@ -457,6 +349,7 @@ class EditorPage(QWidget):
         self.book = book
         self.chapter = None
         self._set_book_title(book.title)
+        self.editor.typing_language = str((book.metadata or {}).get('language', 'nl') or 'nl')
         self.publication_editor.adopt_book(book)
         self._rebuild_word_count_cache()
 
@@ -1002,7 +895,7 @@ class EditorPage(QWidget):
         active_id = self.chapter.id if self.chapter else None
         next_chapter = self.main.library.adjacent_chapter_for_delete(self.book, chapter_id) if deleting_active else None
         message = (
-            tr('editor.chapter.delete_confirm', 'Weet je zeker dat je “{title}” wilt verwijderen?\n\nHet hoofdstuk wordt naar de prullenbak verplaatst en kan later worden hersteld.', title=chapter.title)
+            tr('editor.chapter.delete_confirm', 'Weet je zeker dat je “{title}” wilt verwijderen?\n\nHet hoofdstuk wordt naar de prullenbak verplaatst en kan later worden teruggezet.', title=chapter.title)
         )
         if not confirm(self, tr('editor.chapter.delete_title', 'Hoofdstuk verwijderen'), message):
             return
@@ -1041,6 +934,37 @@ class EditorPage(QWidget):
         self.history.set_book(self.book)
         self.update_counts()
         self.main.sync_tool_buttons()
+        trash_copy = self.main.library.last_deleted_chapter_trash
+        if trash_copy is not None:
+            self.main.show_undo_notice(
+                tr('editor.chapter.deleted_notice', '“{title}” staat in de prullenbak.', title=chapter.title),
+                lambda path=trash_copy: self.undo_chapter_delete(path),
+            )
+
+    def undo_chapter_delete(self, trash_path) -> bool:
+        """Zet een zojuist verwijderd hoofdstuk terug op zijn oude plek."""
+        if not self.book or self.preview_live_book:
+            return False
+        if self.save() is False:
+            return False
+        try:
+            restored = self.main.library.restore_trashed_chapter(trash_path, self.book)
+        except (ExternalModificationError, RevisionVerificationError) as exc:
+            return self._handle_concurrency_issue(exc)
+        except Exception as exc:
+            notice_warning(self, tr('editor.chapter.undo_failed_title', 'Terugzetten mislukt'),
+                           tr('editor.chapter.undo_failed_text', 'Het hoofdstuk staat nog in de prullenbak en kan daar worden teruggezet.\n\n{error}', error=exc))
+            return False
+        self.populate_tree(after=lambda: self.select_tree_chapter(restored.id))
+        self.main.search_index.rebuild_book(self.book)
+        self.history.set_book(self.book)
+        self._rebuild_word_count_cache()
+        self.update_counts()
+        self.main.sync_tool_buttons()
+        if hasattr(self.main, 'trash'):
+            self.main.trash.refresh()
+        self.main.status.showMessage(tr('editor.chapter.restored_notice', '“{title}” is teruggezet.', title=restored.title), 4000)
+        return True
 
     def select_tree_chapter(self, cid):
         root=self.tree.invisibleRootItem()
@@ -1082,7 +1006,8 @@ class EditorPage(QWidget):
             self.spell.index = 0
             self.spell.suggestions.clear()
             self.spell.word.clear()
-            self.spell.status.setText(tr('spell.disabled', 'Spellingscontrole is uitgeschakeld.'))
+            self.spell.status.setText(tr('spell.disabled', 'Spelling controleren staat uit.'))
+            self.spell._set_actions_enabled(False)
             if self.right.currentWidget() is self.spell:
                 self._remember_panel_widths()
                 self.right.setCurrentWidget(self.search)
@@ -1461,6 +1386,8 @@ class EditorPage(QWidget):
         self.autosave_timer.stop()
         if not self.book:
             return False
+        if self._keep_both_versions(exc):
+            return True
         changed = '\n'.join(f'• {name}' for name in exc.changed_files[:6])
         if len(exc.changed_files) > 6:
             changed += '\n• ' + tr('editor.conflict.more', '… en {count} meer', count=len(exc.changed_files) - 6)
@@ -1679,6 +1606,7 @@ class EditorPage(QWidget):
         self.dirty = False
         self.main.search_index.update_chapter(self.book, self.chapter)
         self.autosave_status.setText(tr('editor.status.saved_just_now', '● Opgeslagen · zojuist'))
+        self._note_adopted_external_chapters()
         saved_words_now = count_words(source_text)
         if self.main.settings.value('writing_progress_enabled', False, bool):
             self.writing_progress.add(self.book.id, max(0, saved_words_now - saved_words_before))
@@ -1687,6 +1615,88 @@ class EditorPage(QWidget):
         # opts in again.
         self._saved_chapter_word_counts[self.chapter.id] = saved_words_now
         self.update_counts(saved=True)
+        return True
+
+    def refresh_open_chapter_from_disk(self) -> bool:
+        """Neem een van buiten bijgewerkt open hoofdstuk over, maar alleen als
+        hier niets ongeopgeslagen is. Wordt aangeroepen als QuietWriter weer
+        actief wordt (bijv. na Dropbox-synchronisatie van een andere computer)."""
+        if (not self.book or not self.chapter or self.dirty or self.preview_live_book
+                or self._chapter_corrupt or self.tree.is_dragging
+                or self.content_stack.currentWidget() is not self.manuscript_content):
+            return False
+        try:
+            text = self.main.library.adopt_external_chapter_text(self.book, self.chapter)
+        except Exception:
+            return False
+        if text is None:
+            return False
+        position = self.editor.textCursor().position()
+        scroll = self.editor.verticalScrollBar().value()
+        self._set_editor_chapter(self.chapter)
+        cursor = self.editor.textCursor()
+        cursor.setPosition(min(position, len(self.editor.toPlainText())))
+        self.editor.setTextCursor(cursor)
+        self.editor.verticalScrollBar().setValue(scroll)
+        try:
+            self.main.search_index.update_chapter(self.book, self.chapter)
+        except Exception:
+            pass
+        self._rebuild_word_count_cache()
+        self.update_counts(saved=True)
+        self.main.status.showMessage(tr('editor.external.reloaded', 'Dit hoofdstuk is bijgewerkt vanaf een andere computer.'), 6000)
+        return True
+
+    def _note_adopted_external_chapters(self):
+        """Andere hoofdstukken kwamen intussen van buiten (Dropbox, tweede computer)
+        en zijn zonder vraag overgenomen. Werk tellingen en zoeken bij en meld het
+        rustig in de statusbalk."""
+        adopted = self.main.library.pop_adopted_external_chapters(self.book)
+        if not adopted:
+            return
+        by_file = {c.file: c for s in self.book.sections for c in s.chapters}
+        for name in adopted:
+            chapter = by_file.get(name)
+            if chapter is not None:
+                try:
+                    self.main.search_index.update_chapter(self.book, chapter)
+                except Exception:
+                    pass
+        self._rebuild_word_count_cache()
+        self.update_counts(saved=True)
+        self.main.status.showMessage(tr('editor.external.adopted', 'Bijgewerkt vanaf een andere computer: {count} hoofdstuk(ken).', count=len(adopted)), 6000)
+
+    def _keep_both_versions(self, exc) -> bool:
+        """Dit hoofdstuk is hier én elders gewijzigd (alleen hoofdstuktekst, geen
+        structuur): bewaar beide zonder dialoog. De versie van schijf komt als
+        nieuw hoofdstuk direct hieronder; jouw tekst blijft waar hij is."""
+        if not (self.chapter and self.dirty and self.content_stack.currentWidget() is self.manuscript_content):
+            return False
+        library = self.main.library
+        if not library.external_change_is_same_chapter_only(self.book, self.chapter, exc):
+            return False
+        source_text = self._editor_source_text()
+        try:
+            other = library.save_chapter_keep_both(self.book, self.chapter, source_text)
+        except Exception as error:
+            log_exception(type(error), error, error.__traceback__, label='Beide versies bewaren', notify=False)
+            return False  # terug naar de bestaande, expliciete conflictdialoog
+        self._clean_text = source_text
+        self.editor.document().setModified(False)
+        self.dirty = False
+        self.populate_tree()
+        self._rebuild_word_count_cache()
+        self.update_counts(saved=True)
+        try:
+            self.main.search_index.update_chapter(self.book, self.chapter)
+            self.main.search_index.update_chapter(self.book, other)
+        except Exception:
+            pass
+        self.autosave_status.setText(tr('editor.status.saved_just_now', '● Opgeslagen · zojuist'))
+        self.main.status.showMessage(tr(
+            'editor.external.kept_both',
+            'Dit hoofdstuk is ook op een andere computer gewijzigd. Beide versies zijn bewaard: die van de andere computer staat eronder als "{title}".',
+            title=other.title), 12000)
         return True
 
     def _handle_concurrency_issue(self, exc) -> bool:
@@ -2025,6 +2035,12 @@ class EditorPage(QWidget):
             self._remember_panel_widths()
             self.right.hide()
         self.main.sync_tool_buttons()
+
+    def _insert_footnote_from_panel(self):
+        if not self.book or not self.chapter:
+            return
+        self.editor.setFocus()
+        self.editor.insert_footnote()   # de notenstrook krijgt de cursor
 
     def _resolve_editor_image_path(self, reference: str):
         if not self.book or not self.chapter:
@@ -2368,8 +2384,8 @@ class EditorPage(QWidget):
             return
         live = self.preview_live_book
         version_id = self.preview_version_id
-        if not confirm(self, tr('history.restore_title', 'Versie herstellen'),
-                       tr('history.restore_confirm', 'Wil je deze versie herstellen?\n\nDe huidige versie wordt eerst automatisch veiliggesteld, zodat je ook deze herstelactie later kunt terugdraaien.')):
+        if not confirm(self, tr('history.restore_title', 'Versie terugzetten'),
+                       tr('history.restore_confirm', 'Wil je deze versie terugzetten?\n\nDe huidige versie wordt eerst automatisch veiliggesteld, zodat je ook dit terugzetten later kunt terugdraaien.')):
             return
         try:
             restored = self.main.library.restore_version(live, version_id)
@@ -2381,7 +2397,7 @@ class EditorPage(QWidget):
             self.exit_history_preview(reload_latest=True)
             notice_warning(
                 self,
-                tr('history.restore_changed_title', 'Versie niet hersteld'),
+                tr('history.restore_changed_title', 'Versie niet teruggezet'),
                 tr(
                     'history.restore_changed_text',
                     'Het boek is intussen extern gewijzigd. Herstel is niet uitgevoerd en de historische versie is niet aangepast. Controleer de actuele versie en probeer daarna opnieuw.'
@@ -2392,7 +2408,7 @@ class EditorPage(QWidget):
             self.exit_history_preview(reload_latest=False)
             notice_warning(
                 self,
-                tr('history.restore_future_planning_title', 'Versie niet hersteld'),
+                tr('history.restore_future_planning_title', 'Versie niet teruggezet'),
                 tr(
                     'history.restore_future_planning_text',
                     'Planning is gemaakt met een nieuwere QuietWriter en is niet teruggezet. Werk QuietWriter bij voordat je deze versie herstelt.\n\n{error}',
@@ -2404,7 +2420,7 @@ class EditorPage(QWidget):
             self.exit_history_preview(reload_latest=False)
             notice_warning(
                 self,
-                tr('history.restore_verify_title', 'Versie niet hersteld'),
+                tr('history.restore_verify_title', 'Versie niet teruggezet'),
                 tr(
                     'history.restore_verify_text',
                     'QuietWriter kon de actuele live versie niet betrouwbaar controleren. Herstel is niet uitgevoerd. Probeer het opnieuw zodra de synchronisatie gereed is.\n\n{error}',
@@ -2413,7 +2429,7 @@ class EditorPage(QWidget):
             )
             return
         except Exception as exc:
-            notice_critical(self, tr('history.restore_title', 'Versie herstellen'), tr('history.restore_error_text', 'Herstellen is mislukt. De huidige versie is niet bewust overschreven.\n\n{error}', error=exc))
+            notice_critical(self, tr('history.restore_title', 'Versie terugzetten'), tr('history.restore_error_text', 'Terugzetten is mislukt. De huidige versie is niet bewust overschreven.\n\n{error}', error=exc))
             return
         wanted = self.preview_return_chapter_id
         self.preview_live_book = None
@@ -2426,7 +2442,7 @@ class EditorPage(QWidget):
         self.main.adopt_active_book(restored, wanted)
         self.history.set_book(restored)
         self.main.start.refresh()
-        self.main.status.showMessage(tr('history.restore_success', 'De gekozen versie is hersteld.'), 4500)
+        self.main.status.showMessage(tr('history.restore_success', 'De gekozen versie is teruggezet.'), 4500)
 
     def show_history(self):
         live = self.preview_live_book or self.book
@@ -2494,9 +2510,8 @@ class EditorPage(QWidget):
                 continue
             projection = visible_projection(text)
             for m in searchable_matches(text, rx):
-                a=max(0,m.visible_start-40); b=min(len(projection.text),m.visible_end+60)
-                snippet=projection.text[a:b].replace('\n',' ')
-                rows.append((ch.id,ch.title,snippet,m.start(),m.end()-m.start()))
+                snippet, hl_start, hl_end = search_snippet(projection.text, m.visible_start, m.visible_end)
+                rows.append((ch.id,ch.title,snippet,m.start(),m.end()-m.start(),(hl_start,hl_end)))
         self._search_corrupt_skipped = skipped
         return rows
 
@@ -2626,9 +2641,9 @@ class EditorPage(QWidget):
             return
         try:
             center_pos = self.center.mapTo(self, QPoint(0, 0))
-            # When the contents pane is visible, straddle its right boundary.
-            # When hidden, keep the tab just inside the editor edge.
-            x = max(0, center_pos.x() - (self.contents_edge_button.width() // 2))
+            # dev15: altijd net binnen de rand van de editor. Over de grens heen
+            # dekte de knop bij een smal Inhoud-paneel "wijzig" in de boom af.
+            x = max(0, center_pos.x() + 2)
             y = 58
             self.contents_edge_button.move(x, y)
             self.contents_edge_button.raise_()
@@ -2645,13 +2660,10 @@ class EditorPage(QWidget):
             return
         # The title is presentation only and may never determine the minimum
         # window width. Keep enough room for the editor controls/right panel.
-        available = max(80, min(360, self.width() // 4))
-        self.book_title_label.setMaximumWidth(available)
-        self.book_title_label.setText(
-            self.book_title_label.fontMetrics().elidedText(
-                self._book_title_full, Qt.ElideRight, available
-            )
-        )
+        # dev15: inkorten op de ruimte die het label echt krijgt; met een open
+        # rechterpaneel is dat veel minder dan een kwart van de pagina.
+        self.book_title_label.setMaximumWidth(360)
+        self.book_title_label.set_full_text(self._book_title_full)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -2762,26 +2774,6 @@ class EditorPage(QWidget):
                 focus_widget.setFocus()
         self.main.sync_tool_buttons()
 
-    def _toggle_planning_overlay(self, checked: bool):
-        if not checked:
-            self.planning_overlay.hide()
-            return
-        context = getattr(self.chapter_context, 'context', None)
-        scenes = context.scenes if context is not None else ()
-        self.planning_overlay.show_for(self.planning_overlay_button, scenes)
-
-    def _planning_overlay_closed(self):
-        # Qt.Popup sluit zichzelf ook bij Escape of een klik erbuiten. Wacht tot
-        # de huidige muisklik is afgehandeld; zo werkt een tweede klik op de
-        # Planning-knop betrouwbaar als echte toggle in plaats van heropenen.
-        QTimer.singleShot(0, self._sync_planning_overlay_button)
-
-    def _sync_planning_overlay_button(self):
-        if not self.planning_overlay.isVisible() and self.planning_overlay_button.isChecked():
-            self.planning_overlay_button.blockSignals(True)
-            self.planning_overlay_button.setChecked(False)
-            self.planning_overlay_button.blockSignals(False)
-
     def _mark_scene_written(self, scene_id: str):
         if not self.book or not scene_id:
             return
@@ -2803,8 +2795,6 @@ class EditorPage(QWidget):
         if result == 'mine':
             planning.outline_page.load()
             self.refresh_chapter_context()
-            context = getattr(self.chapter_context, 'context', None)
-            self.planning_overlay.set_scenes(context.scenes if context is not None else ())
             self.main.status.showMessage(tr('planning.overlay.status_saved', 'Scène gemarkeerd als geschreven.'), 2500)
         elif result == 'disk':
             self.refresh_chapter_context()
@@ -2822,14 +2812,22 @@ class EditorPage(QWidget):
 
     def refresh_chapter_context(self):
         available = self.chapter_context_available()
+        segment = self.editor.segment_at_cursor() if available else None
+        self._last_segment = segment
         self.chapter_context.refresh(
             self.book if available else None,
             self.chapter.id if available and self.chapter else None,
             available=available,
+            current_source=self._editor_source_text() if available else None,
+            current_segment=segment,
         )
         context = getattr(self.chapter_context, 'context', None) if available else None
         scenes = context.scenes if context is not None else ()
         planning_help_enabled = self.main.settings.value('planning_ghosts_enabled', True, bool)
+        segment_map = getattr(self.chapter_context, 'segment_map', None) if available else None
+        self._planned_scenes = tuple(segment_map.planned) if (segment_map is not None and planning_help_enabled) else ()
+        self.editor.set_planning_scenes(self._planned_scenes)
+        self._update_scene_hint(segment)
         # Automatic ghost help is a to-do aid: completed scenes remain visible
         # in Planning and in the explicit overlay, but no longer occupy the
         # empty manuscript as if they still had to be written.
@@ -2841,16 +2839,6 @@ class EditorPage(QWidget):
             ghost_scenes,
             enabled=planning_help_enabled,
         )
-        overlay_available = bool(planning_help_enabled and available)
-        self.planning_overlay_button.setVisible(overlay_available)
-        self.planning_overlay_button.setEnabled(overlay_available)
-        if not overlay_available and self.planning_overlay_button.isChecked():
-            self.planning_overlay_button.setChecked(False)
-        if self.planning_overlay.isVisible():
-            if overlay_available:
-                self.planning_overlay.set_scenes(scenes)
-            else:
-                self.planning_overlay.hide()
         if not available and self.right.isVisible() and self.right.currentWidget() is self.chapter_context:
             self._remember_panel_widths()
             self.right.hide()
@@ -2861,6 +2849,55 @@ class EditorPage(QWidget):
 
     def _open_planning_from_context(self):
         self.main.show_planning()
+
+    # ------------------------------------------------------------------ scènes in de tekst (1.7)
+    def _update_scene_hint(self, segment):
+        scenes = self._planned_scenes
+        if segment is None or not scenes or segment >= len(scenes) or not self.chapter_context_available():
+            self.editor.set_scene_hint('')
+            return
+        scene = scenes[segment]
+        title = (getattr(scene, 'title', '') or tr('chapter_context.scene', 'Scène')).strip()
+        text = tr('editor.scene_hint', 'Scène {number} in Planning: {title}', number=segment + 1, title=title)
+        synopsis = ' '.join(str(getattr(scene, 'synopsis', '') or '').split())
+        if synopsis:
+            text += ' — ' + synopsis
+        self.editor.set_scene_hint(text)
+
+    def _scene_position_changed(self):
+        if not self.chapter_context_available():
+            self.editor.set_scene_hint('')
+            return
+        segment = self.editor.segment_at_cursor()
+        if segment == self._last_segment:
+            return
+        self._last_segment = segment
+        self._update_scene_hint(segment)
+        if self.right.isVisible() and self.right.currentWidget() is self.chapter_context:
+            self.chapter_context.refresh(
+                self.book, self.chapter.id, available=True,
+                current_source=self._editor_source_text(), current_segment=segment,
+            )
+
+    def _jump_to_segment(self, index: int):
+        if self.chapter_context_available() and self.editor.go_to_segment(int(index)):
+            self._scene_position_changed()
+
+    def _add_unplanned_scenes(self):
+        """Ongeplande stukken tekst als planningscènes toevoegen (status Geschreven).
+
+        De nieuwe scènes komen ná de bestaande scènes van dit hoofdstuk, zodat
+        de volgorde in Planning weer gelijkloopt met de scènebreuken. De tekst
+        verandert niet.
+        """
+        if not self.chapter_context_available():
+            return
+        result, count = self.main.planning_page.add_unplanned_scenes(self.chapter.id, self._editor_source_text())
+        self.refresh_chapter_context()
+        if result == 'mine':
+            self.main.status.showMessage(tr('chapter_context.unplanned_added', '{count} scène(s) toegevoegd aan Planning.', count=count), 3000)
+        elif result == 'failed':
+            self.main.status.showMessage(tr('planning.overlay.status_failed', 'Scènestatus kon niet worden opgeslagen.'), 3000)
 
     def show_chapter_context(self):
         if not self.chapter_context_available():

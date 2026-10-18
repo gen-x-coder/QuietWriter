@@ -28,13 +28,13 @@ def _book(tmp_path: Path, name='ws'):
 
 def test_purposes_are_stable_and_map_to_known_formats():
     ids = [purpose.id for purpose in PURPOSES]
-    assert ids == ['ereader', 'print', 'word', 'share', 'backup', 'website']
+    assert ids == ['ereader', 'print', 'word', 'share', 'backup', 'website', 'submission']   # 1.7: Inzenden
     assert all(purpose.id.isascii() for purpose in PURPOSES)
-    assert {purpose.format for purpose in PURPOSES} == {'epub', 'pdf', 'docx', 'qwbook', 'markdown'}
+    assert {purpose.format for purpose in PURPOSES} == {'epub', 'pdf', 'docx', 'qwbook', 'markdown', 'submission'}
     for purpose in PURPOSES:
         steps = steps_for(purpose.id)
         assert steps[0] == 'purpose' and steps[-1] == 'export'
-        assert len(steps) == (5 if purpose.format in ('epub', 'pdf') else 4)
+        assert len(steps) == (5 if purpose.format in ('epub', 'pdf', 'submission') else 4)
 
 
 def test_apply_purpose_sets_privacy_defaults_and_keeps_earlier_choices():

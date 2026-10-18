@@ -327,13 +327,20 @@ def visible_projection(source: str) -> VisibleProjection:
         else:
             local_start = max(0, block.content_start - block.start)
             hidden = set()
+            note_markers = set()
             for a, b in block.escape_ranges:
                 hidden.update(range(a, b))
             for span in block.inline_spans:
                 for a, b in span.marker_ranges:
                     hidden.update(range(a, b))
+                    if span.kind == FOOTNOTE:
+                        note_markers.add(a)
             for local_index in range(local_start, len(block.text)):
                 source_index = block.start + local_index
+                if local_index in note_markers:
+                    # Een voetnoot staat los van het woord ervoor en erna.
+                    out.append(' '); mapping.append(source_index)
+                    continue
                 if local_index in hidden or source_index in hidden_global:
                     continue
                 out.append(block.text[local_index]); mapping.append(source_index)
@@ -428,6 +435,12 @@ def inline_runs(text: str, spans: tuple[InlineSpan, ...] | list[InlineSpan] | No
     for span in parsed:
         events.setdefault(span.content_start, []).append((span.kind, 1))
         events.setdefault(span.content_end, []).append((span.kind, -1))
+        if span.kind == FOOTNOTE:
+            # Elke noot krijgt een eigen sleutel, zodat twee noten na elkaar en
+            # opmaak binnen een noot uit elkaar te houden zijn (note_groups).
+            key = f'{NOTE_PREFIX}{span.open_start}'
+            events[span.content_start].append((key, 1))
+            events[span.content_end].append((key, -1))
 
     active_counts: dict[str, int] = {}
     active_styles: frozenset[str] = frozenset()
@@ -463,6 +476,40 @@ def inline_runs(text: str, spans: tuple[InlineSpan, ...] | list[InlineSpan] | No
     return tuple(run for run in runs if run.text)
 
 
+FOOTNOTE = 'footnote'
+NOTE_PREFIX = 'note@'
+
+
+def run_note_key(run: InlineRun) -> str | None:
+    return next((style for style in run.styles if style.startswith(NOTE_PREFIX)), None)
+
+
+def note_groups(runs) -> list[tuple[str, object]]:
+    """Split inline runs into lopende tekst en voetnoten (1.7).
+
+    Returns ``[('text', InlineRun) | ('note', tuple[InlineRun, ...])]``. Runs in
+    a note keep their own styles (bold, italic …) without the note styles, so
+    exporters can render the note body with the same inline renderer.
+    """
+    out: list[tuple[str, object]] = []
+    current_key: str | None = None
+    current: list[InlineRun] = []
+    for run in runs or ():
+        key = run_note_key(run)
+        if key != current_key and current:
+            out.append(('note', tuple(current)))
+            current = []
+        current_key = key
+        if key is None:
+            out.append(('text', run))
+            continue
+        styles = frozenset(s for s in run.styles if s != FOOTNOTE and not s.startswith(NOTE_PREFIX))
+        current.append(InlineRun(run.text, styles, run.start, run.end))
+    if current:
+        out.append(('note', tuple(current)))
+    return out
+
+
 def content_inline_runs(block: DocumentBlock) -> tuple[InlineRun, ...]:
     """Return inline runs for only the semantic content of *block*."""
     local_start = max(0, block.content_start - block.start)
@@ -481,16 +528,24 @@ def content_inline_runs(block: DocumentBlock) -> tuple[InlineRun, ...]:
     return inline_runs(content, adjusted)
 
 
-def visible_inline_text(text: str, spans: tuple[InlineSpan, ...] | list[InlineSpan] | None = None) -> str:
+def visible_inline_text(text: str, spans: tuple[InlineSpan, ...] | list[InlineSpan] | None = None,
+                        *, note_format: str = ' {} ') -> str:
     """Return inline source without QuietWriter formatting punctuation.
 
     Literal, unpaired punctuation remains untouched because it never becomes a
-    formatting span.
+    formatting span. A footnote is written with *note_format*; by default with a
+    space on both sides so "huis^[noot]" never counts as one word.
     """
-    return ''.join(run.text for run in inline_runs(text, spans))
+    out: list[str] = []
+    for kind, value in note_groups(inline_runs(text, spans)):
+        if kind == 'text':
+            out.append(value.text)
+        else:
+            out.append(note_format.format(''.join(run.text for run in value)))
+    return ''.join(out)
 
 
-def visible_block_text(block: DocumentBlock) -> str:
+def visible_block_text(block: DocumentBlock, *, note_format: str = ' {} ') -> str:
     """Return human-visible text for one block, without technical markers."""
     if block.kind in {'empty', 'scene'}:
         return ''
@@ -514,7 +569,7 @@ def visible_block_text(block: DocumentBlock) -> str:
             span.content_start - local_start, span.content_end - local_start,
             span.close_start - local_start, span.close_end - local_start,
         ))
-    return visible_inline_text(text, local_spans)
+    return visible_inline_text(text, local_spans, note_format=note_format)
 
 
 def text_for_ai_context(source: str) -> str:
@@ -535,7 +590,7 @@ def text_for_ai_context(source: str) -> str:
         if block.kind == 'scene':
             lines.append('[Scènebreuk]')
             continue
-        visible = visible_block_text(block)
+        visible = re.sub(r' {2,}', ' ', visible_block_text(block, note_format=' [Voetnoot: {}] ')).strip()
         if not visible:
             continue
         if block.kind == 'heading':

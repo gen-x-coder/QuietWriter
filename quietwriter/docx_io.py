@@ -11,13 +11,14 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.style import WD_STYLE_TYPE
 from docx.image.image import Image as DocxImage
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
-from docx.oxml import OxmlElement
+from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
 from docx.shared import Pt, Mm
 from docx.text.run import Run
 from docx.table import Table
 
-from .document_view import content_inline_runs, inline_runs, parse_document
+from .document_view import content_inline_runs, inline_runs, note_groups, parse_document
+from .docx_footnotes import DocxFootnotes
 from .manuscript_markup import serialize_block_source
 from .import_document import (
     ImportAsset, ImportBlock, ImportChapter, ImportDocument, ImportInlineRun, ImportSection,
@@ -308,14 +309,68 @@ def _run_import_text(run, warnings: list[str] | None = None) -> str:
     return str(getattr(run, 'text', '') or '').replace('\n', '\u2028')
 
 
+def _footnotes_root(paragraph):
+    """The parsed ``word/footnotes.xml`` of the document, or None (cached per part)."""
+    try:
+        part = paragraph.part
+        cached = getattr(part, '_quietwriter_footnotes_root', False)
+        if cached is not False:
+            return cached
+        root = None
+        for rel in part.rels.values():
+            if rel.reltype == RT.FOOTNOTES and not rel.is_external:
+                target = rel.target_part
+                root = target.element if hasattr(target, 'element') else parse_xml(target.blob)
+                break
+        part._quietwriter_footnotes_root = root
+        return root
+    except Exception:
+        return None
+
+
+def _footnote_import_runs(paragraph, note_id: str, warnings) -> tuple[ImportInlineRun, ...]:
+    """Read the text of Word footnote *note_id* as neutral inline runs (1.7)."""
+    from docx.text.paragraph import Paragraph
+    root = _footnotes_root(paragraph)
+    if root is None:
+        return ()
+    for footnote in root.findall(qn('w:footnote')):
+        if footnote.get(qn('w:id')) != note_id:
+            continue
+        runs: list[ImportInlineRun] = []
+        for index, p_el in enumerate(footnote.findall(qn('w:p'))):
+            if index and runs:
+                runs.append(ImportInlineRun(' '))
+            note_paragraph = Paragraph(p_el, paragraph._parent)
+            for run in _paragraph_runs_including_hyperlinks(note_paragraph):
+                if run._r.find(qn('w:footnoteRef')) is not None:
+                    continue   # het nummer zelf; QuietWriter nummert bij exporteren
+                text = _run_import_text(run, warnings).replace('\u2028', ' ')
+                if text:
+                    runs.append(ImportInlineRun(text, _styles_for_signature(_run_signature(run, note_paragraph))))
+        while runs and not runs[0].text.strip():
+            runs.pop(0)
+        if runs:
+            runs[0] = ImportInlineRun(runs[0].text.lstrip(), runs[0].styles)
+        return tuple(runs)
+    return ()
+
+
 def paragraph_to_import_block(paragraph, warnings: list[str] | None = None) -> ImportBlock:
     """Read one Word paragraph into neutral import semantics.
 
     No QuietWriter markup punctuation is created here. That is intentionally
-    deferred to the central import serializer.
+    deferred to the central import serializer. Word-voetnoten worden een
+    QuietWriter-voetnoot op dezelfde plek (1.7).
     """
-    chunks: list[tuple[tuple[bool, bool, bool, bool, bool], str]] = []
+    chunks: list = []
     for run in _paragraph_runs_including_hyperlinks(paragraph):
+        reference = run._r.find(qn('w:footnoteReference'))
+        if reference is not None:
+            note = _footnote_import_runs(paragraph, str(reference.get(qn('w:id'))), warnings)
+            if note:
+                chunks.append(('note', note))
+            continue
         text = _run_import_text(run, warnings)
         if not text:
             continue
@@ -337,8 +392,9 @@ def paragraph_to_import_block(paragraph, warnings: list[str] | None = None) -> I
         kind = 'quote'
 
     runs = tuple(
-        ImportInlineRun(text=text, styles=_styles_for_signature(sig))
-        for sig, text in chunks
+        ImportInlineRun(text='', note=value) if sig == 'note'
+        else ImportInlineRun(text=value, styles=_styles_for_signature(sig))
+        for sig, value in chunks
     )
     return ImportBlock(kind=kind, runs=runs)
 
@@ -804,14 +860,30 @@ def _append_inline(paragraph, source: str, doc: Document, runs=None):
     semantic_runs = tuple(runs) if runs is not None else inline_runs(source)
     if not semantic_runs:
         if source:
-            paragraph.add_run(source)
+            _add_run(paragraph, source, frozenset(), doc)
         return
-    for semantic in semantic_runs:
-        _add_run(paragraph, semantic.text, semantic.styles, doc)
+    for kind, value in note_groups(semantic_runs):
+        if kind == 'text':
+            _add_run(paragraph, value.text, value.styles, doc)
+        else:
+            # Voetnoot (1.7): een echte Word-voetnoot onder aan de pagina.
+            DocxFootnotes.for_document(doc).add(
+                paragraph, value, lambda p, text, styles: _add_run(p, text, styles, doc))
 
 
 def _add_run(paragraph, text: str, styles: frozenset[str], doc: Document):
     if not text:
+        return
+    # QuietWriter's zachte regeleinde (U+2028, Shift+Enter) wordt een echte
+    # regeleinde in Word (<w:br/>). Rauw opgenomen toont Word/ONLYOFFICE er
+    # een vreemd teken voor ("SEP").
+    parts = text.split('\u2028')
+    if len(parts) > 1:
+        for index, part in enumerate(parts):
+            if part:
+                _add_run(paragraph, part, styles, doc)
+            if index < len(parts) - 1:
+                paragraph.add_run().add_break()
         return
     run = paragraph.add_run(text)
     run.bold = 'bold' in styles

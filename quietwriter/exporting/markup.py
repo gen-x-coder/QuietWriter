@@ -4,7 +4,7 @@ import html
 import re
 from pathlib import Path
 
-from ..document_view import (content_inline_runs, inline_runs, iter_content_blocks,
+from ..document_view import (content_inline_runs, inline_runs, iter_content_blocks, note_groups,
                              visible_inline_text)
 
 
@@ -17,16 +17,70 @@ _TAGS = {
 }
 
 
-def inline_to_xhtml(text: str, runs=None) -> str:
+def _soft(text: str) -> str:
+    """Escape for XHTML; QuietWriter's zachte regeleinde (U+2028, Shift+Enter) wordt <br/>."""
+    return html.escape(text or '', quote=False).replace('\u2028', '<br/>')
+
+
+class NoteCollector:
+    """Nummert voetnoten binnen één hoofdstuk en bewaart hun XHTML (1.7).
+
+    *links* is False voor PDF: Qt's rich text heeft geen pop-upnoten nodig, alleen
+    een nummer. In EPUB wordt het een echte ``noteref`` met link heen en terug.
+    """
+
+    def __init__(self, *, links: bool = True):
+        self.links = links
+        self.notes: list[str] = []
+
+    def reference(self, runs) -> str:
+        number = len(self.notes) + 1
+        self.notes.append(_render_runs(runs))
+        if not self.links:
+            return f'<sup class="noteref">{number}</sup>'
+        return (f'<a class="noteref" epub:type="noteref" id="fnref-{number}" href="#fn-{number}">'
+                f'<sup>{number}</sup></a>')
+
+    def section(self) -> str:
+        if not self.notes:
+            return ''
+        if not self.links:
+            items = ''.join(f'<p class="footnote"><sup>{n}</sup> {body}</p>' for n, body in enumerate(self.notes, 1))
+            return f'<hr class="footnotes-rule"/>{items}'
+        items = ''.join(
+            f'<aside class="footnote" epub:type="footnote" id="fn-{n}">'
+            f'<p><a href="#fnref-{n}">{n}.</a> {body}</p></aside>'
+            for n, body in enumerate(self.notes, 1)
+        )
+        return f'<section class="footnotes" epub:type="footnotes"><hr class="footnotes-rule"/>{items}</section>'
+
+
+def inline_to_xhtml(text: str, runs=None, notes: NoteCollector | None = None) -> str:
     """Render semantic inline runs as balanced safe XHTML.
 
     When *runs* is omitted the central DocumentView inline parser is used.
     Exporters that already have a parsed DocumentBlock pass its runs directly,
-    so source markup is interpreted only once.
+    so source markup is interpreted only once. Voetnoten worden een nummer via
+    *notes*; zonder verzamelaar staan ze tussen haakjes in de tekst.
     """
     semantic_runs = tuple(runs) if runs is not None else inline_runs(text)
     if not semantic_runs:
-        return html.escape(text or '', quote=False)
+        return _soft(text)
+    out: list[str] = []
+    pending: list = []
+    for kind, value in note_groups(semantic_runs):
+        if kind == 'text':
+            pending.append(value)
+            continue
+        out.append(_render_runs(pending)); pending = []
+        out.append(notes.reference(value) if notes is not None else f' ({_render_runs(value)})')
+    out.append(_render_runs(pending))
+    return ''.join(out)
+
+
+def _render_runs(semantic_runs) -> str:
+    if not semantic_runs:
+        return ''
 
     out: list[str] = []
     stack: list[str] = []
@@ -46,7 +100,7 @@ def inline_to_xhtml(text: str, runs=None) -> str:
         for kind in target[common:]:
             out.append(_TAGS[kind][0])
         stack = list(target)
-        out.append(html.escape(run.text, quote=False))
+        out.append(_soft(run.text))
 
     for kind in reversed(stack):
         out.append(_TAGS[kind][1])
@@ -73,6 +127,7 @@ def _markdown_to_xhtml(
     """
     source = (text or '').replace('\r\n', '\n').replace('\r', '\n')
     blocks: list[str] = []
+    notes = NoteCollector()
     list_kind: str | None = None
     list_items: list[tuple[str, tuple]] = []
     headings: list[tuple[str, str]] = []
@@ -82,7 +137,7 @@ def _markdown_to_xhtml(
         nonlocal list_kind, list_items
         if list_kind and list_items:
             tag = 'ol' if list_kind == 'ol' else 'ul'
-            blocks.append(f'<{tag}>' + ''.join(f'<li>{inline_to_xhtml(item, runs)}</li>' for item, runs in list_items) + f'</{tag}>')
+            blocks.append(f'<{tag}>' + ''.join(f'<li>{inline_to_xhtml(item, runs, notes)}</li>' for item, runs in list_items) + f'</{tag}>')
         list_kind = None
         list_items = []
 
@@ -122,13 +177,13 @@ def _markdown_to_xhtml(
             flush_list()
             heading_index += 1
             heading_id = f'h-{heading_index}'
-            blocks.append(f'<h2 id="{heading_id}">{inline_to_xhtml(content, runs)}</h2>')
+            blocks.append(f'<h2 id="{heading_id}">{inline_to_xhtml(content, runs, notes)}</h2>')
             if collect_headings:
-                headings.append((heading_id, ''.join(run.text for run in runs).strip()))
+                headings.append((heading_id, ''.join(v.text for k, v in note_groups(runs) if k == 'text').strip()))
             continue
         if block.kind == 'quote':
             flush_list()
-            blocks.append(f'<blockquote><p>{inline_to_xhtml(content, runs)}</p></blockquote>')
+            blocks.append(f'<blockquote><p>{inline_to_xhtml(content, runs, notes)}</p></blockquote>')
             continue
         if block.kind in {'bullet', 'numbered'}:
             wanted = 'ol' if block.kind == 'numbered' else 'ul'
@@ -140,9 +195,11 @@ def _markdown_to_xhtml(
 
         if list_kind:
             flush_list()
-        blocks.append(f'<p>{inline_to_xhtml(content, runs)}</p>')
+        blocks.append(f'<p>{inline_to_xhtml(content, runs, notes)}</p>')
 
     flush_list()
+    if notes.notes:
+        blocks.append(notes.section())
     return '\n'.join(blocks), headings
 
 

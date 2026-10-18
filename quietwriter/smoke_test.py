@@ -41,7 +41,24 @@ class SmokeTestContext:
         return 1
 
     def final_exit_code(self, normal_exit_code: int) -> int:
+        self.verify_runtime_dependencies()
         return 1 if self.errors else int(normal_exit_code)
+
+    def verify_runtime_dependencies(self) -> None:
+        """In de Windows-build moeten optionele maar beloofde onderdelen echt
+        meegeleverd zijn: OpenRouter-browserlogin (keyring + Windows-backend)
+        en zelf bijwerken (velopack). Vanuit de broncode wordt dit niet geëist."""
+        if not (sys.platform == "win32" and getattr(sys, "frozen", False)):
+            return
+        checks = (
+            ("keyring", "from keyring.backends.Windows import WinVaultKeyring"),
+            ("velopack", "import velopack"),
+        )
+        for name, statement in checks:
+            try:
+                exec(statement, {})
+            except Exception as exc:  # pragma: no cover - alleen in de exe
+                self.notify(f"{name} ontbreekt in de build", f"{type(exc).__name__}: {exc}")
 
     @staticmethod
     def _stderr(message: str) -> None:

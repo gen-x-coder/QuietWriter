@@ -10,6 +10,7 @@ from .dialog_notices import notice_warning, notice_critical
 from ..fragment_store import FragmentExternalModificationError, FragmentStore
 from ..document_view import visible_text
 from ..i18n import tr
+from .page_layout import set_page_margins
 
 
 class DarlingsPage(QWidget):
@@ -30,7 +31,7 @@ class DarlingsPage(QWidget):
         self._conflict_pending = False
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(32, 26, 36, 30)
+        set_page_margins(outer)
         outer.setSpacing(14)
 
         title = QLabel(tr('darlings.title', 'Bewaarplaats'))
@@ -120,14 +121,16 @@ class DarlingsPage(QWidget):
         self.preview.setReadOnly(True)
         self.preview.setPlaceholderText(tr('darlings.preview_placeholder', 'Selecteer een fragment om het te bekijken.'))
 
-        right.addWidget(QLabel(tr('darlings.field.title', 'Titel')))
-        right.addWidget(self.title_edit)
-        right.addWidget(QLabel(tr('darlings.field.tags', 'Tags')))
-        right.addWidget(self.tags_edit)
-        right.addWidget(QLabel(tr('darlings.field.note', 'Notitie')))
-        right.addWidget(self.note_edit)
-        right.addWidget(QLabel(tr('darlings.field.text', 'Tekst')))
-        right.addWidget(self.preview, 1)
+        for key, fallback, widget, stretch in (
+            ('darlings.field.title', 'Titel', self.title_edit, 0),
+            ('darlings.field.tags', 'Tags', self.tags_edit, 0),
+            ('darlings.field.note', 'Notitie', self.note_edit, 0),
+            ('darlings.field.text', 'Tekst', self.preview, 1),
+        ):
+            label = QLabel(tr(key, fallback)); label.setObjectName('settingsFieldLabel')
+            right.addSpacing(4)
+            right.addWidget(label)
+            right.addWidget(widget, stretch)
 
         save_row = QHBoxLayout()
         self.status = QLabel()
