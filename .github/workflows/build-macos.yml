@@ -8,8 +8,16 @@ permissions:
 
 jobs:
   build:
-    name: Build macOS Intel app
-    runs-on: macos-15-intel
+    name: Build macOS ${{ matrix.arch }} app
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: intel
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Check out QuietWriter
         uses: actions/checkout@v4
@@ -28,6 +36,10 @@ jobs:
             "python-docx==1.2.0" \
             "lxml==6.1.3" \
             "keyring==25.7.0"
+      - name: Verify runner architecture
+        run: |
+          echo "Runner architecture: $(uname -m)"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then test "$(uname -m)" = "arm64"; else test "$(uname -m)" = "x86_64"; fi
       - name: Fetch licensed bundled fonts
         run: python tools/fetch_bundled_fonts.py
       - name: Package macOS app
@@ -36,11 +48,11 @@ jobs:
         run: |
           test -d dist/QuietWriter.app
           test -f dist/QuietWriter.app/Contents/MacOS/QuietWriter
-          ditto -c -k --sequesterRsrc --keepParent dist/QuietWriter.app QuietWriter-1.7.0-macos-intel.zip
+          ditto -c -k --sequesterRsrc --keepParent dist/QuietWriter.app QuietWriter-1.7.0-macos-${{ matrix.arch }}.zip
       - name: Upload experimental macOS app
         uses: actions/upload-artifact@v4
         with:
-          name: QuietWriter-1.7.0-macos-intel
-          path: QuietWriter-1.7.0-macos-intel.zip
+          name: QuietWriter-1.7.0-macos-${{ matrix.arch }}
+          path: QuietWriter-1.7.0-macos-${{ matrix.arch }}.zip
           if-no-files-found: error
           retention-days: 14
