@@ -48,11 +48,11 @@ jobs:
         run: |
           test -d dist/QuietWriter.app
           test -f dist/QuietWriter.app/Contents/MacOS/QuietWriter
-          ditto -c -k --sequesterRsrc --keepParent dist/QuietWriter.app QuietWriter-1.7.0-macos-${{ matrix.arch }}.zip
+          ditto -c -k --sequesterRsrc --keepParent dist/QuietWriter.app QuietWriter-macos-${{ matrix.arch }}-portable.zip
       - name: Upload experimental macOS app
         uses: actions/upload-artifact@v4
         with:
-          name: QuietWriter-1.7.0-macos-${{ matrix.arch }}
-          path: QuietWriter-1.7.0-macos-${{ matrix.arch }}.zip
+          name: QuietWriter-macos-${{ matrix.arch }}-portable
+          path: QuietWriter-macos-${{ matrix.arch }}-portable.zip
           if-no-files-found: error
           retention-days: 14
