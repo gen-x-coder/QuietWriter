@@ -4,7 +4,7 @@ from pathlib import Path
 from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtGui import QImageReader, QPixmap
 from PySide6.QtWidgets import (
-    QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
+    QCheckBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPushButton, QScrollArea, QSizePolicy, QTextEdit, QVBoxLayout, QWidget
 )
 from .dialog_notices import notice_information, notice_warning, notice_critical
@@ -87,6 +87,13 @@ class BookDetailsPage(QWidget):
 
         # Schrijfdoel en Boekomslag gebruiken hetzelfde formulierpatroon als de rest
         # van Boekdetails: rustige sectiekop + uitleg, daarna labels links en bediening rechts.
+        self.goal_unit = QuietComboBox()
+        self.goal_unit.addItem(tr('writing_goal.unit.words', 'Woorden'), 'words')
+        self.goal_unit.addItem(tr('writing_goal.unit.characters', 'Tekens'), 'characters')
+        self.goal_unit.setMaximumWidth(210)
+        self.goal_unit.setCurrentIndex(max(0, self.goal_unit.findData(md.get('writing_goal_unit', 'words'))))
+        self.goal_spaces = QCheckBox(tr('writing_goal.include_spaces', 'Spaties meetellen'))
+        self.goal_spaces.setChecked(bool(md.get('writing_goal_include_spaces', True)))
         self.word_goal = QuietSpinBox(); self.word_goal.setRange(0, 10_000_000); self.word_goal.setSingleStep(1000); self.word_goal.setSpecialValueText(tr('writing_goal.none', 'Geen doel')); self.word_goal.setMaximumWidth(210)
         self.word_goal.setValue(max(0, int(md.get('writing_goal_words', 0) or 0)))
         self.goal_date = QuietDateEdit(); self.goal_date.setObjectName('quietDateEdit'); self.goal_date.setCalendarPopup(True); self.goal_date.setDisplayFormat('dd-MM-yyyy')
@@ -104,10 +111,12 @@ class BookDetailsPage(QWidget):
 
         goal_heading = self._details_section_heading(
             tr('writing_goal.title', 'Schrijfdoel'),
-            tr('writing_goal.intro', 'Stel een woorddoel in en kies eventueel een gewenste einddatum.'),
+            tr('writing_goal.intro_171', 'Kies een doel in woorden of tekens en eventueel een gewenste einddatum.'),
         )
         form.addRow(goal_heading)
-        form.addRow(field_label(tr('writing_goal.words', 'Woorddoel')), self.word_goal)
+        form.addRow(field_label(tr('writing_goal.unit', 'Tellen in')), self.goal_unit)
+        form.addRow(field_label(tr('writing_goal.amount', 'Doel')), self.word_goal)
+        form.addRow('', self.goal_spaces)
         form.addRow(field_label(tr('writing_goal.date', 'Gewenst klaar op')), date_control)
         form.addRow(field_label(tr('writing_goal.progress', 'Voortgang')), self.goal_summary)
         # Laatste 30 dagen (1.7): staafjes uit de opt-in dagtelling.
@@ -118,6 +127,8 @@ class BookDetailsPage(QWidget):
         progress_lay.addWidget(self.progress_strip); progress_lay.addWidget(self.progress_summary)
         form.addRow(field_label(tr('writing_progress.strip_label', 'Laatste 30 dagen')), self.progress_box)
         self._details_form = form
+        self.goal_unit.currentIndexChanged.connect(self._update_goal_state)
+        self.goal_spaces.toggled.connect(self._update_goal_state)
         self.word_goal.valueChanged.connect(self._update_goal_state)
         self.goal_date.dateChanged.connect(self._update_goal_state)
         self.goal_date_mode.currentIndexChanged.connect(self._update_goal_state)
@@ -186,6 +197,26 @@ class BookDetailsPage(QWidget):
                     pass
         return total
 
+    def _current_book_characters(self) -> int:
+        from ..manuscript_text import count_characters
+        include = self.goal_spaces.isChecked()
+        editor = getattr(self.main, 'editor_page', None)
+        if editor is not None and getattr(editor, 'book', None) is not None and editor.book.id == self.book.id:
+            try:
+                editor._ensure_word_count_cache()
+                index = 0 if include else 1
+                return sum(pair[index] for pair in editor._chapter_character_counts.values())
+            except Exception:
+                pass
+        total = 0
+        for section in self.book.sections:
+            for chapter in section.chapters:
+                try:
+                    total += count_characters(self.library.read_chapter(self.book, chapter), include_spaces=include)
+                except Exception:
+                    pass
+        return total
+
     def _refresh_progress_strip(self):
         """Lees de lokale dagtelling opnieuw.
 
@@ -223,30 +254,33 @@ class BookDetailsPage(QWidget):
         self._refresh_progress_strip()
 
     def _update_goal_state(self, *_):
+        is_characters = self.goal_unit.currentData() == 'characters'
+        self.goal_spaces.setVisible(is_characters)
         enabled = self.word_goal.value() > 0
         self.goal_date_mode.setEnabled(enabled)
         self.goal_date.setEnabled(enabled and bool(self.goal_date_mode.currentData()))
         if not enabled:
-            self.goal_summary.setText(tr('writing_goal.summary_none', 'Geen woorddoel ingesteld.'))
+            self.goal_summary.setText(tr('writing_goal.summary_none_171', 'Geen schrijfdoel ingesteld.'))
             return
-        current = self._current_book_words()
+        current = self._current_book_characters() if is_characters else self._current_book_words()
+        unit = tr('writing_goal.unit.characters', 'tekens') if is_characters else tr('writing_goal.unit.words', 'woorden')
         target = int(self.word_goal.value())
         remaining = max(0, target - current)
         if remaining == 0:
-            self.goal_summary.setText(tr('writing_goal.summary_complete', '{count} van {goal} woorden.', count=f'{current:,}'.replace(',', '.'), goal=f'{target:,}'.replace(',', '.')))
+            self.goal_summary.setText(tr('writing_goal.summary_complete_171', '{count} van {goal} {unit}.', count=f'{current:,}'.replace(',', '.'), goal=f'{target:,}'.replace(',', '.'), unit=unit))
             return
         target_date = self.goal_date.date()
         if not bool(self.goal_date_mode.currentData()):
-            self.goal_summary.setText(tr('writing_goal.summary_remaining', 'Nog {count} woorden.', count=f'{remaining:,}'.replace(',', '.')))
+            self.goal_summary.setText(tr('writing_goal.summary_remaining_171', 'Nog {count} {unit}.', count=f'{remaining:,}'.replace(',', '.'), unit=unit))
             return
         today = QDate.currentDate()
         if target_date < today:
-            self.goal_summary.setText(tr('writing_goal.summary_expired', 'Nog {count} woorden · gewenste datum {date} is verstreken.', count=f'{remaining:,}'.replace(',', '.'), date=target_date.toString('dd-MM-yyyy')))
+            self.goal_summary.setText(tr('writing_goal.summary_expired_171', 'Nog {count} {unit} · gewenste datum {date} is verstreken.', count=f'{remaining:,}'.replace(',', '.'), unit=unit, date=target_date.toString('dd-MM-yyyy')))
             return
         days = max(1, today.daysTo(target_date) + 1)
         raw = remaining / days if remaining else 0
         pace = max(1, int(round(raw)) if raw < 10 else int(round(raw / 10.0) * 10))
-        self.goal_summary.setText(tr('writing_goal.summary_pace', 'Nog {count} woorden · ongeveer {pace} per dag tot {date}.', count=f'{remaining:,}'.replace(',', '.'), pace=f'{pace:,}'.replace(',', '.'), date=target_date.toString('dd-MM-yyyy')))
+        self.goal_summary.setText(tr('writing_goal.summary_pace_171', 'Nog {count} {unit} · ongeveer {pace} per dag tot {date}.', count=f'{remaining:,}'.replace(',', '.'), unit=unit, pace=f'{pace:,}'.replace(',', '.'), date=target_date.toString('dd-MM-yyyy')))
 
     @staticmethod
     def _canonical_published(value) -> str:
@@ -266,6 +300,8 @@ class BookDetailsPage(QWidget):
             'tags': self.tags.text().strip(),
             'published': self.published.currentData() or 'No',
             'synopsis': self.synopsis.toPlainText().strip(),
+            'writing_goal_unit': self.goal_unit.currentData() or 'words',
+            'writing_goal_include_spaces': self.goal_spaces.isChecked(),
             'writing_goal_words': int(self.word_goal.value()),
             'writing_goal_date': self._goal_date_iso(),
         }
@@ -286,6 +322,8 @@ class BookDetailsPage(QWidget):
             'tags': str(md.get('tags', '') or ''),
             'published': self._canonical_published(md.get('published', 'No')),
             'synopsis': str(md.get('synopsis', '') or ''),
+            'writing_goal_unit': str(md.get('writing_goal_unit', 'words') or 'words'),
+            'writing_goal_include_spaces': bool(md.get('writing_goal_include_spaces', True)),
             'writing_goal_words': max(0, int(md.get('writing_goal_words', 0) or 0)),
             'writing_goal_date': str(md.get('writing_goal_date', '') or ''),
         }
@@ -318,6 +356,8 @@ class BookDetailsPage(QWidget):
             'tags': str(values.get('tags', '') or ''),
             'published': self._canonical_published(values.get('published', 'No')),
             'synopsis': str(values.get('synopsis', '') or ''),
+            'writing_goal_unit': str(values.get('writing_goal_unit', 'words') or 'words'),
+            'writing_goal_include_spaces': bool(values.get('writing_goal_include_spaces', True)),
             'writing_goal_words': max(0, int(values.get('writing_goal_words', 0) or 0)),
             'writing_goal_date': str(values.get('writing_goal_date', '') or ''),
         })
@@ -336,6 +376,8 @@ class BookDetailsPage(QWidget):
         self.tags.setText(str(values.get('tags', '') or ''))
         idx = self.published.findData(self._canonical_published(values.get('published', 'No'))); self.published.setCurrentIndex(max(0, idx))
         self.synopsis.setPlainText(str(values.get('synopsis', '') or ''))
+        self.goal_unit.setCurrentIndex(max(0, self.goal_unit.findData(values.get('writing_goal_unit', 'words'))))
+        self.goal_spaces.setChecked(bool(values.get('writing_goal_include_spaces', True)))
         self.word_goal.setValue(max(0, int(values.get('writing_goal_words', 0) or 0)))
         parsed_goal_date = QDate.fromString(str(values.get('writing_goal_date', '') or ''), 'yyyy-MM-dd')
         self.goal_date_mode.setCurrentIndex(1 if parsed_goal_date.isValid() else 0)
@@ -528,6 +570,8 @@ class BookDetailsPage(QWidget):
             'tags': self.tags.text().strip(),
             'published': self.published.currentData() or 'No',
             'synopsis': self.synopsis.toPlainText().strip(),
+            'writing_goal_unit': self.goal_unit.currentData() or 'words',
+            'writing_goal_include_spaces': self.goal_spaces.isChecked(),
             'writing_goal_words': int(self.word_goal.value()),
             'writing_goal_date': self._goal_date_iso(),
         })

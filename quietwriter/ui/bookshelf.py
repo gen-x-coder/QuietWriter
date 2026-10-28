@@ -258,12 +258,25 @@ class BookCard(QFrame):
                     except Exception:
                         pass
 
-        goal = max(0, int((book.metadata or {}).get('writing_goal_words', 0) or 0))
+        goal_md = book.metadata or {}
+        goal = max(0, int(goal_md.get('writing_goal_words', 0) or 0))
+        character_goal = goal_md.get('writing_goal_unit') == 'characters'
+        if character_goal and goal > 0:
+            from ..manuscript_text import count_characters
+            include_spaces = bool(goal_md.get('writing_goal_include_spaces', True))
+            progress_count = 0
+            for section in book.sections:
+                for chapter in section.chapters:
+                    try:
+                        progress_count += count_characters(library.read_chapter(book, chapter), include_spaces=include_spaces)
+                    except Exception:
+                        pass
+        else:
+            progress_count = words
         if goal > 0:
-            info_text = tr(
-                'bookshelf.words_goal', '{count} van {goal} woorden',
-                count=f"{words:,}".replace(',', '.'), goal=f"{goal:,}".replace(',', '.')
-            )
+            key = 'bookshelf.characters_goal_171' if character_goal else 'bookshelf.words_goal'
+            fallback = '{count} van {goal} tekens' if character_goal else '{count} van {goal} woorden'
+            info_text = tr(key, fallback, count=f'{progress_count:,}'.replace(',', '.'), goal=f'{goal:,}'.replace(',', '.'))
         else:
             info_text = tr('bookshelf.words', '{count} woorden', count=f"{words:,}".replace(',', '.'))
         info = QLabel(info_text)
@@ -275,11 +288,13 @@ class BookCard(QFrame):
             progress = QProgressBar()
             progress.setObjectName('bookGoalProgress')
             progress.setRange(0, max(1, goal))
-            progress.setValue(min(words, goal))
+            progress.setValue(min(progress_count, goal))
             progress.setTextVisible(False)
             progress.setFixedHeight(4)
-            pct = min(100, round((words / goal) * 100)) if goal else 0
-            progress.setToolTip(tr('bookshelf.goal_tip', '{percent}% · nog {remaining} woorden', percent=pct, remaining=f"{max(0, goal - words):,}".replace(',', '.')))
+            pct = min(100, round((progress_count / goal) * 100)) if goal else 0
+            key = 'bookshelf.goal_tip_characters_171' if character_goal else 'bookshelf.goal_tip'
+            fallback = '{percent}% · nog {remaining} tekens' if character_goal else '{percent}% · nog {remaining} woorden'
+            progress.setToolTip(tr(key, fallback, percent=pct, remaining=f'{max(0, goal - progress_count):,}'.replace(',', '.')))
 
         open_btn = QPushButton(tr('bookshelf.open', 'Openen'))
         open_btn.setObjectName('primaryButton')

@@ -20,3 +20,13 @@ def text_for_search(source: str) -> str:
 
 def text_for_ai(source: str) -> str:
     return text_for_ai_context(source or '')
+
+
+def count_characters(source: str, *, include_spaces: bool = True) -> int:
+    """Count visible Unicode characters; exclude all whitespace when requested.
+
+    This intentionally counts Unicode code points, not bytes or UTF-16 units.
+    Combining characters/emoji sequences may contain multiple code points.
+    """
+    text = visible_text(source or '')
+    return len(text) if include_spaces else sum(not ch.isspace() for ch in text)

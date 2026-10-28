@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_startup_contract():
     assert APP_NAME == 'QuietWriter'
-    assert __version__ == '1.7.0'
+    assert __version__ == '1.7.1'
 
 def test_reader_prompt_covers_followup_ghostwriting_and_canon():
     prompt = build_system_prompt(persona='', book_profile='', book_memory='Pip heeft blauwe ogen', planning_text='', context_label='hoofdstuk', context_text='')

@@ -1,8 +1,9 @@
 QuietWriter bronpakket
 
-Application version: 1.7.0
+Application version: 1.7.1
 Stable public release before this one: 1.4.0 (1.3.1 daarvoor)
 
+1.7.1: Schrijfdoelen op woorden of tekens (optioneel zonder spaties), Koreaanse taal, vertaalgemak.
 1.7.0: Scènes in de tekst (scène n = stuk na scènebreuk n, geen markers), meelopende scènehulp, omgekeerd plannen,
        personages per hoofdstuk herkennen (Ook bekend als), exportdoel Inzenden (ook anoniem).
 1.6.1: Bijwerken eerst zelf testen: testkopie (.quietwriter-update-pilot) leest releases.pilot.json en

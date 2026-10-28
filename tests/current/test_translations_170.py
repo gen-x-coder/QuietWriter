@@ -43,7 +43,7 @@ def test_user_file_overrides_only_changed_texts_of_a_builtin_language(user_dir):
 
 def test_without_user_dir_nothing_changes():
     i18n.set_user_translation_dir(None)
-    assert [c for c, _ in i18n.available_languages()] == list(i18n.BUILTIN_CODES)
+    assert [c for c, _ in i18n.available_languages()] == list(i18n.BUILTIN_CODES) + ['ko']
     assert i18n.set_locale('it') == 'nl'
 
 

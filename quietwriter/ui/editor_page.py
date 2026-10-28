@@ -93,6 +93,7 @@ class EditorPage(QWidget):
         self._editing_image_reference_path: str | None = None
         self._chapter_word_counts = {}
         self._saved_chapter_word_counts = {}
+        self._chapter_character_counts = {}
         self.writing_progress = WritingProgressStore(main.library.root)
         self.preview_live_book = None; self.preview_version_id = None; self.preview_return_chapter_id = None
         # Drag/drop is guarded as one transaction. A native QDrag runs a nested
@@ -157,6 +158,16 @@ class EditorPage(QWidget):
         self.text_width_combo.currentIndexChanged.connect(self._editor_text_width_changed)
         tl.addWidget(undo); tl.addWidget(redo); tl.addSpacing(8); tl.addWidget(self.book_title_label, 1); tl.addStretch()
         tl.addWidget(self.text_width_combo)
+        self.character_mode = QComboBox()
+        self.character_mode.setObjectName('editorCharacterMode')
+        self.character_mode.setToolTip(tr('editor.characters.tip', 'Tekens tellen met of zonder spaties en regeleinden.'))
+        self.character_mode.addItem(tr('editor.characters.with_spaces', 'Tekens incl. spaties'), 'all')
+        self.character_mode.addItem(tr('editor.characters.no_spaces', 'Tekens excl. spaties'), 'compact')
+        mode = str(self.main.settings.value('editor_character_mode', 'all') or 'all')
+        self.character_mode.setCurrentIndex(max(0, self.character_mode.findData(mode)))
+        self.character_mode.currentIndexChanged.connect(self._character_mode_changed)
+        self.character_mode.setFixedWidth(174)
+        tl.addWidget(self.character_mode)
         tl.addSpacing(8); tl.addWidget(self.autosave_status)
         self.chapter_title = QLineEdit(); self.chapter_title.setPlaceholderText(tr('editor.chapter_title_placeholder', 'Hoofdstuktitel')); self.chapter_title.setAlignment(Qt.AlignCenter); self.chapter_title.setObjectName('chapterTitle')
         _writing_typography = WritingTypography.from_settings(self.main.settings)
@@ -1732,6 +1743,15 @@ class EditorPage(QWidget):
             return set()
         return {chapter.id for section in self.book.sections for chapter in section.chapters}
 
+    def _character_mode_changed(self, *_):
+        self.main.settings.setValue('editor_character_mode', self.character_mode.currentData() or 'all')
+        self.update_counts()
+
+    @staticmethod
+    def _characters(text):
+        from ..manuscript_text import count_characters
+        return (count_characters(text, include_spaces=True), count_characters(text, include_spaces=False))
+
     def _rebuild_word_count_cache(self):
         """Read each chapter once and cache its word count.
 
@@ -1741,6 +1761,7 @@ class EditorPage(QWidget):
         """
         self._chapter_word_counts = {}
         self._saved_chapter_word_counts = {}
+        self._chapter_character_counts = {}
         if not self.book:
             return
         for section in self.book.sections:
@@ -1749,9 +1770,11 @@ class EditorPage(QWidget):
                     text = self.main.library.read_chapter(self.book, chapter)
                     words = count_words(text)
                 except Exception:
+                    text = ''
                     words = 0
                 self._chapter_word_counts[chapter.id] = words
                 self._saved_chapter_word_counts[chapter.id] = words
+                self._chapter_character_counts[chapter.id] = self._characters(text)
 
     def _ensure_word_count_cache(self):
         ids = self._book_chapter_ids()
@@ -1764,7 +1787,11 @@ class EditorPage(QWidget):
         self._ensure_word_count_cache()
         if self.chapter:
             self._chapter_word_counts[self.chapter.id] = words
+            self._chapter_character_counts[self.chapter.id] = self._characters(txt)
         total = sum(self._chapter_word_counts.values()) if self.book else 0
+        char_index = 0 if self.character_mode.currentData() == 'all' else 1
+        chapter_characters = self._characters(txt)[char_index] if not self._chapter_unavailable else 0
+        book_characters = sum(v[char_index] for v in self._chapter_character_counts.values()) if self.book else 0
         chapter_index = 0; chapter_total = 0
         if self.book:
             flat = [c for sec in self.book.sections for c in sec.chapters]
@@ -1775,9 +1802,20 @@ class EditorPage(QWidget):
         def fmt_count(value):
             text = f'{value:,}'
             return text.replace(',', '.') if locale == 'nl' else text
-        goal = max(0, int((self.book.metadata or {}).get('writing_goal_words', 0) or 0)) if self.book else 0
+        goal_md = (self.book.metadata or {}) if self.book else {}
+        goal = max(0, int(goal_md.get('writing_goal_words', 0) or 0))
+        character_goal = goal_md.get('writing_goal_unit') == 'characters'
+        include_spaces = bool(goal_md.get('writing_goal_include_spaces', True))
+        if character_goal:
+            char_index = 0 if include_spaces else 1
+            goal_progress = sum(pair[char_index] for pair in self._chapter_character_counts.values())
+        else:
+            goal_progress = total
         if goal > 0:
-            book_text = tr('editor.status.book_goal', 'Boek: {count} van {goal} woorden', count=fmt_count(total), goal=fmt_count(goal))
+            if character_goal:
+                book_text = tr('editor.status.book_goal_characters_171', 'Boek: {count} van {goal} tekens', count=fmt_count(goal_progress), goal=fmt_count(goal))
+            else:
+                book_text = tr('editor.status.book_goal', 'Boek: {count} van {goal} woorden', count=fmt_count(total), goal=fmt_count(goal))
         else:
             book_key = 'editor.status.book.one' if total == 1 else 'editor.status.book.many'
             book_text = tr(book_key, 'Boek: {count} woord' if total == 1 else 'Boek: {count} woorden', count=fmt_count(total))
@@ -1785,6 +1823,8 @@ class EditorPage(QWidget):
             today_words = self.writing_progress.today(self.book.id)
             if today_words > 0:
                 book_text += tr('editor.status.today', ' · vandaag {count}', count=fmt_count(today_words))
+        char_suffix = tr('editor.characters.count', '{count} tekens', count=fmt_count(book_characters))
+        book_text += ' · ' + char_suffix
         if chapter_total and self.chapter:
             chapter_key = 'editor.status.chapter.one' if words == 1 else 'editor.status.chapter.many'
             chapter_text = tr(
@@ -1792,7 +1832,7 @@ class EditorPage(QWidget):
                 'Hoofdstuk {index} van {total}: {count} woord' if words == 1 else 'Hoofdstuk {index} van {total}: {count} woorden',
                 index=chapter_index, total=chapter_total, count=fmt_count(words),
             )
-            self.main.set_document_status(book_text + ' · ' + chapter_text)
+            self.main.set_document_status(book_text + ' · ' + chapter_text + ' · ' + tr('editor.characters.count', '{count} tekens', count=fmt_count(chapter_characters)))
         else:
             self.main.set_document_status(book_text if self.book else '')
 
@@ -1879,6 +1919,7 @@ class EditorPage(QWidget):
             return
         self._chapter_word_counts[c.id] = 0
         self._saved_chapter_word_counts[c.id] = 0
+        self._chapter_character_counts[c.id] = (0, 0)
         def open_new_chapter(chapter_id=c.id):
             _, current = self.find_chapter_in_book(chapter_id)
             if current:
@@ -2466,6 +2507,7 @@ class EditorPage(QWidget):
         self.content_stack.setCurrentWidget(self.manuscript_content)
         self._chapter_word_counts = {}
         self._saved_chapter_word_counts = {}
+        self._chapter_character_counts = {}
         self.dirty = False
         self._clean_text = ''
         self.tree.clear()
@@ -2618,6 +2660,7 @@ class EditorPage(QWidget):
         for cid, (_, changed) in changes.items():
             self._chapter_word_counts[cid] = count_words(changed)
             self._saved_chapter_word_counts[cid] = count_words(changed)
+            self._chapter_character_counts[cid] = self._characters(changed)
         self.main.search_index.rebuild_book(self.book)
         self.do_search()
         self.update_counts(saved=True)

@@ -4,16 +4,13 @@ import quietwriter
 
 
 def test_release_metadata_and_preserved_history():
-    assert quietwriter.__version__ == "1.7.0"
+    assert quietwriter.__version__ == "1.7.1"
 
     changelog = Path("documents/CHANGELOG.md").read_text(encoding="utf-8-sig")
     assert changelog.startswith(f"## {quietwriter.__version__} —")
 
-    # Private ontwikkelarchieven horen niet in de publieke repository.
+    # De ontwikkelgeschiedenis is gearchiveerd, niet weggegooid.
     archive = Path("documents/archive")
-    if not archive.exists():
-        assert Path("README.md").is_file()
-        return
     assert (archive / "README.md").is_file()
     old = (archive / "CHANGELOG_TOT_1_5_0_DEV63.md").read_text(encoding="utf-8-sig")
     assert old.startswith("## 1.5.0-dev.63")
