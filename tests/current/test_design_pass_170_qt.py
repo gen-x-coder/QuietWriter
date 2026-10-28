@@ -37,6 +37,11 @@ def test_toolbar_title_is_elided_to_its_real_width(window):
     page._toggle_right_widget(page.chapter_context, page.chapter_context); _settle(app)
     label = page.book_title_label
     assert label.full_text().startswith('Een heel lange titel')
+    # Offscreen Qt mag de flexibele titelruimte tot nul verkleinen. Controleer
+    # het afkorten met een expliciete, niet-nul breedte; verberg geen layoutfout.
+    label.resize(110, max(20, label.height()))
+    label._apply()
+    assert label.width() == 110
     assert label.text().endswith('…')
     assert label.fontMetrics().horizontalAdvance(label.text()) <= label.width()
 
