@@ -44,4 +44,7 @@ def test_bookdetails_goal_and_cover_use_settings_style_section_labels(app, tmp_p
     sections = {w.text() for w in page.findChildren(QLabel) if w.objectName() == 'settingsSectionTitle'}
     assert {'BOEK', 'PUBLICATIE', 'SCHRIJFDOEL', 'BOEKOMSLAG'} <= sections
     fields = {w.text() for w in page.findChildren(QLabel) if w.objectName() == 'settingsFieldLabel'}
-    assert {'Titel', 'Woorddoel', 'Omslag'} <= fields
+    assert {'Titel', 'Schrijfdoel', 'Omslag'} <= fields
+    assert page.goal_unit.findData('words') >= 0
+    assert page.goal_unit.findData('characters') >= 0
+    assert page.goal_spaces.text() == 'Spaties meetellen'
