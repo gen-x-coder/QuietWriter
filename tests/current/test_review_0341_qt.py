@@ -38,13 +38,17 @@ def test_status_word_count_returns_after_temporary_message(app):
     with tempfile.TemporaryDirectory() as td:
         root = Path(td); lib = Library(root / 'workspace')
         window = MainWindow(_settings(root / 'settings.ini'), lib, [])
-        window.show(); app.processEvents()
-        window.open_book(lib.create_book('Status')); app.processEvents()
-        assert 'Boek: 0 woorden · Hoofdstuk 1 van 1: 0 woorden' in window.status.currentMessage()
-        window.status.showMessage('Tijdelijke melding', 20)
-        QTest.qWait(80); app.processEvents()
-        assert 'Boek: 0 woorden · Hoofdstuk 1 van 1: 0 woorden' in window.status.currentMessage()
-        window.close()
+        try:
+            window.show(); app.processEvents()
+            window.open_book(lib.create_book('Status')); app.processEvents()
+            expected = 'Boek: 0 woorden · 0 tekens · Hoofdstuk 1 van 1: 0 woorden · 0 tekens'
+            assert expected in window.status.currentMessage()
+            window.status.showMessage('Tijdelijke melding', 20)
+            QTest.qWait(80); app.processEvents()
+            assert expected in window.status.currentMessage()
+        finally:
+            window.close()
+            app.processEvents()
 
 
 def test_collapsed_rail_has_visible_group_separators(app):

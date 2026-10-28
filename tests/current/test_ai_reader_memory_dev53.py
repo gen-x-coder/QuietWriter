@@ -5,7 +5,7 @@ from quietwriter.ai.response_guard import guard_memory_claims
 
 def test_app_constants_and_version():
     assert APP_NAME == 'QuietWriter'
-    assert __version__ == '1.7.0'
+    assert __version__ == '1.7.1'
 
 
 def test_author_can_define_new_canon_without_manuscript_evidence():

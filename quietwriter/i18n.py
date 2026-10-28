@@ -60,16 +60,37 @@ def load_locale(code: str = 'nl') -> dict:
 
 
 def available_languages() -> list[tuple[str, str]]:
-    """(code, naam) van meegeleverde talen en vertalingen van gebruikers."""
+    """(code, naam) van ingebouwde talen en vertalingen van gebruikers."""
     names = {'nl': 'Nederlands', 'en': 'English', 'de': 'Deutsch', 'fr': 'Français', 'es': 'Español'}
     rows = [(code, names[code]) for code in BUILTIN_CODES]
+    seen = set(BUILTIN_CODES)
+
+    # 1.7.1: ontdek extra meegeleverde JSON-bestanden, maar uitsluitend voor
+    # taalcodes die al in de Nederlandse taalnamenlijst zijn opgenomen.
+    known_names = builtin_locale('nl')
+    for path in sorted(_LOCALE_DIR.glob('*.json')):
+        code = path.stem.lower()
+        if code in seen or not code.isalpha() or not 2 <= len(code) <= 3:
+            continue
+        fallback_name = known_names.get(f'language_name.{code}')
+        if not isinstance(fallback_name, str) or not fallback_name.strip():
+            continue
+        data = _read_json(path)
+        if not data:
+            continue
+        own_name = data.get(f'language_name.{code}')
+        name = own_name.strip() if isinstance(own_name, str) and own_name.strip() else fallback_name
+        rows.append((code, name))
+        seen.add(code)
+
     if _user_dir and _user_dir.is_dir():
         for path in sorted(_user_dir.glob('*.json')):
             code = path.stem.lower()
-            if code in BUILTIN_CODES or not code.isalpha() or len(code) > 3:
+            if code in seen or not code.isalpha() or len(code) > 3:
                 continue
             name = str(user_locale_meta(code).get('name') or code)
             rows.append((code, name))
+            seen.add(code)
     return rows
 
 

@@ -53,7 +53,7 @@ def reference_keys() -> list[str]:
 
 
 def effective_translation(code: str) -> dict[str, str]:
-    data = dict(builtin_locale(code)) if code in BUILTIN_CODES else {}
+    data = dict(builtin_locale(code)) if code in dict(available_languages()) else {}
     data.update(user_locale(code))
     return {k: v for k, v in data.items() if not k.startswith('_')}
 
@@ -61,7 +61,7 @@ def effective_translation(code: str) -> dict[str, str]:
 def translation_to_save(code: str, values: dict[str, str]) -> dict[str, str]:
     """Wat er in het gebruikersbestand komt: bij een meegeleverde taal alleen de verschillen."""
     cleaned = {k: v for k, v in values.items() if isinstance(v, str) and v.strip() != ''}
-    if code in BUILTIN_CODES:
+    if builtin_locale(code):
         base = builtin_locale(code)
         cleaned = {k: v for k, v in cleaned.items() if base.get(k) != v}
     return dict(sorted(cleaned.items()))
@@ -128,9 +128,11 @@ class TranslationsPage(QWidget):
         choose = QHBoxLayout(); choose.setSpacing(8)
         self.reference = QComboBox()
         for code, name in available_languages():
-            if code in BUILTIN_CODES:
+            if builtin_locale(code):
                 self.reference.addItem(name, code)
-        self.reference.setCurrentIndex(max(0, self.reference.findData('en')))
+        reference_pref = str(self.settings.value('translations/reference', 'en') or 'en') if self.settings else 'en'
+        reference_index = self.reference.findData(reference_pref)
+        self.reference.setCurrentIndex(reference_index if reference_index >= 0 else max(0, self.reference.findData('en')))
         self.target = QComboBox(); self.target.setMinimumWidth(220)
         choose.addWidget(QLabel(tr('translations.target_170', 'Ik vertaal naar'))); choose.addWidget(self.target)
         choose.addSpacing(16)
@@ -150,12 +152,20 @@ class TranslationsPage(QWidget):
         left = QWidget(); ll = QVBoxLayout(left); ll.setContentsMargins(0, 0, 0, 0); ll.setSpacing(8)
         self.filter_text = QLineEdit(); self.filter_text.setPlaceholderText(tr('translations.search', 'Zoek in de teksten…')); self.filter_text.setClearButtonEnabled(True)
         self.only_missing = QCheckBox(tr('translations.only_missing', 'Alleen wat nog ontbreekt of een fout heeft'))
+        if self.settings is not None:
+            self.only_missing.setChecked(self.settings.value('translations/only_missing', False, bool))
         self.status = QLabel(''); self.status.setObjectName('muted'); self.status.setWordWrap(True)
         self.list = QListWidget(); self.list.setObjectName('translationsList')
         self.list.setUniformItemSizes(True)
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.list.setTextElideMode(Qt.ElideRight)
-        ll.addWidget(self.filter_text); ll.addWidget(self.only_missing); ll.addWidget(self.status); ll.addWidget(self.list, 1)
+        self.sort_choice = QComboBox()
+        self.sort_choice.addItem(tr('translations.sort.original', 'Standaardvolgorde'), 'default')
+        self.sort_choice.addItem(tr('translations.sort.alphabetical', 'Tekst A–Z'), 'alpha')
+        self.sort_choice.addItem(tr('translations.sort.incomplete', 'Onvertaald eerst'), 'incomplete')
+        sort_pref = str(self.settings.value('translations/sort', 'default') or 'default') if self.settings else 'default'
+        self.sort_choice.setCurrentIndex(max(0, self.sort_choice.findData(sort_pref)))
+        ll.addWidget(self.filter_text); ll.addWidget(self.only_missing); ll.addWidget(self.sort_choice); ll.addWidget(self.status); ll.addWidget(self.list, 1)
 
         self.card = QFrame(); self.card.setObjectName('wizardCard')
         cl = QVBoxLayout(self.card); cl.setContentsMargins(20, 16, 20, 16); cl.setSpacing(8)
@@ -197,10 +207,11 @@ class TranslationsPage(QWidget):
         buttons.addStretch(1); buttons.addWidget(self.save_btn)
         root.addLayout(buttons)
 
-        self.reference.currentIndexChanged.connect(self._show_current)
-        self.target.currentIndexChanged.connect(self._reload)
+        self.reference.currentIndexChanged.connect(self._reference_changed)
+        self.target.currentIndexChanged.connect(self._target_changed)
+        self.sort_choice.currentIndexChanged.connect(self._sort_entries)
         self.filter_text.textChanged.connect(self._apply_filter)
-        self.only_missing.toggled.connect(self._apply_filter)
+        self.only_missing.toggled.connect(self._missing_filter_changed)
         self.list.currentRowChanged.connect(self._row_changed)
         self.editor.textChanged.connect(self._editor_changed)
         self.prev_btn.clicked.connect(lambda: self._step(-1))
@@ -213,7 +224,8 @@ class TranslationsPage(QWidget):
         self.export_btn.clicked.connect(self.export_file)
         self.import_btn.clicked.connect(self.import_file)
         self.folder_btn.clicked.connect(self.open_folder)
-        self._fill_targets()
+        preferred = str(self.settings.value('translations/target', 'nl') or 'nl') if self.settings else 'nl'
+        self._fill_targets(select=preferred)
         self._reload()
 
     # ------------------------------------------------------------------ data
@@ -228,6 +240,52 @@ class TranslationsPage(QWidget):
             index = self.target.findData('nl')
         self.target.setCurrentIndex(max(0, index))
         self.target.blockSignals(False)
+
+    def _target_changed(self, *_):
+        code = str(self.target.currentData() or '')
+        if self.settings is not None and code != NEW_LANGUAGE:
+            self.settings.setValue('translations/target', code)
+        self._reload()
+
+    def _reference_changed(self, *_):
+        code = str(self.reference.currentData() or 'en')
+        if self.settings is not None:
+            self.settings.setValue('translations/reference', code)
+        self._reference_code = code
+        self._refresh_items()
+        self._sort_entries()
+
+    def _missing_filter_changed(self, checked: bool):
+        if self.settings is not None:
+            self.settings.setValue('translations/only_missing', bool(checked))
+        self._apply_filter()
+
+    def _sort_entries(self, *_):
+        if not self.entries:
+            return
+        selected = self._current.key if self._current else None
+        mode = self.sort_choice.currentData()
+        if self.settings is not None:
+            self.settings.setValue('translations/sort', mode)
+        if mode == 'alpha':
+            key = lambda e: ((self._reference.get(e.key) or self._nl.get(e.key, '')).casefold(), e.key)
+        elif mode == 'incomplete':
+            key = lambda e: (self._entry_state(e) == 'done', (self._reference.get(e.key) or self._nl.get(e.key, '')).casefold(), e.key)
+        else:
+            key = lambda e: e.key
+        self.entries.sort(key=key)
+        self.list.blockSignals(True)
+        self.list.clear()
+        for _ in self.entries:
+            self.list.addItem(QListWidgetItem())
+        self.list.blockSignals(False)
+        self._refresh_items()
+        self._apply_filter()
+        if selected is not None:
+            for row, entry in enumerate(self.entries):
+                if entry.key == selected and not self.list.isRowHidden(row):
+                    self.list.setCurrentRow(row)
+                    break
 
     def target_code(self) -> str:
         code = str(self.target.currentData() or '')
@@ -257,6 +315,11 @@ class TranslationsPage(QWidget):
         keys = reference_keys()
         self.values = {k: target.get(k, '') for k in keys}
         self.entries = build_entries(keys, self._nl, self.values, builtin_locale('en'))
+        mode = self.sort_choice.currentData()
+        if mode == 'alpha':
+            self.entries.sort(key=lambda e: ((builtin_locale('en').get(e.key) or self._nl.get(e.key, '')).casefold(), e.key))
+        elif mode == 'incomplete':
+            self.entries.sort(key=lambda e: (self._entry_state(e) == 'done', (builtin_locale('en').get(e.key) or self._nl.get(e.key, '')).casefold(), e.key))
         self.list.clear()
         for entry in self.entries:
             item = QListWidgetItem()

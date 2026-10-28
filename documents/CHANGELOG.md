@@ -1,3 +1,15 @@
+## 1.7.1 — Woorden of tekens: jij bepaalt
+
+**Voor schrijvers**
+- **Schrijfdoel op woorden óf tekens:** bij Boekdetails → Schrijfdoel kies je wat QuietWriter telt. Bij tekens kun je met **Spaties meetellen** ook tellingen zonder witruimte gebruiken, zoals voor Koreaanse schrijfwedstrijden. Oude boekdoelen blijven woorddoelen.
+- De Boekenkast en de editor volgen de gekozen doeleenheid, inclusief de voortgang. Een losse tekenteller in de editor laat beide tellingen naast elkaar zien. De daggrafiek **Vandaag geschreven** blijft bewust een woordtelling en wordt niet achteraf omgerekend.
+- **Koreaans:** meegeleverde `ko.json` wordt automatisch in de programmatalen opgenomen doordat `language_name.ko` al bekend is. Externe vertalingen in de werkmap blijven werken.
+- **Vertalen:** de gekozen doeltaal, referentietaal, sortering en filter voor ontbrekende teksten worden direct onthouden, zonder extra knop. Je kunt teksten sorteren (standaard, A–Z, onvertaald eerst).
+
+**Voor nerds**
+- De tekentelling gebruikt de manuscriptweergave zonder technische Markdown-markers of mediablokken; zonder spaties sluit alle Unicode-witruimte uit. Eén Unicode-codepunt telt als één teken. Samengestelde emoji kunnen uit meer codepunten bestaan.
+- Nieuwe instellingen voor doeleenheid en spaties worden als boekmetadata mee opgeslagen en gaan mee met de bestaande conflict- en herstelverwerking.
+
 ## 1.7.0 — Planning dichter bij het verhaal
 
 **Voor schrijvers**
